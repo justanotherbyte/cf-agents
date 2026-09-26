@@ -11,3 +11,7 @@ Cloudflare Containers for Python Workers
 </sup>
 </p>
 
+> [!note]
+> This is an unofficial SDK. I worked on a port during my internship at Cloudflare. I've re-ported the SDK with improvements in mind from my original port at Cloudflare.
+
+
