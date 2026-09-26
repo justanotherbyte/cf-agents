@@ -18,7 +18,7 @@ try:
 except ImportError:
     jsnull = None
 
-__all__ = [
+__all__ = (
     "AbortController",
     "IdentityTransformStream",
     "JsProxy",
@@ -29,7 +29,7 @@ __all__ = [
     "jsnull",
     "rpc_kwargs",
     "to_js_object",
-]
+)
 
 _listener_tasks: set[asyncio.Task[Any]] = set()
 
