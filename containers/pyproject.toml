@@ -1,0 +1,48 @@
+[project]
+name = "containers-py"
+version = "0.1.0"
+description = "Cloudflare Containers for Python Workers"
+readme = "README.md"
+authors = [
+    { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typing-extensions>=4.12",
+    "workers-runtime-sdk>=1.9.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Rebuild when sources change, so the .smokes/ projects pick up edits
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }]
+
+[tool.uv.build-backend]
+module-name = "containers"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test names mirror the TypeScript test names
+"tests/*" = ["E501"]
+
+[tool.ty.analysis]
+allowed-unresolved-imports = ["js", "pyodide.**", "_pyodide_entrypoint_helper"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.9",
+    "ty>=0.0.84",
+]
