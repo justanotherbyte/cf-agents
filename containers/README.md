@@ -12,6 +12,6 @@ Cloudflare Containers for Python Workers
 </p>
 
 > [!note]
-> This is an unofficial SDK. I worked on a port during my internship at Cloudflare. I've re-ported the SDK with improvements in mind from my original port at Cloudflare.
+> This is an unofficial SDK. I worked on a port during my internship at Cloudflare. This SDK is a re-port with improvements in mind from my original port at Cloudflare. Yes, AI was used, but I am actively ensuring the SDK is good and usable.
 
 
