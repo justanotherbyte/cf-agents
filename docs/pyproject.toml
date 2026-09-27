@@ -11,5 +11,8 @@ dependencies = [
     "mkdocs-material>=9.7.7",
 ]
 
-[project.scripts]
-docs = "docs:main"
+# Not a real package: only declares dependencies. Disable setuptools
+# auto-discovery so `pip install .` (Cloudflare Pages) doesn't trip over
+# site/, overrides/ and node_modules/.
+[tool.setuptools]
+py-modules = []
