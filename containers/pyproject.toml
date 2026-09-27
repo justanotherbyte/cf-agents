@@ -1,6 +1,6 @@
 [project]
 name = "containers-py"
-version = "0.1.0"
+version = "0.1.1"
 description = "Cloudflare Containers for Python Workers"
 readme = "README.md"
 authors = [
@@ -11,6 +11,11 @@ dependencies = [
     "typing-extensions>=4.12",
     "workers-runtime-sdk>=1.9.0",
 ]
+license = "MIT OR Apache-2.0"
+
+[project.urls]
+Source = "https://github.com/justanotherbyte/containers"
+Documentatiion = "https://crosswind.viswa.space"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]
