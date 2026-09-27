@@ -1,6 +1,6 @@
 <h1 align="center">
 <sub>
-    <img src=".github/unofficial-cloudflare-python.svg" height="36">
+    <img src=".github/python-containers.svg" height="36">
 </sub>
 &nbsp;
 containers-py
