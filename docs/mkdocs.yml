@@ -1,18 +1,24 @@
 site_name: Crosswind
+site_description: Python SDKs that push Cloudflare Python Workers to their limits.
 site_url: https://github.com
 theme:
   name: material
+  custom_dir: overrides
+  font:
+    text: JetBrains Mono
+    code: JetBrains Mono
+  # Dark only: the site uses one solid #0f0f0f background everywhere
   palette:
-    # Palette toggle for light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
+    scheme: slate
+    primary: custom
+    accent: custom
 
-    # Palette toggle for dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
