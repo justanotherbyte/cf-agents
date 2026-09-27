@@ -72,10 +72,22 @@ Worker lean.
 | SDK | Package | Description | Version |
 | --- | --- | --- | --- |
 | [Containers](containers/getting-started.md) | `containers-py` | Start, stop and route requests to Cloudflare Containers from a Python Worker. | 0.1.0 |
+| [Agents](agents/getting-started.md) | `agents-py` | Build stateful AI agents on the Cloudflare Agents SDK from a Python Worker. | 0.1.0 |
 
 </div>
 
 More SDKs are in development and will be listed here as they ship.
+{ .cw-footnote }
+
+<figure class="cw-editor cw-demo" aria-label="Mosslight Valley, a demo game built with agents-py">
+  <figcaption class="cw-editor__bar">
+    <span>demo: mosslight valley, built with agents-py</span>
+    <a href="https://agents-py-mosslight-valley.reachvishm8605.workers.dev/" target="_blank" rel="noopener">open &#8599;</a>
+  </figcaption>
+  <iframe src="https://agents-py-mosslight-valley.reachvishm8605.workers.dev/" title="Mosslight Valley demo game" loading="lazy" allow="fullscreen; autoplay; gamepad"></iframe>
+</figure>
+
+A small game running entirely on Python Workers, as an example of what's possible with Python Workers and a Python Agents SDK.
 { .cw-footnote }
 
 </section>

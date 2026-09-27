@@ -432,6 +432,7 @@
 }
 
 .md-typeset .cw-section > p.cw-footnote {
+  max-width: none;
   margin-top: 0.8rem;
   font-size: 0.62rem;
   color: var(--cw-dim);
@@ -441,4 +442,31 @@
   .md-typeset .cw-features {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Demo embed */
+/* Material sizes figures to fit-content and centres them; fill the section
+   like the SDK table instead */
+.md-typeset .cw-demo {
+  display: block;
+  width: 100%;
+  max-width: none;
+  margin: 2rem 0 0;
+}
+
+.md-typeset .cw-demo .cw-editor__bar a {
+  color: var(--cw-muted);
+}
+
+.md-typeset .cw-demo .cw-editor__bar a:hover {
+  color: var(--cw-orange);
+}
+
+.md-typeset .cw-demo iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 22rem;
+  border: 0;
+  background: var(--cw-bg);
 }
