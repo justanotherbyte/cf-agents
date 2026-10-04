@@ -2,10 +2,34 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://github.com/</loc>
-         <lastmod>2026-09-27</lastmod>
+         <lastmod>2026-10-04</lastmod>
+    </url>
+    <url>
+         <loc>https://github.com/containers/coming-from-typescript/</loc>
+         <lastmod>2026-10-04</lastmod>
+    </url>
+    <url>
+         <loc>https://github.com/containers/container-class/</loc>
+         <lastmod>2026-10-04</lastmod>
+    </url>
+    <url>
+         <loc>https://github.com/containers/examples/</loc>
+         <lastmod>2026-10-04</lastmod>
     </url>
     <url>
          <loc>https://github.com/containers/getting-started/</loc>
-         <lastmod>2026-09-27</lastmod>
+         <lastmod>2026-10-04</lastmod>
+    </url>
+    <url>
+         <loc>https://github.com/containers/lifecycle/</loc>
+         <lastmod>2026-10-04</lastmod>
+    </url>
+    <url>
+         <loc>https://github.com/containers/outbound-traffic/</loc>
+         <lastmod>2026-10-04</lastmod>
+    </url>
+    <url>
+         <loc>https://github.com/containers/routing/</loc>
+         <lastmod>2026-10-04</lastmod>
     </url>
 </urlset>

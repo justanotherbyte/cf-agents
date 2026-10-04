@@ -470,3 +470,66 @@
   border: 0;
   background: var(--cw-bg);
 }
+
+/* Version links, filled in from PyPI by javascripts/pypi-version.js */
+.md-typeset .cw-sdk-table a.cw-pypi-version {
+  color: var(--cw-muted);
+}
+
+.md-typeset .cw-sdk-table a.cw-pypi-version:hover {
+  color: var(--cw-orange);
+}
+
+/* ---------- Doc pages ---------- */
+
+/* Syntax colours follow the home hero: orange carries keywords, everything
+   else is weight and lightness only */
+[data-md-color-scheme="slate"] {
+  --md-code-hl-keyword-color: var(--cw-orange);
+  --md-code-hl-function-color: var(--cw-fg);
+  --md-code-hl-name-color: #d4d4d4;
+  --md-code-hl-string-color: #a3a3a3;
+  --md-code-hl-number-color: #d4d4d4;
+  --md-code-hl-constant-color: var(--cw-orange);
+  --md-code-hl-special-color: #d4d4d4;
+  --md-code-hl-operator-color: #a3a3a3;
+  --md-code-hl-punctuation-color: #a3a3a3;
+  --md-code-hl-comment-color: #6b6b6b;
+  --md-code-hl-generic-color: #a3a3a3;
+  --md-code-hl-variable-color: #d4d4d4;
+}
+
+.md-typeset pre > code {
+  border: 1px solid var(--cw-rule);
+}
+
+.md-typeset .highlight span.filename {
+  border-radius: 0;
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--cw-muted);
+  background: #171717;
+  border: 1px solid var(--cw-rule);
+  border-bottom: 0;
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+  border-width: 1px;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 0.68rem;
+}
+
+.md-typeset .tabbed-labels > label {
+  font-size: 0.62rem;
+}
+
+.md-typeset table:not([class]) {
+  border-radius: 0;
+  font-size: 0.65rem;
+}
+
+.md-typeset dt {
+  font-weight: 700;
+}

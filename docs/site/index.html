@@ -418,15 +418,20 @@
     
     
     
+      
+        
+        
+      
     
-    <li class="md-nav__item md-nav__item--nested">
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
         <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
@@ -469,7 +474,175 @@
   <span class="md-ellipsis">
     
   
-    Getting Started
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="containers/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="containers/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing and scaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="containers/outbound-traffic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outbound traffic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="containers/examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="containers/container-class/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container class
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="containers/coming-from-typescript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coming from TypeScript
   
 
     
@@ -613,7 +786,7 @@
               <article class="md-content__inner md-typeset">
                 
   <section class="cw-section">
-<h2 id="what-is-crosswind">What is Crosswind?</h2>
+<h2 id="what-is-crosswind">What is Crosswind?<a class="headerlink" href="#what-is-crosswind" title="Permanent link">&para;</a></h2>
 <p><a href="https://developers.cloudflare.com/workers/languages/python/">Python Workers</a> run
 Python on Cloudflare's global network, but getting beyond "hello world" often
 means dropping down to JavaScript bindings, hand-rolling glue code, or hitting
@@ -624,32 +797,32 @@ couldn't handle on their own. You write idiomatic, typed, <code>async</code> Pyt
 Crosswind handles the plumbing.</p>
 </section>
 <section class="cw-section">
-<h2 id="why-crosswind">Why Crosswind?</h2>
+<h2 id="why-crosswind">Why Crosswind?<a class="headerlink" href="#why-crosswind" title="Permanent link">&para;</a></h2>
 <div class="cw-features">
 <div class="cw-feature">
-<h3 id="pythonic-by-design">Pythonic by design</h3>
+<h3 id="pythonic-by-design">Pythonic by design<a class="headerlink" href="#pythonic-by-design" title="Permanent link">&para;</a></h3>
 <p>Typed, <code>async</code>-first APIs that read like Python, not JavaScript translated
 line by line.</p>
 </div>
 <div class="cw-feature">
-<h3 id="past-the-runtimes-limits">Past the runtime's limits</h3>
+<h3 id="past-the-runtimes-limits">Past the runtime's limits<a class="headerlink" href="#past-the-runtimes-limits" title="Permanent link">&para;</a></h3>
 <p>Move heavier, longer-running and more specialised work out of the isolate
 without leaving Python.</p>
 </div>
 <div class="cw-feature">
-<h3 id="more-of-the-platform">More of the platform</h3>
+<h3 id="more-of-the-platform">More of the platform<a class="headerlink" href="#more-of-the-platform" title="Permanent link">&para;</a></h3>
 <p>Reach more Cloudflare products from Python, with one consistent developer
 experience across every SDK.</p>
 </div>
 <div class="cw-feature">
-<h3 id="small-and-focused">Small and focused</h3>
+<h3 id="small-and-focused">Small and focused<a class="headerlink" href="#small-and-focused" title="Permanent link">&para;</a></h3>
 <p>Separate packages per product. Install only what you need and keep your
 Worker lean.</p>
 </div>
 </div>
 </section>
 <section class="cw-section">
-<h2 id="sdks">SDKs</h2>
+<h2 id="sdks">SDKs<a class="headerlink" href="#sdks" title="Permanent link">&para;</a></h2>
 <div class="cw-sdk-table">
 <table>
 <thead>
@@ -665,12 +838,26 @@ Worker lean.</p>
 <td><a href="containers/getting-started/">Containers</a></td>
 <td><code>containers-py</code></td>
 <td>Start, stop and route requests to Cloudflare Containers from a Python Worker.</td>
-<td>0.1.0</td>
+<td><a class="cw-pypi-version" href="https://pypi.org/project/containers-py/">PyPI</a></td>
+</tr>
+<tr>
+<td><a href="agents/getting-started.md">Agents</a></td>
+<td><code>agents-py</code></td>
+<td>Build stateful AI agents on the Cloudflare Agents SDK from a Python Worker.</td>
+<td><a class="cw-pypi-version" href="https://pypi.org/project/agents-py/">PyPI</a></td>
 </tr>
 </tbody>
 </table>
 </div>
 <p class="cw-footnote">More SDKs are in development and will be listed here as they ship.</p>
+<figure aria-label="Mosslight Valley, a demo game built with agents-py" class="cw-editor cw-demo">
+<figcaption class="cw-editor__bar">
+    <span>demo: mosslight valley, built with agents-py</span>
+    <a href="https://agents-py-mosslight-valley.reachvishm8605.workers.dev/" target="_blank" rel="noopener">open &#8599;</a>
+  </figcaption>
+<iframe allow="fullscreen; autoplay; gamepad" loading="lazy" src="https://agents-py-mosslight-valley.reachvishm8605.workers.dev/" title="Mosslight Valley demo game"></iframe>
+</figure>
+<p class="cw-footnote">A small game running entirely on Python Workers, as an example of what's possible with Python Workers and a Python Agents SDK.</p>
 </section>
 
               </article>
@@ -709,10 +896,12 @@ Worker lean.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": [], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["content.code.copy", "navigation.sections"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="javascripts/pypi-version.js"></script>
       
     
   </body>

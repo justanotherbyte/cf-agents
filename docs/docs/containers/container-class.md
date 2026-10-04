@@ -1,0 +1,467 @@
+---
+title: Container class
+---
+
+# Container class
+
+`containers.Container` is a
+[Durable Object](https://developers.cloudflare.com/durable-objects/api/base/)
+that manages one container instance. Subclass it, configure it with class
+attributes, and override hooks as needed. Everything the base `DurableObject`
+offers is still available, including `self.ctx`, `self.env` and
+[SQLite storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
+through `self.ctx.storage`.
+
+```python
+from containers import Container
+
+
+class MyContainer(Container):
+    default_port = 8080
+    sleep_after = "10m"
+```
+
+This page mirrors the official
+[Container class reference](https://developers.cloudflare.com/containers/api/container-class/).
+Where the Python API differs, see [Coming from TypeScript](coming-from-typescript.md).
+
+## Properties
+
+Set these as class attributes on your subclass. They apply to every instance.
+
+| Attribute | Type | Default | Description |
+| --- | --- | --- | --- |
+| `default_port` | `int \| None` | `None` | Port the container listens on. `fetch()` and `container_fetch()` use it when no port is given. |
+| `required_ports` | `list[int] \| None` | `None` | Ports that must accept connections before the container counts as ready. `start_and_wait_for_ports()` uses them when called without `ports`. |
+| `sleep_after` | `str \| int` | `"10m"` | Idle time before `on_activity_expired()` runs. Seconds as an `int`, or a string such as `"30s"`, `"5m"` or `"1h"`. |
+| `env_vars` | `dict[str, str]` | `{}` | Environment variables passed to the container on every start. |
+| `entrypoint` | `list[str] \| None` | `None` | Overrides the image's entrypoint. |
+| `enable_internet` | `bool` | `True` | Whether the container can reach the internet. See [Outbound traffic](outbound-traffic.md). |
+| `labels` | `dict[str, str]` | `{}` | Labels attached to the container instance. |
+| `ping_endpoint` | `str` | `"ping"` | Host and path that readiness checks request, as `http://<ping_endpoint>`. |
+| `intercept_https` | `bool` | `False` | Intercept outbound HTTPS as well as HTTP. See [HTTPS](outbound-traffic.md#https). |
+| `allowed_hosts` | `list[str] \| None` | `None` | Hosts the container may reach. Glob patterns allowed. |
+| `denied_hosts` | `list[str] \| None` | `None` | Hosts the container may never reach. Glob patterns allowed. |
+| `outbound_by_host` | `dict[str, OutboundHandler] \| None` | `None` | Outbound handlers by hostname or pattern. |
+| `outbound` | `OutboundHandler \| None` | `None` | Catch-all outbound handler. |
+| `outbound_handlers` | `dict[str, OutboundHandler] \| None` | `None` | Named handlers that can be selected at runtime. |
+
+### Setting values per instance
+
+To compute values when the Durable Object is created, for example from a secret
+in `self.env`, set them after calling `super().__init__()`. The constructor
+also accepts `default_port`, `sleep_after`, `env_vars`, `entrypoint` and
+`enable_internet` as keyword arguments:
+
+```python
+class MyContainer(Container):
+    def __init__(self, ctx, env):
+        super().__init__(ctx, env, default_port=8080, sleep_after="5m")
+        self.env_vars = {"API_KEY": env.API_KEY}
+```
+
+## Lifecycle hooks
+
+Override these on your subclass. All of them must be `async def`. See
+[Lifecycle](lifecycle.md#lifecycle-hooks) for when each one runs.
+
+### `on_start`
+
+```python
+async def on_start(self) -> None
+```
+
+Runs after the container starts successfully, from `start()`,
+`start_and_wait_for_ports()`, or a request that started it. Does nothing by
+default.
+
+### `on_stop`
+
+```python
+async def on_stop(self, *, exit_code: int, reason: Literal["exit", "runtime_signal"]) -> None
+```
+
+Runs after the container process exits. Does nothing by default.
+
+### `on_error`
+
+```python
+async def on_error(self, error: Exception) -> None
+```
+
+Runs when starting the container or waiting for a port fails. By default it
+logs `error` and re-raises it.
+
+### `on_activity_expired`
+
+```python
+async def on_activity_expired(self) -> None
+```
+
+Runs when the container has been idle for `sleep_after`. By default it calls
+`self.stop()`. If you override it, stop or destroy the container yourself, or
+it never goes to sleep.
+
+## Request methods
+
+### `fetch`
+
+```python
+async def fetch(self, request: Request) -> Response
+```
+
+The Durable Object's fetch handler. It forwards the request, HTTP or
+WebSocket, to the container with `container_fetch()`, starting the container
+first if needed. It uses the port set by [`switch_port`](#switch_port), or
+`default_port`. Raises `ValueError` if neither is set.
+
+Override it to add routing or authentication, and forward with
+`self.container_fetch()` to avoid recursion.
+
+### `container_fetch`
+
+```python
+async def container_fetch(request: Request, /, port: int | None = None) -> Response
+async def container_fetch(url: str, /, port: int | None = None, **init) -> Response
+```
+
+Sends a request to the container. If the container isn't `healthy`, it starts
+it and waits for `port` first. `port` defaults to `default_port`. With a URL,
+`init` takes the same keyword arguments as `workers.Request`, such as `method`,
+`headers` and `body`. Relative URLs are allowed.
+
+```python
+response = await self.container_fetch("/api/items", port=9090, method="POST", body="{}")
+```
+
+- Raises `ValueError` if no port is given and `default_port` isn't set.
+- Raises `TypeError` if `init` options are passed with a `Request`.
+- Returns a `503`, `429` or `500` response when the container can't be started
+  or reached. See [Errors from requests](lifecycle.md#errors-from-requests).
+- Proxies WebSockets when called inside the Durable Object. From a Worker, use
+  `stub.fetch()` instead (see [WebSockets](examples.md#websockets)).
+
+## Start and stop
+
+Durations are in **milliseconds** for every option below, as in the TypeScript
+SDK. `sleep_after` and `schedule()` use seconds.
+
+### `start_and_wait_for_ports`
+
+```python
+async def start_and_wait_for_ports(
+    self,
+    ports: int | list[int] | None = None,
+    /,
+    *,
+    abort: asyncio.Event | None = None,
+    instance_get_timeout_ms: int | None = None,  # default 8_000
+    port_ready_timeout_ms: int | None = None,    # default 20_000
+    wait_interval: int | None = None,            # default 300
+    env_vars: dict[str, str] | None = None,
+    entrypoint: list[str] | None = None,
+    enable_internet: bool | None = None,
+    labels: dict[str, str] | None = None,
+) -> None
+```
+
+Starts the container if it isn't running, waits until every port accepts
+connections, marks it `healthy` and runs `on_start()`. Ports resolve in this
+order: `ports`, then `required_ports`, then `default_port`.
+
+- `abort`: set this `asyncio.Event` to cancel waiting. Only usable inside the
+  Durable Object.
+- `instance_get_timeout_ms`: how long to wait for an instance to be assigned
+  and started. Your application may not be ready yet at that point.
+- `port_ready_timeout_ms`: the total time budget for the ports to become
+  ready.
+- `wait_interval`: the time between polls.
+- `env_vars`, `entrypoint`, `enable_internet`, `labels`: override the class
+  attributes for this start only.
+
+Raises `RuntimeError` if the container can't be started or a port isn't ready
+in time.
+
+### `start`
+
+```python
+async def start(
+    self,
+    *,
+    env_vars: dict[str, str] | None = None,
+    entrypoint: list[str] | None = None,
+    enable_internet: bool | None = None,
+    labels: dict[str, str] | None = None,
+    port_to_check: int | None = None,
+    signal: asyncio.Event | None = None,
+    retries: int | None = None,
+    wait_interval: int | None = None,  # default 300
+) -> None
+```
+
+Starts the container without waiting for your application's ports, then runs
+`on_start()`. The state stays `running`. This suits batch jobs, or managing
+readiness yourself.
+
+`port_to_check` defaults to `default_port`, then the first of `required_ports`.
+`retries` defaults to about 8 seconds of attempts at `wait_interval`. Raises
+`RuntimeError` if every attempt fails.
+
+```python
+await self.start(
+    env_vars={"DEBUG": "true"},
+    entrypoint=["python", "worker.py"],
+    enable_internet=False,
+    labels={"tenant": "acme"},
+)
+```
+
+### `wait_for_port`
+
+```python
+async def wait_for_port(
+    self,
+    port_to_check: int,
+    /,
+    *,
+    signal: asyncio.Event | None = None,
+    retries: int | None = None,
+    wait_interval: int | None = None,
+) -> int
+```
+
+Polls one port until it accepts connections. `retries` defaults to about 20
+seconds of attempts. Returns the number of tries. Raises the last connection
+error if the port never becomes ready, or right away if the container crashes.
+
+### `stop`
+
+```python
+async def stop(self, signal: Literal["SIGTERM", "SIGINT", "SIGKILL"] | int = "SIGTERM") -> None
+```
+
+Sends a signal to the container's main process. Accepts a signal name, a number
+or a `signal.Signals` member. Leads to `on_stop()`.
+
+### `destroy`
+
+```python
+async def destroy(self) -> None
+```
+
+Kills the container immediately with `SIGKILL`. Leads to `on_stop()`.
+
+## State and monitoring
+
+### `get_state`
+
+```python
+async def get_state(self) -> State
+```
+
+Returns a copy of the current state:
+
+```python
+class State(TypedDict):
+    status: Literal["running", "healthy", "stopping", "stopped", "stopped_with_code"]
+    last_change: int  # Unix time in milliseconds
+    exit_code: NotRequired[int]  # set when status is "stopped_with_code"
+```
+
+See [States](lifecycle.md#states).
+
+### `renew_activity_timeout`
+
+```python
+def renew_activity_timeout(self) -> None
+```
+
+Resets the `sleep_after` timer. Requests through the SDK already do this, so
+call it only for activity the SDK can't see. This method is not a coroutine.
+
+## Scheduling
+
+The `Container` class uses the Durable Object
+[alarm](https://developers.cloudflare.com/durable-objects/api/alarms/) for its
+own lifecycle management. Don't override `alarm()`. Use `schedule()` instead.
+
+### `schedule`
+
+```python
+async def schedule(self, when: datetime | float, callback: str, payload: T | None = None) -> Schedule[T | None]
+```
+
+Runs the method named `callback` later, once.
+
+- `when`: a `datetime`, or a delay in seconds.
+- `callback`: the name of an `async def` method on your subclass. It's called
+  as `await self.<callback>(payload, schedule)`.
+- `payload`: optional data passed to the callback. Must be JSON serialisable.
+
+Raises `TypeError` if `callback` isn't a string or `when` has the wrong type,
+and `ValueError` if no such method exists. Errors raised by the callback are
+logged, and the task is still removed.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+
+class MyContainer(Container):
+    async def on_start(self):
+        await self.schedule(30, "warm_cache")
+        await self.schedule(
+            datetime.now(timezone.utc) + timedelta(hours=1),
+            "rotate_logs",
+            {"keep": 5},
+        )
+
+    async def warm_cache(self, payload, schedule):
+        await self.container_fetch("/warm", method="POST")
+
+    async def rotate_logs(self, payload, schedule):
+        await self.container_fetch(f"/logs/rotate?keep={payload['keep']}", method="POST")
+```
+
+The returned `Schedule` is a dict:
+
+```python
+class Schedule(TypedDict, Generic[PayloadT]):
+    task_id: str
+    callback: str
+    payload: PayloadT
+    type: Literal["scheduled", "delayed"]  # "scheduled" for a datetime, "delayed" for seconds
+    time: int  # Unix time in seconds when it runs
+    delay_in_seconds: NotRequired[float]  # set for "delayed" tasks
+```
+
+### `get_schedule`, `list_schedules`, `delete_schedules`
+
+```python
+async def get_schedule(self, id: str) -> Schedule | None
+async def list_schedules(self, name: str) -> list[Schedule]
+def delete_schedules(self, name: str) -> None
+```
+
+- `get_schedule` looks up a task by its `task_id`.
+- `list_schedules` returns pending tasks for the callback `name`. Like the
+  TypeScript SDK, it currently returns at most one.
+- `delete_schedules` removes every pending task for the callback `name`. It
+  is not a coroutine.
+
+### `schedule_next_alarm`
+
+```python
+async def schedule_next_alarm(self, ms: int = 1000) -> None
+```
+
+Sets the Durable Object alarm to fire in `ms` milliseconds. The SDK calls this
+itself, and you shouldn't normally need it.
+
+## Outbound interception
+
+Runtime methods for changing outbound rules on one instance. Handler names
+refer to keys in `outbound_handlers`. Unknown names raise `ValueError`. See
+[Outbound traffic](outbound-traffic.md) for the full guide.
+
+```python
+async def set_outbound_handler(self, method_name: str, params: Any = None) -> None
+async def set_outbound_by_host(self, hostname: str, method_name: str, params: Any = None) -> None
+async def set_outbound_by_hosts(self, handlers: dict[str, str | dict]) -> None
+async def remove_outbound_by_host(self, hostname: str) -> None
+async def set_allowed_hosts(self, hosts: list[str]) -> None
+async def set_denied_hosts(self, hosts: list[str]) -> None
+async def allow_host(self, hostname: str) -> None
+async def deny_host(self, hostname: str) -> None
+async def remove_allowed_host(self, hostname: str) -> None
+async def remove_denied_host(self, hostname: str) -> None
+```
+
+### `OutboundHandler`
+
+```python
+type OutboundHandler = Callable[[Request, Any, OutboundHandlerContext], Awaitable[Response]]
+```
+
+An `async` function taking `(request, env, ctx)`.
+
+### `OutboundHandlerContext`
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `container_id` | `str` | ID of the Durable Object that owns the container. |
+| `class_name` | `str` | Name of the `Container` subclass. |
+| `params` | `Any \| None` | Params given to `set_outbound_handler` or `set_outbound_by_host`. |
+
+### `ContainerProxy`
+
+The Worker entrypoint that runs outbound handlers. Import it in your Worker's
+entry module whenever you use outbound configuration:
+
+```python
+from containers import ContainerProxy  # noqa: F401
+```
+
+## Utility functions
+
+### `get_container`
+
+```python
+def get_container(binding: DurableObjectNamespace, name: str = "cf-singleton-container") -> DurableObjectStub
+```
+
+Returns the stub for the instance called `name`. Not a coroutine.
+
+### `get_random`
+
+```python
+async def get_random(binding: DurableObjectNamespace, instances: int = 3) -> DurableObjectStub
+```
+
+Returns the stub for one of `instances` instances, chosen at random.
+
+### `switch_port`
+
+```python
+def switch_port(request: Request, port: int) -> Request
+```
+
+Returns a copy of `request` that `Container.fetch()` sends to `port`.
+
+```python
+return await container.fetch(switch_port(request, 9090))
+```
+
+See [Routing and scaling](routing.md) for how to use all three.
+
+## Exports
+
+Everything public is importable from `containers`:
+
+| Name | Kind |
+| --- | --- |
+| `Container`, `ContainerProxy` | Classes |
+| `get_container`, `get_random`, `switch_port` | Functions |
+| `State`, `Schedule` | `TypedDict`s |
+| `Signal`, `OutboundHandler` | Type aliases |
+| `OutboundHandlerContext` | Class |
+| `DurableObjectNamespace`, `DurableObjectStub` | Typing-only `Protocol`s |
+
+The package ships a `py.typed` marker. Types are looser only where a value is a
+JavaScript object, such as `env` or `self.ctx`.
+
+## Logging
+
+The SDK logs through the standard
+[`logging`](https://docs.python.org/3/library/logging.html) module, under the
+`containers.container` logger, and you configure it like any other logger.
+Errors are logged with `logger.error`, and routine events such as an activity
+timeout with `logger.info`:
+
+```python
+import logging
+
+logging.getLogger("containers").setLevel(logging.INFO)
+```
+
+Output ends up in your Worker's logs. See
+[Logs](https://developers.cloudflare.com/workers/observability/logs/).

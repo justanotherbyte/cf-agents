@@ -1,0 +1,989 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Python SDKs that push Cloudflare Python Workers to their limits.">
+      
+      
+      
+        <link rel="canonical" href="https://github.com/containers/lifecycle/">
+      
+      
+        <link rel="prev" href="../getting-started/">
+      
+      
+        <link rel="next" href="../routing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Lifecycle - Crosswind</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=JetBrains+Mono:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"JetBrains Mono";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#lifecycle" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <a href="../.." class="md-ellipsis cw-header__home">
+            Crosswind
+          </a>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Lifecycle
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <ul class="cw-header__links">
+      <li><a href="../..#what-is-crosswind">Overview</a></li>
+      <li><a href="../..#why-crosswind">Principles</a></li>
+      <li><a href="../..#sdks">SDKs</a></li>
+      <li><a href="../getting-started/">Containers</a></li>
+    </ul>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Crosswind" class="md-nav__button md-logo" aria-label="Crosswind" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Crosswind
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Containers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Containers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        States
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#starting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle hooks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sleeping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sleeping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stopping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stopping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#errors-from-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors from requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing and scaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../outbound-traffic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outbound traffic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../container-class/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container class
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coming-from-typescript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coming from TypeScript
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        States
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#starting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle hooks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sleeping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sleeping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stopping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stopping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#errors-from-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors from requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Permanent link">&para;</a></h1>
+<p>A container starts on demand, serves requests, and goes to sleep once it has
+been idle for <code>sleep_after</code>. The <code>Container</code> class tracks where each instance is
+in that cycle and calls your hooks as it moves through it.</p>
+<p>This page covers what the SDK does. For what the platform does underneath, such
+as cold starts, placement and host restarts, see
+<a href="https://developers.cloudflare.com/containers/concepts/architecture/">Lifecycle of a Container</a>.</p>
+<h2 id="states">States<a class="headerlink" href="#states" title="Permanent link">&para;</a></h2>
+<p><code>await container.get_state()</code> returns a <code>State</code> dict:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span><span class="s2">"status"</span><span class="p">:</span> <span class="s2">"healthy"</span><span class="p">,</span> <span class="s2">"last_change"</span><span class="p">:</span> <span class="mi">1791100000000</span><span class="p">}</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="p">{</span><span class="s2">"status"</span><span class="p">:</span> <span class="s2">"stopped_with_code"</span><span class="p">,</span> <span class="s2">"last_change"</span><span class="p">:</span> <span class="mi">1791100000000</span><span class="p">,</span> <span class="s2">"exit_code"</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th><code>status</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"stopped"</code></td>
+<td>Not running. Every instance starts here.</td>
+</tr>
+<tr>
+<td><code>"running"</code></td>
+<td>Started, but the SDK hasn't confirmed its ports are ready. <code>start()</code> leaves the container in this state.</td>
+</tr>
+<tr>
+<td><code>"healthy"</code></td>
+<td>Started, with every port it was waiting for accepting connections.</td>
+</tr>
+<tr>
+<td><code>"stopping"</code></td>
+<td>Shutting down.</td>
+</tr>
+<tr>
+<td><code>"stopped_with_code"</code></td>
+<td>Exited with a known exit code, stored in <code>exit_code</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><code>last_change</code> is a Unix timestamp in milliseconds. The state is persisted in the
+Durable Object's storage, so it survives the Durable Object being evicted from
+memory.</p>
+<h2 id="starting">Starting<a class="headerlink" href="#starting" title="Permanent link">&para;</a></h2>
+<p>You rarely need to start a container yourself. <code>fetch()</code> and
+<code>container_fetch()</code> start it if it isn't <code>healthy</code>, wait for the target port,
+then forward the request.</p>
+<p>To start one ahead of a request, or without sending any traffic, call one of:</p>
+<dl>
+<dt><code>start_and_wait_for_ports(ports=None)</code></dt>
+<dd>Starts the container and waits until every port is accepting connections.
+The state becomes <code>healthy</code>. If <code>ports</code> isn't given, it uses
+<code>required_ports</code>, then <code>default_port</code>.</dd>
+<dt><code>start()</code></dt>
+<dd>Starts the container and waits only until the instance is up. It doesn't
+wait for your application's ports. The state stays <code>running</code>. This suits
+batch jobs that don't serve HTTP.</dd>
+</dl>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">container</span> <span class="o">=</span> <span class="n">get_container</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">MY_CONTAINER</span><span class="p">,</span> <span class="s2">"job-42"</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">await</span> <span class="n">container</span><span class="o">.</span><span class="n">start_and_wait_for_ports</span><span class="p">(</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">env_vars</span><span class="o">=</span><span class="p">{</span><span class="s2">"JOB_ID"</span><span class="p">:</span> <span class="s2">"42"</span><span class="p">},</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">port_ready_timeout_ms</span><span class="o">=</span><span class="mi">60_000</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">)</span>
+</code></pre></div>
+<p>Both accept <code>env_vars</code>, <code>entrypoint</code>, <code>enable_internet</code> and <code>labels</code>, which
+override the class attributes of the same name for that start only. Startup
+waits up to 8 seconds by default to get an instance, then up to 20 seconds
+for ports, polling every 300 ms. See the
+<a href="../container-class/#start-and-stop"><code>Container</code> reference</a> for every option.</p>
+<p>Concurrent requests that arrive while a container is starting share the same
+start, so the container is never started twice.</p>
+<h2 id="lifecycle-hooks">Lifecycle hooks<a class="headerlink" href="#lifecycle-hooks" title="Permanent link">&para;</a></h2>
+<p>Override these <code>async def</code> methods on your subclass. They must be coroutines,
+because the SDK always awaits them.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">MyContainer</span><span class="p">(</span><span class="n">Container</span><span class="p">):</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">default_port</span> <span class="o">=</span> <span class="mi">8080</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="s2">"health_report"</span><span class="p">)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_stop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">exit_code</span><span class="p">,</span> <span class="n">reason</span><span class="p">):</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"stopped: exit_code=</span><span class="si">{</span><span class="n">exit_code</span><span class="si">}</span><span class="s2"> reason=</span><span class="si">{</span><span class="n">reason</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">error</span><span class="p">):</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">"container error:"</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>        <span class="k">raise</span> <span class="n">error</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_activity_expired</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">"idle, shutting down"</span><span class="p">)</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+</code></pre></div>
+<dl>
+<dt><code>on_start()</code></dt>
+<dd>Runs after a successful <code>start()</code> or <code>start_and_wait_for_ports()</code>, including
+the implicit start inside <code>fetch()</code>. Explicit calls run it even when the
+container was already running, so make it safe to run more than once. It
+runs inside
+<a href="https://developers.cloudflare.com/durable-objects/api/state/#blockconcurrencywhile"><code>block_concurrency_while</code></a>,
+so no other event reaches this Durable Object until it returns. Keep it
+short.</dd>
+<dt><code>on_stop(*, exit_code, reason)</code></dt>
+<dd>Runs once the SDK sees the container process has exited, whether it was
+stopped, destroyed, crashed or exited on its own. <code>exit_code</code> is an <code>int</code>,
+<code>0</code> for a clean exit. A <code>destroy()</code> usually reports <code>137</code> (128 + <code>SIGKILL</code>).</dd>
+<dt><code>on_error(error)</code></dt>
+<dd>Runs when starting the container or waiting for a port fails. <code>error</code> is
+always an <code>Exception</code>. The default implementation logs it and re-raises.
+Errors raised from this hook are ignored, and the original error propagates
+anyway.</dd>
+<dt><code>on_activity_expired()</code></dt>
+<dd>Runs when the container has been idle for <code>sleep_after</code>. The default
+implementation calls <code>self.stop()</code>. See <a href="#sleeping">Sleeping</a>.</dd>
+</dl>
+<h2 id="sleeping">Sleeping<a class="headerlink" href="#sleeping" title="Permanent link">&para;</a></h2>
+<p><code>sleep_after</code> sets how long a container can sit idle before
+<code>on_activity_expired()</code> runs. It accepts seconds as an <code>int</code>, or a string such as
+<code>"30s"</code>, <code>"5m"</code> or <code>"2h"</code>. The default is <code>"10m"</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">MyContainer</span><span class="p">(</span><span class="n">Container</span><span class="p">):</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">sleep_after</span> <span class="o">=</span> <span class="s2">"5m"</span>
+</code></pre></div>
+<p>These all count as activity and reset the timer:</p>
+<ul>
+<li>a request proxied through <code>fetch()</code> or <code>container_fetch()</code>,</li>
+<li>a response body that is still streaming,</li>
+<li>an open WebSocket, plus every message sent through it in either direction,</li>
+<li>starting the container.</li>
+</ul>
+<p>The timer only starts counting once the last in-flight request has finished, so
+a long download or a WebSocket that stays open keeps the container awake.</p>
+<p>If the container does work that doesn't go through the SDK, for example a
+background job it started itself, call <code>self.renew_activity_timeout()</code> to keep
+it awake. This is a plain method, not a coroutine.</p>
+<div class="admonition warning">
+<p class="admonition-title">Overriding <code>on_activity_expired</code></p>
+<p>If you override it, call <code>await self.stop()</code> or <code>await self.destroy()</code>
+yourself, otherwise the container never goes to sleep. When the hook
+returns without stopping, the SDK renews the timeout and calls it again
+after another <code>sleep_after</code>.</p>
+</div>
+<p>The SDK checks the timer from the Durable Object's
+<a href="https://developers.cloudflare.com/durable-objects/api/alarms/">alarm</a>. The
+<code>Container</code> class owns the <code>alarm()</code> handler, so don't override it. Use
+<a href="../container-class/#scheduling"><code>schedule()</code></a> for your own timed work.</p>
+<h2 id="stopping">Stopping<a class="headerlink" href="#stopping" title="Permanent link">&para;</a></h2>
+<dl>
+<dt><code>await container.stop(signal="SIGTERM")</code></dt>
+<dd>Sends a signal to the container's main process. It takes <code>"SIGTERM"</code>,
+<code>"SIGINT"</code>, <code>"SIGKILL"</code>, an <code>int</code>, or a
+<a href="https://docs.python.org/3/library/signal.html#signal.Signals"><code>signal.Signals</code></a>
+member. With <code>SIGTERM</code>, your process can shut down cleanly.</dd>
+<dt><code>await container.destroy()</code></dt>
+<dd>Kills the container immediately with <code>SIGKILL</code>.</dd>
+</dl>
+<p>Both lead to <code>on_stop()</code>. When the platform itself stops a container, such as
+during a <a href="https://developers.cloudflare.com/containers/configuration/rollouts/">rollout</a>,
+it sends <code>SIGTERM</code> first and follows with <code>SIGKILL</code> after a grace period. Handle
+<code>SIGTERM</code> in your image if you need to clean up.</p>
+<h2 id="persistence">Persistence<a class="headerlink" href="#persistence" title="Permanent link">&para;</a></h2>
+<p>Container disk is ephemeral. Every start begins from a fresh copy of the image.
+To keep data across restarts, store it in the Durable Object's own storage, for
+example through <code>self.ctx.storage</code>, or in another service such as
+<a href="https://developers.cloudflare.com/r2/">R2</a>. See
+<a href="https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/">SQLite storage</a>
+and <a href="https://developers.cloudflare.com/containers/examples/r2-fuse-mount/">Mount R2 buckets with FUSE</a>.</p>
+<h2 id="errors-from-requests">Errors from requests<a class="headerlink" href="#errors-from-requests" title="Permanent link">&para;</a></h2>
+<p>When <code>fetch()</code> or <code>container_fetch()</code> can't reach the container, it returns a
+<code>Response</code> instead of raising:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>503</code></td>
+<td>No instance is available. You may have reached <code>max_instances</code>, or a first deploy may still be provisioning.</td>
+</tr>
+<tr>
+<td><code>429</code></td>
+<td>Containers are being requested too quickly.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>The container failed to start, disconnected mid-request (<code>"Container suddenly disconnected, try again"</code>), or the request couldn't be proxied.</td>
+</tr>
+</tbody>
+</table>
+<p><code>start()</code> and <code>start_and_wait_for_ports()</code> raise instead, usually a
+<code>RuntimeError</code>, after calling <code>on_error()</code>.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.sections"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/pypi-version.js"></script>
+      
+    
+  </body>
+</html>

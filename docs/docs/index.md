@@ -71,8 +71,8 @@ Worker lean.
 
 | SDK | Package | Description | Version |
 | --- | --- | --- | --- |
-| [Containers](containers/getting-started.md) | `containers-py` | Start, stop and route requests to Cloudflare Containers from a Python Worker. | 0.1.0 |
-| [Agents](agents/getting-started.md) | `agents-py` | Build stateful AI agents on the Cloudflare Agents SDK from a Python Worker. | 0.1.0 |
+| [Containers](containers/getting-started.md) | `containers-py` | Start, stop and route requests to Cloudflare Containers from a Python Worker. | [PyPI](https://pypi.org/project/containers-py/){ .cw-pypi-version } |
+| [Agents](agents/getting-started.md) | `agents-py` | Build stateful AI agents on the Cloudflare Agents SDK from a Python Worker. | [PyPI](https://pypi.org/project/agents-py/){ .cw-pypi-version } |
 
 </div>
 
