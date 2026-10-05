@@ -4,12 +4,12 @@ site_url: https://github.com
 theme:
   name: material
   custom_dir: overrides
-  font:
-    text: JetBrains Mono
-    code: JetBrains Mono
-  # Dark only: the site uses one solid #0f0f0f background everywhere
+  # JetBrains Mono is loaded in overrides/main.html
+  font: false
+  # One scheme; extra.css switches its colours with prefers-color-scheme, so
+  # dark mode follows the OS and there is no toggle
   palette:
-    scheme: slate
+    scheme: default
     primary: custom
     accent: custom
   features:

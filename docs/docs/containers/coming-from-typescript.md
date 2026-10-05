@@ -18,7 +18,7 @@ out.
 
     ```python
     from containers import Container, get_container
-    from workers import WorkerEntrypoint
+    from workers import Request, Response, WorkerEntrypoint
 
 
     class MyContainer(Container):
@@ -27,9 +27,9 @@ out.
 
 
     class Default(WorkerEntrypoint):
-        async def fetch(self, request):
-            data = await request.json()
-            container = get_container(self.env.MY_CONTAINER, data["session-id"])
+        async def fetch(self, request: Request) -> Response:
+            session_id = request.headers.get("x-session-id", "default")
+            container = get_container(self.env.MY_CONTAINER, session_id)
             return await container.fetch(request)
     ```
 
@@ -45,7 +45,7 @@ out.
 
     export default {
       async fetch(request, env) {
-        const { "session-id": sessionId } = await request.json();
+        const sessionId = request.headers.get("x-session-id") ?? "default";
         const container = getContainer(env.MY_CONTAINER, sessionId);
         return container.fetch(request);
       },
@@ -82,12 +82,28 @@ Nested option objects are flattened into keyword-only arguments.
 | `startAndWaitForPorts(8080, { portReadyTimeoutMS: 30_000 }, { envVars })` | `start_and_wait_for_ports(8080, port_ready_timeout_ms=30_000, env_vars=...)` |
 | `start({ envVars, entrypoint }, { portToCheck, retries })` | `start(env_vars=..., entrypoint=..., port_to_check=..., retries=...)` |
 | `waitForPort({ portToCheck: 8080, retries: 10 })` | `wait_for_port(8080, retries=10)` |
-| `containerFetch("/api", { method: "POST" }, 9090)` | `container_fetch("/api", port=9090, method="POST")` |
+| `containerFetch("/api", { method: "POST" }, 9090)` | `container_fetch("/api", port=9090, method=HTTPMethod.POST)` |
 | `onStop({ exitCode, reason })` | `on_stop(self, *, exit_code, reason)` |
 | `new Container(ctx, env, { defaultPort: 8080 })` | `super().__init__(ctx, env, default_port=8080)` |
 
 Units stay the same as in TypeScript: timeouts and `wait_interval` are in
 milliseconds, while `sleep_after` and `schedule()` delays are in seconds.
+
+## Types
+
+| TypeScript | Python |
+| --- | --- |
+| `State` | `State`, a `TypedDict` |
+| `Schedule<T = string>` | `Schedule[PayloadT]`, a generic `TypedDict`. `PayloadT` defaults to `str` |
+| `OutboundHandlerContext<Params = unknown>` | `OutboundHandlerContext[ParamsT]`. `ParamsT` defaults to `Any` |
+| `'SIGTERM' \| 'SIGINT' \| 'SIGKILL'` | `Signal`, a `Literal` alias |
+| `AbortSignal` | `asyncio.Event` |
+| `DurableObjectNamespace<MyContainer>` / `DurableObjectStub<MyContainer>` | `DurableObjectNamespace` / `DurableObjectStub`. These aren't generic, so RPC calls on a stub are `Any` |
+
+The last row is the main gap compared with TypeScript, where the stub carries
+the class's method types. See
+[Typing calls on a stub](routing.md#typing-calls-on-a-stub) for how to work
+around it.
 
 ## Cancellation
 

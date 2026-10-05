@@ -72,12 +72,20 @@ An outbound handler is an `async` function that takes the intercepted request
 and returns a `Response`:
 
 ```python
+from typing import Any
+
 from containers import OutboundHandlerContext
 from workers import Request, Response
 
 
-async def handler(request: Request, env, ctx: OutboundHandlerContext) -> Response: ...
+async def handler(
+    request: Request, env: Any, ctx: OutboundHandlerContext
+) -> Response: ...
 ```
+
+This shape is exported as the type alias `containers.OutboundHandler`, which is
+what `outbound`, `outbound_by_host` and `outbound_handlers` expect. The
+examples below use the same imports.
 
 - `request` is the request the container made.
 - `env` is your Worker's environment, with all its bindings and secrets.
@@ -96,11 +104,13 @@ Handlers run in `ContainerProxy`, not in your Durable Object, so they can't use
 beats a glob:
 
 ```python
-async def mock_payments(request, env, ctx):
+async def mock_payments(
+    request: Request, env: Any, ctx: OutboundHandlerContext
+) -> Response:
     return Response.from_json({"status": "succeeded"})
 
 
-async def block(request, env, ctx):
+async def block(request: Request, env: Any, ctx: OutboundHandlerContext) -> Response:
     return Response("blocked in tests", status=403)
 
 
@@ -122,7 +132,9 @@ If only `outbound_by_host` is set, the container's other traffic is left alone.
 from workers import fetch
 
 
-async def log_and_forward(request, env, ctx):
+async def log_and_forward(
+    request: Request, env: Any, ctx: OutboundHandlerContext
+) -> Response:
     print(f"[{ctx.container_id}] outbound: {request.method} {request.url}")
     return await fetch(request)
 
@@ -140,7 +152,7 @@ Because handlers can read `env`, they can add secrets the container never sees:
 from workers import Request, fetch
 
 
-async def github(request, env, ctx):
+async def github(request: Request, env: Any, ctx: OutboundHandlerContext) -> Response:
     headers = [
         (key, value)
         for key, value in request.headers.items()
@@ -166,7 +178,9 @@ class Agent(Container):
     default_port = 8080
 
 
-async def catch_all(request, env, ctx):
+async def catch_all(
+    request: Request, env: Any, ctx: OutboundHandlerContext
+) -> Response:
     return Response(f"blocked by {ctx.class_name}", status=403)
 
 
@@ -211,6 +225,21 @@ For example:
     exec "$@"
     ```
 
+=== "Python (httpx, requests)"
+
+    Both libraries verify against the `certifi` bundle, not the system trust
+    store. Install the CA with the Debian entrypoint above, then point them at
+    the system bundle:
+
+    ```python
+    class Agent(Container):
+        intercept_https = True
+        env_vars = {
+            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+            "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+        }
+    ```
+
 The file only exists at runtime, so install it from your entrypoint, not in
 your `Dockerfile`. HTTPS interception needs a `compatibility_date` of
 `2026-04-02` or later. On an older runtime, the SDK raises a `RuntimeError`
@@ -224,12 +253,28 @@ Rules set as class attributes apply to every instance. To change rules for one
 instance while it runs, register named handlers in `outbound_handlers`, then
 switch between them:
 
+`ctx.params` is generic. Parametrise `OutboundHandlerContext` to type the
+params a handler expects:
+
 ```python
-async def allow_all(request, env, ctx):
+from typing import TypedDict
+
+
+class TenantParams(TypedDict):
+    tenant: str
+
+
+async def allow_all(
+    request: Request, env: Any, ctx: OutboundHandlerContext
+) -> Response:
     return await fetch(request)
 
 
-async def tag_tenant(request, env, ctx):
+async def tag_tenant(
+    request: Request, env: Any, ctx: OutboundHandlerContext[TenantParams]
+) -> Response:
+    if ctx.params is None:  # params are optional, so narrow before use
+        return Response("missing tenant", status=500)
     headers = [*request.headers.items(), ("x-tenant", ctx.params["tenant"])]
     return await fetch(Request(request, headers=headers))
 
@@ -244,7 +289,8 @@ class Workspace(Container):
 container = get_container(self.env.WORKSPACE, workspace_id)
 
 # Route one host through a named handler, with params
-await container.set_outbound_by_host("api.example.com", "tag_tenant", {"tenant": "acme"})
+params: TenantParams = {"tenant": "acme"}
+await container.set_outbound_by_host("api.example.com", "tag_tenant", params)
 
 # Replace the catch-all handler
 await container.set_outbound_handler("allow_all")

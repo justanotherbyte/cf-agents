@@ -36,7 +36,7 @@
       <li><a href="{{ home }}#what-is-crosswind">Overview</a></li>
       <li><a href="{{ home }}#why-crosswind">Principles</a></li>
       <li><a href="{{ home }}#sdks">SDKs</a></li>
-      <li><a href="{{ 'containers/getting-started/' | url }}">Containers</a></li>
+      <li><a href="{{ 'containers/getting-started/' | url }}" {% if page and page.url.startswith('containers/') %}aria-current="page"{% endif %}>Containers</a></li>
     </ul>
     {% if config.theme.palette %}
       {% if not config.theme.palette is mapping %}

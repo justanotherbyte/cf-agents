@@ -90,10 +90,12 @@ arguments are the same as `workers.Request` (`method`, `headers`, `body` and so
 on), and relative URLs are fine:
 
 ```python
+from http import HTTPMethod
+
 response = await container.container_fetch(
     "/api/jobs",
     port=9090,
-    method="POST",
+    method=HTTPMethod.POST,
     headers={"content-type": "application/json"},
     body=json.dumps({"input": "s3://bucket/video.mp4"}),
 )
@@ -141,22 +143,37 @@ Define extra methods on your subclass to give your Worker a typed, narrow
 interface instead of raw HTTP:
 
 ```python
+import json
+from http import HTTPMethod
+from typing import TypedDict
+
+from containers import Container, get_container
+from workers import Request, Response, WorkerEntrypoint
+
+
+class TranscodeResult(TypedDict):
+    output_url: str
+    duration_s: float
+
+
 class Transcoder(Container):
     default_port = 8080
 
-    async def transcode(self, source_url, preset):
+    async def transcode(self, source_url: str, preset: str) -> TranscodeResult:
         response = await self.container_fetch(
             "/transcode",
-            method="POST",
+            method=HTTPMethod.POST,
             body=json.dumps({"source": source_url, "preset": preset}),
         )
         return await response.json()
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         container = get_container(self.env.TRANSCODER, "video-123")
-        result = await container.transcode("https://example.com/in.mp4", "720p")
+        result: TranscodeResult = await container.transcode(
+            "https://example.com/in.mp4", "720p"
+        )
         return Response.from_json(result)
 ```
 
@@ -170,7 +187,7 @@ call will recurse:
 class MyContainer(Container):
     default_port = 8080
 
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         if urlparse(request.url).path == "/health":
             return Response("ok")
 
@@ -185,12 +202,36 @@ class MyContainer(Container):
 `get_container` and `get_random` take a `DurableObjectNamespace` and return a
 `DurableObjectStub`. Both are typing-only `Protocol`s exported from
 `containers`, because the Workers runtime doesn't ship Python types for
-bindings. Calls to methods on the stub are typed as `Any`.
+bindings:
 
 ```python
+from typing import Any
+
 from containers import DurableObjectStub, get_container
 
 
-def container_for(env, user_id: str) -> DurableObjectStub:
+def container_for(env: Any, user_id: str) -> DurableObjectStub:
     return get_container(env.MY_CONTAINER, f"user-{user_id}")
 ```
+
+`self.env` is untyped, so annotate bindings yourself where it helps.
+
+### Typing calls on a stub
+
+`DurableObjectStub` types `fetch()`, but every other attribute is `Any`. A typo
+such as `stub.get_stat()`, or a wrong argument, isn't caught. To get your
+container's method signatures checked, annotate the result in the Worker, as
+`result: TranscodeResult` does above, or `cast` the stub to your subclass:
+
+```python
+from typing import cast
+
+container = cast(Transcoder, get_container(self.env.TRANSCODER, "video-123"))
+result = await container.transcode("https://example.com/in.mp4", "720p")  # checked
+```
+
+The cast is a convenience, not the truth: the object is still an RPC stub.
+Only `async def` methods are safe to call through it, with the
+[argument rules above](#calling-container-methods-from-a-worker). Attributes
+such as `default_port`, and plain methods such as `renew_activity_timeout()`,
+don't behave the same through a stub.

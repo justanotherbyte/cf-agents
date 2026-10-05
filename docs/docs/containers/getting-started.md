@@ -14,7 +14,7 @@ API has been reworked to read like Python.
 
 ```python
 from containers import Container, get_container
-from workers import WorkerEntrypoint
+from workers import Request, Response, WorkerEntrypoint
 
 
 class MyContainer(Container):
@@ -23,10 +23,10 @@ class MyContainer(Container):
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
-        data = await request.json()
+    async def fetch(self, request: Request) -> Response:
         # Get the container instance for the given session ID
-        container = get_container(self.env.MY_CONTAINER, data["session-id"])
+        session_id = request.headers.get("x-session-id", "default")
+        container = get_container(self.env.MY_CONTAINER, session_id)
         # Pass the request to the container instance on its default port
         return await container.fetch(request)
 ```
@@ -95,36 +95,103 @@ dependencies get bundled into your Worker, see
 
 ## 2. Write the container
 
-Any image that listens on a port works. This one serves plain HTTP on port
-`8080` using only the standard library:
+Any image that listens on a port works. This one is a small
+[FastAPI](https://fastapi.tiangolo.com/) app served by
+[uvicorn](https://www.uvicorn.org/) on port `8080`, with its dependencies
+managed by [`uv`](https://docs.astral.sh/uv/). The container is a separate
+Python project from the Worker, so it gets its own `pyproject.toml`:
 
-```python title="container_src/server.py"
-import os
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        message = os.environ.get("MESSAGE", "no message set")
-        body = f"Hi from a container! MESSAGE={message}\n".encode()
-        self.send_response(200)
-        self.send_header("content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(body)
-
-
-HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+```toml title="container_src/pyproject.toml"
+[project]
+name = "container-app"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic-settings>=2.6",
+    "uvicorn[standard]>=0.32",
+]
 ```
+
+Lock it once, so every image build installs the same versions:
+
+```sh
+cd container_src && uv lock && cd ..
+```
+
+```python title="container_src/main.py"
+from fastapi import FastAPI
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    # Read from the MESSAGE environment variable
+    message: str = "no message set"
+
+
+class Echo(BaseModel):
+    text: str
+
+
+settings = Settings()
+app = FastAPI(title="hello-containers")
+
+
+@app.get("/")
+async def index() -> dict[str, str]:
+    return {"message": settings.message}
+
+
+@app.post("/echo")
+async def echo(body: Echo) -> Echo:
+    return body
+```
+
+The Dockerfile copies `uv` in from its official image and installs the locked
+dependencies before it copies your code, so editing `main.py` doesn't reinstall
+them:
 
 ```dockerfile title="Dockerfile"
 FROM python:3.13-slim
 
+# Pin a specific uv version in production
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
-COPY container_src/server.py server.py
+
+# Dependencies first: this layer is cached until the lockfile changes
+COPY container_src/pyproject.toml container_src/uv.lock ./
+RUN uv sync --locked --no-install-project --no-dev
+
+COPY container_src/main.py ./
+
+# Run from the virtual environment uv created
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8080
-CMD ["python", "server.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
+
+Wrangler uses your project root as the build context, so keep your Worker's
+virtual environment and vendored packages out of it:
+
+```text title=".dockerignore"
+.git
+.venv
+.wrangler
+python_modules
+node_modules
+**/__pycache__
+```
+
+uvicorn shuts down cleanly on `SIGTERM`, which is what the SDK sends when a
+container goes to sleep.
 
 !!! tip
 
@@ -139,10 +206,10 @@ CMD ["python", "server.py"]
 Replace `src/entry.py`:
 
 ```python title="src/entry.py"
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from containers import Container, get_container, get_random
-from workers import Response, WorkerEntrypoint
+from workers import Request, Response, WorkerEntrypoint
 
 
 class MyContainer(Container):
@@ -153,37 +220,33 @@ class MyContainer(Container):
     # Environment variables passed to the container on every start
     env_vars = {"MESSAGE": "I was passed in via the Container class!"}
 
-    async def on_start(self):
+    async def on_start(self) -> None:
         print("Container successfully started")
 
-    async def on_stop(self, *, exit_code, reason):
+    async def on_stop(self, *, exit_code: int, reason: str) -> None:
         print(f"Container stopped with exit code {exit_code} ({reason})")
 
-    async def on_error(self, error):
+    async def on_error(self, error: Exception) -> None:
         print("Container error:", error)
         raise error
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
-        path = urlparse(request.url).path
+    async def fetch(self, request: Request) -> Response:
+        query = parse_qs(urlparse(request.url).query)
 
-        # One container per ID: /container/<id>
-        if path.startswith("/container/"):
-            container = get_container(self.env.MY_CONTAINER, path)
-            return await container.fetch(request)
-
-        # Spread requests across 3 interchangeable instances
-        if path == "/lb":
+        if "id" in query:
+            # One container per ID: ?id=<id>
+            container = get_container(self.env.MY_CONTAINER, query["id"][0])
+        elif "lb" in query:
+            # Spread requests across 3 interchangeable instances: ?lb
             container = await get_random(self.env.MY_CONTAINER, 3)
-            return await container.fetch(request)
-
-        # A single shared instance
-        if path == "/singleton":
+        else:
+            # A single shared instance
             container = get_container(self.env.MY_CONTAINER)
-            return await container.fetch(request)
 
-        return Response("Try /container/<id>, /lb or /singleton\n")
+        # The whole request goes to the FastAPI app, query string included
+        return await container.fetch(request)
 ```
 
 `MyContainer` has to be importable from the entry module (`src/entry.py`),
@@ -241,17 +304,24 @@ For every option, including `instance_type` and rollout settings, see
 uv run pywrangler dev
 ```
 
-Wrangler builds the image with Docker and runs containers on your machine.
-Worker code reloads on save, but container code doesn't: press `r` in the
-`dev` session to rebuild the image.
+Wrangler builds the image with Docker and runs containers on your machine. The
+first build downloads the base image and installs your dependencies, so it
+takes a while. Later builds reuse the cached layers. Worker code reloads on
+save, but container code doesn't: press `r` in the `dev` session to rebuild the
+image.
 
 ```sh
-curl http://localhost:8787/container/abc
-# Hi from a container! MESSAGE=I was passed in via the Container class!
+curl "http://localhost:8787/?id=abc"
+# {"message":"I was passed in via the Container class!"}
+
+curl -X POST "http://localhost:8787/echo?id=abc" \
+  -H "content-type: application/json" \
+  -d '{"text": "hello"}'
+# {"text":"hello"}
 ```
 
 The first request to a new ID cold-starts a container, which usually takes a
-few seconds. Requests after that go to the running instance until it sleeps.
+few seconds. Requests with the same `id` reach the same container. Requests after that go to the running instance until it sleeps.
 
 ## 6. Deploy
 

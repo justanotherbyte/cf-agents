@@ -42,14 +42,11 @@
       
     
     
-      
-        
-        
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=JetBrains+Mono:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
-        <style>:root{--md-text-font:"JetBrains Mono";--md-code-font:"JetBrains Mono"}</style>
-      
-    
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap">
+  <style>:root{--md-text-font:"JetBrains Mono";--md-code-font:"JetBrains Mono"}</style>
+
     
       <link rel="stylesheet" href="../../stylesheets/extra.css">
     
@@ -67,7 +64,7 @@
     
     
     
-    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
   
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
@@ -117,7 +114,7 @@
       <li><a href="../..#what-is-crosswind">Overview</a></li>
       <li><a href="../..#why-crosswind">Principles</a></li>
       <li><a href="../..#sdks">SDKs</a></li>
-      <li><a href="../getting-started/">Containers</a></li>
+      <li><a href="../getting-started/" aria-current="page">Containers</a></li>
     </ul>
     
       
@@ -551,6 +548,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cancellation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -670,6 +678,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cancellation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -743,7 +762,7 @@ out.</p>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">containers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Container</span><span class="p">,</span> <span class="n">get_container</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">workers</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorkerEntrypoint</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">workers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Request</span><span class="p">,</span> <span class="n">Response</span><span class="p">,</span> <span class="n">WorkerEntrypoint</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">class</span><span class="w"> </span><span class="nc">MyContainer</span><span class="p">(</span><span class="n">Container</span><span class="p">):</span>
@@ -752,9 +771,9 @@ out.</p>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="k">class</span><span class="w"> </span><span class="nc">Default</span><span class="p">(</span><span class="n">WorkerEntrypoint</span><span class="p">):</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">request</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        <span class="n">container</span> <span class="o">=</span> <span class="n">get_container</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">MY_CONTAINER</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="s2">"session-id"</span><span class="p">])</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">Request</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Response</span><span class="p">:</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        <span class="n">session_id</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"x-session-id"</span><span class="p">,</span> <span class="s2">"default"</span><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        <span class="n">container</span> <span class="o">=</span> <span class="n">get_container</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">MY_CONTAINER</span><span class="p">,</span> <span class="n">session_id</span><span class="p">)</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        <span class="k">return</span> <span class="k">await</span> <span class="n">container</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
 </code></pre></div>
 </div>
@@ -768,7 +787,7 @@ out.</p>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="k">export</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="p">{</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="k">async</span><span class="w"> </span><span class="nx">fetch</span><span class="p">(</span><span class="nx">request</span><span class="p">,</span><span class="w"> </span><span class="nx">env</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s2">"session-id"</span><span class="o">:</span><span class="w"> </span><span class="nx">sessionId</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">request</span><span class="p">.</span><span class="nx">json</span><span class="p">();</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">request</span><span class="p">.</span><span class="nx">headers</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="s2">"x-session-id"</span><span class="p">)</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="s2">"default"</span><span class="p">;</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">container</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">getContainer</span><span class="p">(</span><span class="nx">env</span><span class="p">.</span><span class="nx">MY_CONTAINER</span><span class="p">,</span><span class="w"> </span><span class="nx">sessionId</span><span class="p">);</span>
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">container</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span><span class="nx">request</span><span class="p">);</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="p">},</span>
@@ -869,7 +888,7 @@ out.</p>
 </tr>
 <tr>
 <td><code>containerFetch("/api", { method: "POST" }, 9090)</code></td>
-<td><code>container_fetch("/api", port=9090, method="POST")</code></td>
+<td><code>container_fetch("/api", port=9090, method=HTTPMethod.POST)</code></td>
 </tr>
 <tr>
 <td><code>onStop({ exitCode, reason })</code></td>
@@ -883,6 +902,45 @@ out.</p>
 </table>
 <p>Units stay the same as in TypeScript: timeouts and <code>wait_interval</code> are in
 milliseconds, while <code>sleep_after</code> and <code>schedule()</code> delays are in seconds.</p>
+<h2 id="types">Types<a class="headerlink" href="#types" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>TypeScript</th>
+<th>Python</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>State</code></td>
+<td><code>State</code>, a <code>TypedDict</code></td>
+</tr>
+<tr>
+<td><code>Schedule&lt;T = string&gt;</code></td>
+<td><code>Schedule[PayloadT]</code>, a generic <code>TypedDict</code>. <code>PayloadT</code> defaults to <code>str</code></td>
+</tr>
+<tr>
+<td><code>OutboundHandlerContext&lt;Params = unknown&gt;</code></td>
+<td><code>OutboundHandlerContext[ParamsT]</code>. <code>ParamsT</code> defaults to <code>Any</code></td>
+</tr>
+<tr>
+<td><code>'SIGTERM' \| 'SIGINT' \| 'SIGKILL'</code></td>
+<td><code>Signal</code>, a <code>Literal</code> alias</td>
+</tr>
+<tr>
+<td><code>AbortSignal</code></td>
+<td><code>asyncio.Event</code></td>
+</tr>
+<tr>
+<td><code>DurableObjectNamespace&lt;MyContainer&gt;</code> / <code>DurableObjectStub&lt;MyContainer&gt;</code></td>
+<td><code>DurableObjectNamespace</code> / <code>DurableObjectStub</code>. These aren't generic, so RPC calls on a stub are <code>Any</code></td>
+</tr>
+</tbody>
+</table>
+<p>The last row is the main gap compared with TypeScript, where the stub carries
+the class's method types. See
+<a href="../routing/#typing-calls-on-a-stub">Typing calls on a stub</a> for how to work
+around it.</p>
 <h2 id="cancellation">Cancellation<a class="headerlink" href="#cancellation" title="Permanent link">&para;</a></h2>
 <p><code>AbortSignal</code> is replaced by
 <a href="https://docs.python.org/3/library/asyncio-sync.html#asyncio.Event"><code>asyncio.Event</code></a>.

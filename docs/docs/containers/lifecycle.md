@@ -14,11 +14,17 @@ as cold starts, placement and host restarts, see
 
 ## States
 
-`await container.get_state()` returns a `State` dict:
+`await container.get_state()` returns a `State`, a `TypedDict`:
 
 ```python
-{"status": "healthy", "last_change": 1791100000000}
-{"status": "stopped_with_code", "last_change": 1791100000000, "exit_code": 1}
+from containers import State
+
+state: State = await container.get_state()
+# {"status": "healthy", "last_change": 1791100000000}
+# {"status": "stopped_with_code", "last_change": 1791100000000, "exit_code": 1}
+
+if state["status"] == "stopped_with_code":
+    print("exited with", state.get("exit_code"))
 ```
 
 | `status` | Meaning |
@@ -26,7 +32,7 @@ as cold starts, placement and host restarts, see
 | `"stopped"` | Not running. Every instance starts here. |
 | `"running"` | Started, but the SDK hasn't confirmed its ports are ready. `start()` leaves the container in this state. |
 | `"healthy"` | Started, with every port it was waiting for accepting connections. |
-| `"stopping"` | Shutting down. |
+| `"stopping"` | Reserved. The type includes it, but the SDK doesn't set it today. |
 | `"stopped_with_code"` | Exited with a known exit code, stored in `exit_code`. |
 
 `last_change` is a Unix timestamp in milliseconds. The state is persisted in the
@@ -74,23 +80,30 @@ Override these `async def` methods on your subclass. They must be coroutines,
 because the SDK always awaits them.
 
 ```python
+from containers import Container
+
+
 class MyContainer(Container):
     default_port = 8080
 
-    async def on_start(self):
-        await self.schedule(60, "health_report")
+    async def on_start(self) -> None:
+        print("started")
 
-    async def on_stop(self, *, exit_code, reason):
+    async def on_stop(self, *, exit_code: int, reason: str) -> None:
         print(f"stopped: exit_code={exit_code} reason={reason}")
 
-    async def on_error(self, error):
+    async def on_error(self, error: Exception) -> None:
         print("container error:", error)
         raise error
 
-    async def on_activity_expired(self):
+    async def on_activity_expired(self) -> None:
         print("idle, shutting down")
         await self.stop()
 ```
+
+The SDK declares `reason` as `Literal["exit", "runtime_signal"]`. Annotating it
+as `str` in an override is also valid, because an override may accept a wider
+type.
 
 `on_start()`
 :   Runs after a successful `start()` or `start_and_wait_for_ports()`, including

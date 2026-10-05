@@ -54,8 +54,13 @@ also accepts `default_port`, `sleep_after`, `env_vars`, `entrypoint` and
 `enable_internet` as keyword arguments:
 
 ```python
+from typing import Any
+
+from containers import Container
+
+
 class MyContainer(Container):
-    def __init__(self, ctx, env):
+    def __init__(self, ctx: Any, env: Any) -> None:
         super().__init__(ctx, env, default_port=8080, sleep_after="5m")
         self.env_vars = {"API_KEY": env.API_KEY}
 ```
@@ -78,10 +83,14 @@ default.
 ### `on_stop`
 
 ```python
-async def on_stop(self, *, exit_code: int, reason: Literal["exit", "runtime_signal"]) -> None
+async def on_stop(
+    self, *, exit_code: int, reason: Literal["exit", "runtime_signal"]
+) -> None
 ```
 
-Runs after the container process exits. Does nothing by default.
+Runs after the container process exits. Does nothing by default. Annotating
+`reason` as `str` in your override is also valid, because an override may
+accept a wider type.
 
 ### `on_error`
 
@@ -121,18 +130,33 @@ Override it to add routing or authentication, and forward with
 ### `container_fetch`
 
 ```python
-async def container_fetch(request: Request, /, port: int | None = None) -> Response
-async def container_fetch(url: str, /, port: int | None = None, **init) -> Response
+async def container_fetch(
+    self,
+    request_or_url: Request | str,
+    /,
+    port: int | None = None,
+    **init: Unpack[FetchKwargs],
+) -> Response
 ```
 
 Sends a request to the container. If the container isn't `healthy`, it starts
 it and waits for `port` first. `port` defaults to `default_port`. With a URL,
 `init` takes the same keyword arguments as `workers.Request`, such as `method`,
-`headers` and `body`. Relative URLs are allowed.
+`headers` and `body`, typed with the workers SDK's `FetchKwargs`. Relative URLs
+are allowed.
 
 ```python
-response = await self.container_fetch("/api/items", port=9090, method="POST", body="{}")
+from http import HTTPMethod
+
+response = await self.container_fetch(
+    "/api/items", port=9090, method=HTTPMethod.POST, body="{}"
+)
 ```
+
+`FetchKwargs` types `method` as
+[`http.HTTPMethod`](https://docs.python.org/3/library/http.html#http.HTTPMethod).
+A plain string such as `"POST"` also works at runtime, but a type checker will
+reject it.
 
 - Raises `ValueError` if no port is given and `default_port` isn't set.
 - Raises `TypeError` if `init` options are passed with a `Request`.
@@ -237,11 +261,12 @@ error if the port never becomes ready, or right away if the container crashes.
 ### `stop`
 
 ```python
-async def stop(self, signal: Literal["SIGTERM", "SIGINT", "SIGKILL"] | int = "SIGTERM") -> None
+async def stop(self, signal: Signal | int = "SIGTERM") -> None
 ```
 
 Sends a signal to the container's main process. Accepts a signal name, a number
-or a `signal.Signals` member. Leads to `on_stop()`.
+or a `signal.Signals` member. `Signal` is
+`Literal["SIGKILL", "SIGINT", "SIGTERM"]`. Leads to `on_stop()`.
 
 ### `destroy`
 
@@ -288,7 +313,9 @@ own lifecycle management. Don't override `alarm()`. Use `schedule()` instead.
 ### `schedule`
 
 ```python
-async def schedule(self, when: datetime | float, callback: str, payload: T | None = None) -> Schedule[T | None]
+async def schedule[T](
+    self, when: datetime | float, callback: str, payload: T | None = None
+) -> Schedule[T | None]
 ```
 
 Runs the method named `callback` later, once.
@@ -304,23 +331,39 @@ logged, and the task is still removed.
 
 ```python
 from datetime import datetime, timedelta, timezone
+from http import HTTPMethod
+from typing import TypedDict
+
+from containers import Container, Schedule
+
+
+class RotatePayload(TypedDict):
+    keep: int
 
 
 class MyContainer(Container):
-    async def on_start(self):
+    async def on_start(self) -> None:
         await self.schedule(30, "warm_cache")
         await self.schedule(
             datetime.now(timezone.utc) + timedelta(hours=1),
             "rotate_logs",
-            {"keep": 5},
+            RotatePayload(keep=5),
         )
 
-    async def warm_cache(self, payload, schedule):
-        await self.container_fetch("/warm", method="POST")
+    async def warm_cache(self, payload: None, schedule: Schedule[None]) -> None:
+        await self.container_fetch("/warm", method=HTTPMethod.POST)
 
-    async def rotate_logs(self, payload, schedule):
-        await self.container_fetch(f"/logs/rotate?keep={payload['keep']}", method="POST")
+    async def rotate_logs(
+        self, payload: RotatePayload, schedule: Schedule[RotatePayload]
+    ) -> None:
+        await self.container_fetch(
+            f"/logs/rotate?keep={payload['keep']}", method=HTTPMethod.POST
+        )
 ```
+
+Callbacks are looked up by name at runtime, so a type checker can't connect the
+`callback` string to the method. Keep the payload type and the callback's
+`payload` annotation in sync yourself.
 
 The returned `Schedule` is a dict:
 
@@ -337,8 +380,8 @@ class Schedule(TypedDict, Generic[PayloadT]):
 ### `get_schedule`, `list_schedules`, `delete_schedules`
 
 ```python
-async def get_schedule(self, id: str) -> Schedule | None
-async def list_schedules(self, name: str) -> list[Schedule]
+async def get_schedule(self, id: str) -> Schedule[PayloadT] | None
+async def list_schedules(self, name: str) -> list[Schedule[PayloadT]]
 def delete_schedules(self, name: str) -> None
 ```
 
@@ -347,6 +390,13 @@ def delete_schedules(self, name: str) -> None
   TypeScript SDK, it currently returns at most one.
 - `delete_schedules` removes every pending task for the callback `name`. It
   is not a coroutine.
+
+As in the TypeScript SDK, `PayloadT` defaults to `str`. Annotate the result to
+get your payload type:
+
+```python
+tasks: list[Schedule[RotatePayload]] = await self.list_schedules("rotate_logs")
+```
 
 ### `schedule_next_alarm`
 
@@ -360,13 +410,21 @@ itself, and you shouldn't normally need it.
 ## Outbound interception
 
 Runtime methods for changing outbound rules on one instance. Handler names
-refer to keys in `outbound_handlers`. Unknown names raise `ValueError`. See
+refer to keys in `outbound_handlers`. Unknown names raise `ValueError`.
+`OutboundHandlerOverride` is a `TypedDict` of the form
+`{"method": str, "params": Any}`, where `params` is optional. It isn't
+re-exported from `containers`; import it from `containers.container` if you
+need it. See
 [Outbound traffic](outbound-traffic.md) for the full guide.
 
 ```python
 async def set_outbound_handler(self, method_name: str, params: Any = None) -> None
-async def set_outbound_by_host(self, hostname: str, method_name: str, params: Any = None) -> None
-async def set_outbound_by_hosts(self, handlers: dict[str, str | dict]) -> None
+async def set_outbound_by_host(
+    self, hostname: str, method_name: str, params: Any = None
+) -> None
+async def set_outbound_by_hosts(
+    self, handlers: dict[str, str | OutboundHandlerOverride]
+) -> None
 async def remove_outbound_by_host(self, hostname: str) -> None
 async def set_allowed_hosts(self, hosts: list[str]) -> None
 async def set_denied_hosts(self, hosts: list[str]) -> None
@@ -379,10 +437,17 @@ async def remove_denied_host(self, hostname: str) -> None
 ### `OutboundHandler`
 
 ```python
-type OutboundHandler = Callable[[Request, Any, OutboundHandlerContext], Awaitable[Response]]
+type OutboundHandler = Callable[
+    [Request, Any, OutboundHandlerContext[Any]], Awaitable[Response]
+]
 ```
 
-An `async` function taking `(request, env, ctx)`.
+An `async` function taking `(request, env, ctx)`:
+
+```python
+async def handler(request: Request, env: Any, ctx: OutboundHandlerContext) -> Response:
+    return Response("intercepted")
+```
 
 ### `OutboundHandlerContext`
 
@@ -390,7 +455,10 @@ An `async` function taking `(request, env, ctx)`.
 | --- | --- | --- |
 | `container_id` | `str` | ID of the Durable Object that owns the container. |
 | `class_name` | `str` | Name of the `Container` subclass. |
-| `params` | `Any \| None` | Params given to `set_outbound_handler` or `set_outbound_by_host`. |
+| `params` | `ParamsT \| None` | Params given to `set_outbound_handler` or `set_outbound_by_host`. |
+
+`OutboundHandlerContext` is generic over `ParamsT`, which defaults to `Any`.
+Write `OutboundHandlerContext[MyParams]` to type `ctx.params`.
 
 ### `ContainerProxy`
 
@@ -406,7 +474,9 @@ from containers import ContainerProxy  # noqa: F401
 ### `get_container`
 
 ```python
-def get_container(binding: DurableObjectNamespace, name: str = "cf-singleton-container") -> DurableObjectStub
+def get_container(
+    binding: DurableObjectNamespace, name: str = "cf-singleton-container"
+) -> DurableObjectStub
 ```
 
 Returns the stub for the instance called `name`. Not a coroutine.
@@ -414,7 +484,9 @@ Returns the stub for the instance called `name`. Not a coroutine.
 ### `get_random`
 
 ```python
-async def get_random(binding: DurableObjectNamespace, instances: int = 3) -> DurableObjectStub
+async def get_random(
+    binding: DurableObjectNamespace, instances: int = 3
+) -> DurableObjectStub
 ```
 
 Returns the stub for one of `instances` instances, chosen at random.
@@ -446,8 +518,18 @@ Everything public is importable from `containers`:
 | `OutboundHandlerContext` | Class |
 | `DurableObjectNamespace`, `DurableObjectStub` | Typing-only `Protocol`s |
 
-The package ships a `py.typed` marker. Types are looser only where a value is a
-JavaScript object, such as `env` or `self.ctx`.
+## Type hints
+
+The package ships a `py.typed` marker, and the public API is fully annotated.
+It supports Python 3.12 and later. A few things are looser, because the Workers
+runtime doesn't ship Python types for them:
+
+- `self.env`, `self.ctx` and `self.ctx.container` are untyped JavaScript
+  objects.
+- On a `DurableObjectStub`, only `fetch()` is typed. Every other attribute is
+  `Any`. See [Typing calls on a stub](routing.md#typing-calls-on-a-stub).
+- `schedule()` callbacks are found by name, so their payload types aren't
+  checked against the call that scheduled them.
 
 ## Logging
 

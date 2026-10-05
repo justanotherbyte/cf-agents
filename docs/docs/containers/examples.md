@@ -18,14 +18,16 @@ values from your Worker's environment can be read in `__init__`, because
 and bindings:
 
 ```python
+from typing import Any
+
 from containers import Container, get_container
-from workers import WorkerEntrypoint
+from workers import Request, Response, WorkerEntrypoint
 
 
 class MyContainer(Container):
     default_port = 8080
 
-    def __init__(self, ctx, env):
+    def __init__(self, ctx: Any, env: Any) -> None:
         super().__init__(ctx, env)
         self.env_vars = {
             "LOG_LEVEL": "info",
@@ -40,7 +42,7 @@ already running, they're ignored:
 
 ```python
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         tenant = request.headers.get("x-tenant", "default")
         container = get_container(self.env.MY_CONTAINER, tenant)
         await container.start_and_wait_for_ports(
@@ -60,32 +62,33 @@ Use the hooks to log transitions, and expose `get_state()` for debugging:
 import json
 from urllib.parse import urlparse
 
-from containers import Container, get_container
-from workers import Response, WorkerEntrypoint
+from containers import Container, State, get_container
+from workers import Request, Response, WorkerEntrypoint
 
 
 class MyContainer(Container):
     default_port = 8080
     sleep_after = "2m"
 
-    async def on_start(self):
+    async def on_start(self) -> None:
         print("container started")
 
-    async def on_stop(self, *, exit_code, reason):
+    async def on_stop(self, *, exit_code: int, reason: str) -> None:
         print(f"container stopped: exit_code={exit_code} reason={reason}")
 
-    async def on_error(self, error):
+    async def on_error(self, error: Exception) -> None:
         print("container error:", error)
         raise error
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         url = urlparse(request.url)
         container = get_container(self.env.MY_CONTAINER, "monitored")
 
         if url.path == "/status":
-            return Response(json.dumps(await container.get_state(), indent=2))
+            state: State = await container.get_state()
+            return Response(json.dumps(state, indent=2))
         if url.path == "/stop":
             await container.stop()
             return Response("stopping")
@@ -102,6 +105,7 @@ to serve HTTP:
 
 ```python
 from datetime import date
+from typing import Any
 
 from containers import Container, get_container
 from workers import WorkerEntrypoint
@@ -111,13 +115,13 @@ class NightlyReport(Container):
     entrypoint = ["python", "report.py"]
     enable_internet = False
 
-    async def on_stop(self, *, exit_code, reason):
+    async def on_stop(self, *, exit_code: int, reason: str) -> None:
         if exit_code != 0:
             print(f"report failed with exit code {exit_code}")
 
 
 class Default(WorkerEntrypoint):
-    async def scheduled(self, controller, env, ctx):
+    async def scheduled(self, controller: Any, env: Any, ctx: Any) -> None:
         container = get_container(self.env.NIGHTLY_REPORT, "nightly-report")
         await container.start(env_vars={"REPORT_DATE": date.today().isoformat()})
 ```
@@ -135,18 +139,31 @@ See [Cron container](https://developers.cloudflare.com/containers/examples/cron/
 
 `schedule()` runs one of your methods later, by name. To repeat it, schedule
 the next run from inside the callback. Callbacks are `async def` methods that
-take `(payload, schedule)`:
+take `(payload, schedule)`. A `TypedDict` keeps the payload typed from end to
+end:
 
 ```python
+from typing import TypedDict
+
+from containers import Container, Schedule
+
+
+class HealthPayload(TypedDict):
+    interval: int
+
+
 class MyContainer(Container):
     default_port = 8080
 
-    async def on_start(self):
+    async def on_start(self) -> None:
         # on_start can run more than once, so don't stack up duplicate tasks
         if not await self.list_schedules("health_report"):
-            await self.schedule(60, "health_report", {"interval": 60})
+            payload: HealthPayload = {"interval": 60}
+            await self.schedule(60, "health_report", payload)
 
-    async def health_report(self, payload, schedule):
+    async def health_report(
+        self, payload: HealthPayload, schedule: Schedule[HealthPayload]
+    ) -> None:
         state = await self.get_state()
         print("health:", state["status"])
         if state["status"] == "healthy":
@@ -164,8 +181,12 @@ proxies messages in both directions and keeps the container awake while the
 socket is open:
 
 ```python
+from containers import get_container
+from workers import Request, Response, WorkerEntrypoint
+
+
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         if request.headers.get("upgrade", "").lower() == "websocket":
             container = get_container(self.env.MY_CONTAINER, "chat-room-1")
             return await container.fetch(request)
@@ -183,6 +204,7 @@ instances:
 
 ```python
 from containers import Container, get_random
+from workers import Request, Response, WorkerEntrypoint
 
 
 class Renderer(Container):
@@ -191,7 +213,7 @@ class Renderer(Container):
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         container = await get_random(self.env.RENDERER, 5)
         return await container.fetch(request)
 ```
@@ -207,6 +229,7 @@ picks which port a request goes to:
 from urllib.parse import urlparse
 
 from containers import Container, get_container, switch_port
+from workers import Request, Response, WorkerEntrypoint
 
 
 class App(Container):
@@ -215,7 +238,7 @@ class App(Container):
 
 
 class Default(WorkerEntrypoint):
-    async def fetch(self, request):
+    async def fetch(self, request: Request) -> Response:
         container = get_container(self.env.APP, "main")
         if urlparse(request.url).path.startswith("/metrics"):
             return await container.fetch(switch_port(request, 9090))
@@ -228,11 +251,20 @@ Block the internet and answer one API from the Worker, for example to run
 untrusted or test code against a fake service:
 
 ```python
-from containers import Container, ContainerProxy, get_container  # noqa: F401
-from workers import Response
+from typing import Any
+
+from containers import (  # noqa: F401
+    Container,
+    ContainerProxy,
+    OutboundHandlerContext,
+    get_container,
+)
+from workers import Request, Response
 
 
-async def fake_weather(request, env, ctx):
+async def fake_weather(
+    request: Request, env: Any, ctx: OutboundHandlerContext
+) -> Response:
     return Response.from_json({"city": "Lisbon", "temp_c": 21})
 
 
