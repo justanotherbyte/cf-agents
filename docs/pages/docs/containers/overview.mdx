@@ -1,0 +1,96 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Cloudflare Containers SDK for Python Workers"
+sidebarTitle: "Overview"
+description: "What containers-py does, how a Container class maps to a Durable Object and a container instance, and when to use it from a Python Worker."
+icon: "lucide:info"
+prompt: |
+  Write the containers-py overview page: what the package is, the Durable Object and container mental model, when to use it, and its status.
+  Source: @https://github.com/justanotherbyte/containers.
+  Use @https://developers.cloudflare.com/containers/ for platform behaviour.
+---
+
+`containers-py` lets a
+[Python Worker](https://developers.cloudflare.com/workers/languages/python/)
+start, stop and send requests to
+[Cloudflare Containers](https://developers.cloudflare.com/containers/). You
+install it as `containers-py` and import it as `containers`.
+
+It is a Python port of the
+[`@cloudflare/containers`](https://github.com/cloudflare/containers)
+TypeScript package, v0.3.7. Defaults, timeouts and state transitions match the
+TypeScript package, so the platform docs apply as written. Names are
+`snake_case` and options are keyword arguments.
+
+```python
+from containers import Container, get_container
+from workers import Request, Response, WorkerEntrypoint
+
+
+class MyContainer(Container):
+    default_port = 8080  # the port your server listens on
+    sleep_after = "10m"  # stop after 10 minutes without requests
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request: Request) -> Response:
+        session_id = request.headers.get("x-session-id", "default")
+        container = get_container(self.env.MY_CONTAINER, session_id)
+        return await container.fetch(request)
+```
+
+## How it works
+
+Each container instance belongs to one
+[Durable Object](https://developers.cloudflare.com/durable-objects/). The
+`Container` class is that Durable Object. You subclass it and set class
+attributes such as the port and the idle timeout. The class starts the
+container on the first request, waits for its port, forwards requests to it
+and stops it after `sleep_after` without traffic.
+
+```diagram
+                    get_container(binding, "user-42")
+                                  │
+  client ──> Worker (Default) ────┴──> Durable Object "user-42" ──> container instance
+                                       (your Container subclass)     (your Docker image)
+```
+
+A Durable Object ID maps to exactly one container instance. The name you pass
+to `get_container` decides which instance serves a request:
+
+- The same name always reaches the same instance, so you can give each user,
+  session or document its own container.
+- `get_random(binding, n)` spreads stateless requests across `n` instances.
+
+The Durable Object also stores the container's state, its schedules and its
+outbound rules in SQLite, so they survive the Durable Object leaving memory.
+
+## When to use it
+
+Use a container when the work can't run inside a Python Worker: a binary such
+as `ffmpeg`, a package with native code that Pyodide doesn't support, a
+process that runs for minutes, or a server written in another language.
+
+For work that fits in a Worker, a plain Worker is simpler. It has no image to
+build and no cold start of a few seconds.
+
+## What the SDK covers
+
+- Starting, stopping and destroying containers, with lifecycle hooks.
+- Routing a request to a named instance, a random instance or another port.
+- Calling your own `async` methods on the container class from a Worker over
+  RPC.
+- Blocking, allowing or intercepting the container's outbound HTTP and HTTPS
+  traffic with Python handlers.
+- Scheduling a method on the container class to run later.
+
+## Status
+
+`containers-py` is pre-1.0. Its API may change between minor releases. It is
+an independent community project, not an official Cloudflare SDK.
+
+## Next steps
+
+- [Getting started](./getting-started.mdx) builds and deploys a FastAPI
+  container behind a Python Worker.
+- [Container class](./container-class.mdx) lists every attribute and method.

@@ -1,11 +1,6 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
 node_modules/
+dist/
+.wrangler/
+.env
+
+PRODUCT.md

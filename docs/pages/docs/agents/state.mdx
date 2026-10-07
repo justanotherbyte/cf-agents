@@ -1,0 +1,169 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Store and sync agent state in Python"
+sidebarTitle: "Store and sync state"
+description: "Type an agent's state, change it with set_state, validate changes from clients, react to changes, and store rows in the agent's SQLite database."
+icon: "lucide:database"
+prompt: |
+  Write the cf-agents state and storage guide: typed state with Agent[S], initial_state, set_state, validate_state_change, on_state_changed, readonly connections, and self.sql.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/agent/agent.py, src/agents/state/, src/agents/core/sql.py).
+---
+
+An agent has two places to keep data:
+
+- **State** is one JSON value. The SDK saves it and sends it to every
+  connected client whenever it changes. Use it for what the UI shows.
+- **SQL** is the agent's own SQLite database. Use it for rows you query, such
+  as messages, orders or logs.
+
+Both live in the agent's Durable Object storage, so they survive restarts and
+deploys.
+
+## Type the state
+
+Pass a `TypedDict` to `Agent` and annotate `initial_state` with it. A type
+checker then checks `self.state` and `set_state()`:
+
+```python
+from typing import TypedDict
+
+from agents import Agent, callable
+
+
+class CounterState(TypedDict):
+    count: int
+
+
+class Counter(Agent[CounterState]):
+    initial_state: CounterState = {"count": 0}
+
+    @callable
+    async def increment(self, by: int = 1) -> int:
+        count = self.state["count"] + by
+        self.set_state({"count": count})
+        return count
+```
+
+`initial_state` seeds the state the first time an agent has nothing stored.
+Each agent gets its own copy. Without `initial_state`, `self.state` is `None`
+until the first `set_state()`.
+
+## Change the state
+
+`set_state(state)` replaces the whole state. It runs these steps in order:
+
+1. Calls `validate_state_change(state, "server")`. If it raises, nothing
+   changes and the error propagates.
+2. Saves the state.
+3. Sends it to every connected client.
+4. Calls `on_state_changed(state, "server")` in the background.
+
+Treat `self.state` as read-only. Changing the dict in place doesn't save it or
+notify clients, so always build a new value and pass it to `set_state()`.
+
+## Accept state changes from clients
+
+Clients can change the state too, with `setState` in `useAgent` or
+`AgentClient`. The SDK runs the same steps, with the client's `Connection` as
+the source instead of `"server"`.
+
+Override `validate_state_change` to reject a change. It is a plain `def`, not
+`async`. Raise any exception to reject:
+
+```python
+from typing import Any
+
+
+class Counter(Agent[CounterState]):
+    def validate_state_change(self, next_state: CounterState, source: Any) -> None:
+        if next_state["count"] < 0:
+            raise ValueError("count can't be negative")
+```
+
+A rejected client gets the error `State update rejected` in its
+`onStateUpdateError` callback. The server logs the exception.
+
+To stop a client from changing the state at all, mark its connection
+readonly. See [Readonly connections](./connections.mdx#readonly-connections).
+
+## React to changes
+
+`on_state_changed` runs after every saved change, from either side:
+
+```python
+from agents import Connection, StateSource
+
+
+class Counter(Agent[CounterState]):
+    async def on_state_changed(self, state: CounterState, source: StateSource) -> None:
+        if isinstance(source, Connection):
+            print(f"client {source.id} set count to {state['count']}")
+```
+
+An exception raised here is logged and passed to `on_error`. It doesn't undo
+the change.
+
+## Store rows with SQL
+
+`self.sql(query, *params)` runs one statement against the agent's SQLite
+database and returns a list of dicts. Use `?` placeholders for values:
+
+```python
+from workers import Request, Response
+
+from agents import Agent
+
+
+class Notes(Agent):
+    async def on_start(self) -> None:
+        self.sql(
+            "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text TEXT NOT NULL)"
+        )
+
+    async def on_request(self, request: Request) -> Response:
+        if request.method == "POST":
+            self.sql("INSERT INTO notes (text) VALUES (?)", await request.text())
+        rows = self.sql("SELECT id, text FROM notes ORDER BY id")
+        return Response.from_json(list(rows))
+```
+
+```sh
+curl -X POST -d 'buy milk' http://localhost:8787/agents/notes/home
+```
+
+```json
+[{"id": 1, "text": "buy milk"}]
+```
+
+`self.sql` is synchronous, so don't await it. It runs the statement right
+away, and the
+[Durable Object output gate](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
+holds the response until the write is durable.
+
+`on_start` runs every time the agent wakes up, so use `IF NOT EXISTS` in
+schema statements.
+
+### Rules for queries and parameters
+
+- `query` must be a string literal (`LiteralString`). Pass values as
+  parameters, never with an f-string, so a type checker catches SQL injection.
+- Parameters can be `int`, `float`, `str`, `bytes` or `None`. A `bool` is
+  stored as `1` or `0`.
+- An `int` outside ±2<sup>53</sup> raises `ValueError`.
+- A statement SQLite rejects raises `SqlError`, with the statement on
+  `error.query`.
+
+Annotate rows with `row=` to get typed results. The SDK doesn't validate the
+rows, so the type is only for the type checker:
+
+```python
+class Note(TypedDict):
+    id: int
+    text: str
+
+
+notes = self.sql("SELECT id, text FROM notes", row=Note)  # Sequence[Note]
+```
+
+The SDK keeps its own tables in the same database. Their names start with
+`cf_agents_`, so don't create tables with that prefix.

@@ -28,16 +28,16 @@ Success: an evaluator leaves believing Python Workers can do real work with Cros
 ## Operating Context
 
 - Readers arrive from Python and Cloudflare Workers ecosystems, PyPI, and search. They read in a desktop browser with an editor and terminal nearby, copying code into `src/entry.py` and Wrangler config.
-- The home page links straight to each SDK's getting-started guide and to PyPI. Live version numbers come from the PyPI JSON API (`docs/javascripts/pypi-version.js`), and the static "PyPI" link text is the fallback.
-- A live demo, Mosslight Valley, is embedded on the home page. It's a game built with `agents-py` and running entirely on Python Workers.
+- The home page links straight to each SDK's getting-started guide and to PyPI. Live version numbers come from the PyPI JSON API (`components/pypi-version.tsx`), and the static "PyPI" link text is the fallback.
+- A live demo, Mosslight Valley, is embedded on the home page. It's a game built with `cf-agents` and running entirely on Python Workers.
 
 ## Capabilities and Constraints
 
-- **Site stack:** MkDocs + Material for MkDocs, with custom templates in `overrides/` (`home.html`, `partials/header.html`) and styles in `docs/stylesheets/extra.css`. It's deployed on Cloudflare (Pages/Workers via Wrangler). This stack stays in place.
-- **SDKs today:** `containers-py` (Containers) and `agents-py` (Agents SDK). More are in development and get listed only as they ship.
+- **Site stack:** [Holocron](https://holocron.so) (a Vite plugin) with MDX pages in `pages/`, site config in `docs.jsonc`, theme tokens in `style.css` and React components in `components/`. It's deployed as a Cloudflare Worker with Wrangler (`npm run deploy`).
+- **SDKs today:** `containers-py` (Containers) and `cf-agents` (Agents SDK). More are in development and get listed only as they ship.
 - **Maturity:** early and pre-1.0. APIs may change, and the docs should say so plainly rather than imply production stability.
-- **Terminology:** "Crosswind" is the umbrella name. Packages use `<product>-py` names. The runtime is called "Python Workers".
-- **Open:** the Containers getting-started guide is still a stub, the Agents docs page linked from the SDK table doesn't exist yet, and the minimum supported Python version isn't confirmed (the hero says 3.12+).
+- **Terminology:** "Crosswind" is the umbrella name. Each product gets its own package (`containers-py`, `cf-agents`). The runtime is called "Python Workers".
+- **Open:** the Containers getting-started guide is still a stub, the Agents docs page doesn't exist yet, so the SDK table's Agents row isn't linked, and the minimum supported Python version isn't confirmed (the hero says 3.12+).
 
 ## Brand Commitments
 
@@ -48,9 +48,9 @@ Success: an evaluator leaves believing Python Workers can do real work with Cros
 
 ## Evidence on Hand
 
-- Real code sample: a `containers-py` transcoder Worker in the home hero (`overrides/home.html`).
-- Live demo: Mosslight Valley (`https://agents-py-mosslight-valley.reachvishm8605.workers.dev/`), built with `agents-py`.
-- PyPI package pages for `containers-py` and `agents-py`.
+- Real code sample: a `containers-py` transcoder Worker in the home hero (`pages/index.mdx`).
+- Live demo: Mosslight Valley (`https://agents-py-mosslight-valley.reachvishm8605.workers.dev/`), built with `cf-agents`.
+- PyPI package pages for `containers-py` and `cf-agents`.
 - **Absent, do not fabricate:** user counts, testimonials, company logos, benchmarks or performance numbers, production case studies, and any claim of Cloudflare endorsement.
 
 ## Product Principles

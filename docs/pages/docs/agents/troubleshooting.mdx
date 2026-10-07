@@ -1,0 +1,150 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Troubleshoot cf-agents errors and warnings"
+sidebarTitle: "Troubleshooting"
+description: "Causes and fixes for cf-agents errors: unmatched agent URLs, uncallable methods, rejected state, chat stream errors, sub-agent exports and schedule warnings."
+icon: "lucide:life-buoy"
+prompt: |
+  Write a troubleshooting page for cf-agents from the errors and warnings the SDK raises and logs: symptom, cause and fix for each.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/).
+---
+
+Each entry starts with the text you see in a response, a client error or the
+Worker's log. Search this page for it. To see the SDK's own debug output, set
+`logging.getLogger("agents").setLevel(logging.DEBUG)` at the top of
+`src/entry.py`.
+
+## `Invalid request` (HTTP 400)
+
+The log shows `The URL ... with namespace '<agent>' and name '<name>' does not
+match any Durable Object binding`.
+
+**Cause.** The `{agent}` segment in `/agents/{agent}/{name}` doesn't match any
+Durable Object binding in kebab case.
+
+**Fix.** Use the binding's `name` from `wrangler.jsonc`, in kebab case. The
+binding `ChatRoom` is `/agents/chat-room/...`. On the client, `useAgent({ agent:
+"ChatRoom" })` converts the name for you.
+
+## `Not implemented` (HTTP 404)
+
+**Cause.** The request reached the agent, but the class doesn't override
+`on_request`.
+
+**Fix.** Override `on_request` and return a `Response`.
+
+## `Method <name> does not exist` or `Method <name> is not callable`
+
+**Cause.** A client called a method that the agent doesn't define, or one
+without `@callable`. A subclass override of a callable method needs the
+decorator again.
+
+**Fix.** Add `@callable` to the method, including on overrides. Check the
+method name matches exactly, since clients use the Python name:
+`client.call("add_item")`, not `addItem`.
+
+## `TypeError: Callable methods must be async`
+
+**Cause.** `@callable` is on a plain `def`.
+
+**Fix.** Make the method `async def`.
+
+## `State update rejected`
+
+The client's `onStateUpdateError` callback receives it, and the Worker log
+shows `State update from connection '<id>' rejected` with a traceback.
+
+**Cause.** One of these:
+
+- `validate_state_change` raised. The traceback shows the exception.
+- The connection is readonly, because `should_connection_be_readonly`
+  returned `True` for it.
+
+**Fix.** Check the traceback. A client can't see the exception's message, so
+return details through a `@callable` method if the client needs them.
+
+## `Result is not JSON-serializable`
+
+**Cause.** A `@callable` method returned a value `json` can't encode, such as a
+`datetime` or a dataclass.
+
+**Fix.** Return dicts, lists, strings, numbers, booleans or `None`. Convert a
+`datetime` with `.isoformat()`.
+
+## `ConnectionStateTooLargeError`
+
+**Cause.** `connection.set_state()` got a value that doesn't fit in the
+socket's 16 KiB attachment.
+
+**Fix.** Keep a small key in connection state and the rest in SQL.
+
+## `on_chat_message yielded <Chunk>(id=...) without a <Start> for it first`
+
+**Cause.** The stream yielded a delta or end chunk, such as `TextDelta`,
+before its start chunk with the same `id`.
+
+**Fix.** Yield `TextStart(id=...)`, `ReasoningStart(id=...)` or
+`ToolInputStart(tool_call_id=...)` first, with the same id.
+
+## `on_chat_message yielded a str after chunks`
+
+**Cause.** One turn yielded both `str` values and chunk objects.
+
+**Fix.** Pick one. To mix text with other chunk types, yield
+`TextStart`, `TextDelta` and `TextEnd` instead of strings.
+
+## `<Class> received a chat message: override on_chat_message to answer it`
+
+**Cause.** An `AIChatAgent` subclass doesn't override `on_chat_message`.
+
+**Fix.** Override it as an async generator. See
+[Build a chat agent](./chat.mdx).
+
+## `Sub-agent class '<Name>' isn't exported from the Worker module under that name`
+
+**Cause.** `dynamic_agents.get(cls, name)` got a class that isn't defined in,
+or imported into, the Worker's entry module, or is imported under another
+name.
+
+**Fix.** Import the class in `src/entry.py` with its own name:
+`from .threads import Thread`, not `import ... as T`.
+
+## `Scheduling '<callback>' during startup ... creates a new schedule on every wake`
+
+**Cause.** `on_start` creates a one-off schedule without `idempotent`. Since
+`on_start` runs on every wake, each wake adds another schedule.
+
+**Fix.** Pass `idempotent=True`, or use `schedule_every()` for recurring work.
+
+## `ValueError: A schedule interval can't exceed 30 days`
+
+**Cause.** `schedule_every` got an interval longer than 30 days.
+
+**Fix.** Use a cron expression with `schedule()`, for example `"0 0 1 * *"` for
+the first of each month.
+
+## `Fiber '<name>' (<id>) was interrupted; override on_fiber_recovered to recover it`
+
+**Cause.** The isolate stopped while a fiber was running, for example during a
+deploy, and the class uses the default `on_fiber_recovered`.
+
+**Fix.** Override `on_fiber_recovered` to resume from `ctx.snapshot`. See
+[Long-running work](./long-running-work.mdx).
+
+## `TaskReplayDivergedError`
+
+**Cause.** A task's steps changed while a run was in progress. On its next
+attempt, the run found recorded steps the new code doesn't produce.
+
+**Fix.** Leave the old task method in place until its runs finish, and add the
+changed version under a new name, such as `build_v2`.
+
+## `Internal Server Error` (HTTP 500)
+
+**Cause.** A hook raised and `on_error` re-raised it. The Worker log has the
+traceback.
+
+**Fix.** Read the log in `pywrangler dev`, or with `npx wrangler tail` for a
+deployed Worker. During local development you can set
+`options = AgentOptions(expose_error_details=True)` to return the traceback in
+the response. Don't deploy with it, since tracebacks can reveal code and data.

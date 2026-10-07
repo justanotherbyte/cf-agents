@@ -1,0 +1,34 @@
+@reference "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Zinc greys with blue as the only accent */
+:root {
+  --background: #ffffff;
+  --foreground: #18181b;          /* zinc-900 */
+  --muted: #f4f4f5;               /* zinc-100 */
+  --muted-foreground: #52525b;    /* zinc-600 */
+  --accent: #f4f4f5;
+  --border: #d4d4d8;              /* zinc-300 */
+  --border-subtle: #e4e4e7;       /* zinc-200 */
+
+  /* Square corners, framed code */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --code-block-background: var(--muted);
+  --code-block-border: 1px solid var(--border-subtle);
+  --code-block-padding-x: 12px;
+  --code-block-padding-y: 12px;
+  --card-border: 1px solid var(--border);
+
+  @variant dark {
+    --background: #18181b;        /* zinc-900 */
+    --foreground: #ffffff;
+    --muted: #27272a;             /* zinc-800 */
+    --muted-foreground: #d4d4d8;  /* zinc-300 */
+    --accent: #27272a;
+    --border: #3f3f46;            /* zinc-700 */
+    --border-subtle: rgba(255, 255, 255, 0.1);
+  }
+}

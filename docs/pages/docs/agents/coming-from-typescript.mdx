@@ -1,0 +1,143 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Migrate from the TypeScript Agents SDK to Python"
+sidebarTitle: "Migrate from TypeScript"
+description: "How cf-agents maps to the TypeScript agents package: method names, decorators, options, SQL, schedules, chat replies and features that aren't ported."
+icon: "lucide:arrow-left-right"
+prompt: |
+  Map the TypeScript Agents SDK (agents v0.25.0 and @cloudflare/ai-chat) to cf-agents: naming, callable decorator, options, SQL, schedules and queue, chat, routing, and what isn't ported.
+  Source: @https://github.com/justanotherbyte/agents-py and @https://github.com/cloudflare/agents.
+---
+
+`cf-agents` ports the [`agents`](https://github.com/cloudflare/agents) package
+v0.25.0 and the `AIChatAgent` from `@cloudflare/ai-chat`. It speaks the same
+WebSocket protocol, so the same clients connect to it. This page lists what
+changes when you write the agent in Python.
+
+## Side by side
+
+<Tabs>
+<Tab title="Python">
+
+```python
+from agents import Agent, callable
+
+
+class Counter(Agent):
+    initial_state = {"count": 0}
+
+    @callable
+    async def increment(self, by: int = 1) -> int:
+        self.set_state({"count": self.state["count"] + by})
+        return self.state["count"]
+```
+
+</Tab>
+<Tab title="TypeScript">
+
+```typescript
+import { Agent, callable } from "agents";
+
+export class Counter extends Agent<Env, { count: number }> {
+  initialState = { count: 0 };
+
+  @callable()
+  async increment(by = 1) {
+    this.setState({ count: this.state.count + by });
+    return this.state.count;
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+## Names
+
+Methods and hooks use `snake_case`. The common ones:
+
+| TypeScript                                                  | Python                                                           |
+| ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| `initialState`, `setState`                                  | `initial_state`, `set_state`                                     |
+| `validateStateChange`, `onStateChanged`                     | `validate_state_change`, `on_state_changed`                      |
+| `onStart`, `onRequest`, `onConnect`, `onMessage`, `onClose` | `on_start`, `on_request`, `on_connect`, `on_message`, `on_close` |
+| `shouldConnectionBeReadonly`, `getConnectionTags`           | `should_connection_be_readonly`, `get_connection_tags`           |
+| `scheduleEvery`, `getSchedule`, `getSchedules`              | `schedule_every`, `get_schedule_by_id`, `list_schedules`         |
+| `getQueue`, `getQueues`, `dequeueAllByCallback`             | `get_queue`, `queue_items`, `dequeue_all_by_callback`            |
+| `runFiber`, `startFiber`, `onFiberRecovered`                | `run_fiber`, `start_fiber`, `on_fiber_recovered`                 |
+| `keepAlive`, `keepAliveWhile`                               | `keep_alive`, `keep_alive_while`                                 |
+| `routeAgentRequest`, `getAgentByName`, `getCurrentAgent`    | `route_agent_request`, `get_agent_by_name`, `get_current_agent`  |
+| `@callable()`                                               | `@callable` or `@callable(...)`                                  |
+
+URLs don't change. A class still answers at `/agents/{kebab-case-name}/...`,
+so existing clients keep working.
+
+## Options
+
+Static class options become one frozen dataclass:
+
+```python
+from datetime import timedelta
+
+from agents import Agent, AgentOptions, RetryOptions
+
+
+class Feeds(Agent):
+    options = AgentOptions(
+        keep_alive_interval=timedelta(seconds=10),
+        retry=RetryOptions(max_attempts=5),
+    )
+```
+
+Durations are a `timedelta` or a number of seconds, never milliseconds.
+
+## SQL
+
+The `this.sql` tagged template becomes a call with `?` placeholders:
+
+```python
+rows = self.sql("SELECT * FROM notes WHERE id = ?", note_id)
+```
+
+## Schedules and the queue
+
+Callbacks can be methods as well as names. Both call the method with
+`(payload, schedule)` or `(payload, item)`:
+
+```python
+await self.schedule(60, self.remind, {"text": "stand up"})
+await self.schedule(60, "remind", {"text": "stand up"})
+```
+
+## Durable tasks
+
+The `taskDefinitions` map becomes a `@task` decorator on a method. Start runs
+with `await self.my_task.run(input)`. See [Run durable tasks](./tasks.mdx).
+
+## Chat replies
+
+In TypeScript, `onChatMessage` returns a `Response`, usually from the AI SDK's
+`streamText(...).toUIMessageStreamResponse()`. In Python, `on_chat_message` is
+an async generator that yields text or typed chunks, and you call the model
+with your own client. There's no `onFinish` callback, so use
+`on_chat_response`. Cancellation replaces the `abortSignal`: a stopped turn
+gets `asyncio.CancelledError`. See [Build a chat agent](./chat.mdx).
+
+## Errors
+
+The SDK's own exceptions subclass `AgentsException`, so
+`except AgentsException` catches them all. Misuse, such as a wrong argument
+type, raises `TypeError`, `ValueError` or `RuntimeError` instead.
+
+## Not ported
+
+| TypeScript                                          | Status                                       |
+| --------------------------------------------------- | -------------------------------------------- |
+| MCP client and server (`addMcpServer`, `McpAgent`)  | Not ported. Connect sends an empty MCP list. |
+| Chat client tools and approvals                     | Not ported.                                  |
+| Recovery of interrupted chat turns                  | Not ported.                                  |
+| `props` in `routeAgentRequest` and `getAgentByName` | Not ported.                                  |
+| Think, voice, email, workflows, browser             | Not ported.                                  |
+| Cap'n Web transport                                 | Not ported.                                  |
+| Tracing spans                                       | Not ported. Structured events are.           |
+| Deprecated `subAgent`, `abortSubAgent` and related  | Use `self.dynamic_agents`.                   |

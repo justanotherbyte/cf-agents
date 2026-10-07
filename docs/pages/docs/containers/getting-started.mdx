@@ -1,0 +1,288 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Run Cloudflare Containers from Python Workers"
+sidebarTitle: "Getting started"
+description: "Install containers-py, write a FastAPI container, define a Container class, configure Wrangler, run it locally and deploy it from a Python Worker."
+icon: "lucide:rocket"
+prompt: |
+  Write the containers-py getting-started guide: install, container image, Container subclass, Wrangler config, local dev and deploy.
+  Source: @https://github.com/justanotherbyte/containers.
+  Use @https://developers.cloudflare.com/containers/ for platform behaviour.
+---
+
+This guide puts a small [FastAPI](https://fastapi.tiangolo.com/) app in a
+container and routes requests to it from a Python Worker. By the end, each
+`?id=` value in the URL gets its own container instance.
+
+## Prerequisites
+
+- [`uv`](https://docs.astral.sh/uv/) and Node.js, to build and deploy
+  [Python Workers](https://developers.cloudflare.com/workers/languages/python/).
+- Docker, or another Docker-compatible engine, running locally. Check with
+  `docker info`. Wrangler builds your image with it in both `dev` and
+  `deploy`.
+- A Cloudflare account on the Workers Paid plan, which Containers requires. See
+  [Pricing](https://developers.cloudflare.com/containers/platform/pricing/).
+
+## 1. Create a Python Worker
+
+Create a project with `pywrangler`, then add `containers-py`:
+
+```sh
+uvx --from workers-py pywrangler init
+cd hello-containers  # the directory you chose during init
+uv add containers-py
+```
+
+`pyproject.toml` now lists the package:
+
+```toml title="pyproject.toml"
+[project]
+name = "hello-containers"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["containers-py"]
+
+[dependency-groups]
+dev = ["workers-py"]
+```
+
+## 2. Write the container
+
+Any image that listens on a port works. This one runs a FastAPI app with
+[uvicorn](https://www.uvicorn.org/) on port `8080`. The container is a
+separate Python project from the Worker, so it gets its own `pyproject.toml`:
+
+```toml title="container_src/pyproject.toml"
+[project]
+name = "container-app"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic-settings>=2.6",
+    "uvicorn[standard]>=0.32",
+]
+```
+
+Lock it, so every image build installs the same versions:
+
+```sh
+cd container_src && uv lock && cd ..
+```
+
+```python title="container_src/main.py"
+from fastapi import FastAPI
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    # Read from the MESSAGE environment variable
+    message: str = "no message set"
+
+
+class Echo(BaseModel):
+    text: str
+
+
+settings = Settings()
+app = FastAPI(title="hello-containers")
+
+
+@app.get("/")
+async def index() -> dict[str, str]:
+    return {"message": settings.message}
+
+
+@app.post("/echo")
+async def echo(body: Echo) -> Echo:
+    return body
+```
+
+The Dockerfile installs the locked dependencies before it copies your code, so
+editing `main.py` doesn't reinstall them:
+
+```dockerfile title="Dockerfile"
+FROM python:3.13-slim
+
+# Pin a specific uv version in production
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Docker caches this layer until the lockfile changes
+COPY container_src/pyproject.toml container_src/uv.lock ./
+RUN uv sync --locked --no-install-project --no-dev
+
+COPY container_src/main.py ./
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8080
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+Wrangler uses the project root as the build context. Keep the Worker's virtual
+environment and vendored packages out of the image:
+
+```text title=".dockerignore"
+.git
+.venv
+.wrangler
+python_modules
+node_modules
+**/__pycache__
+```
+
+The server doesn't need a health-check route. While the container starts, the
+SDK sends plain HTTP requests to `http://ping` on the port it's waiting for,
+and treats any response as ready, including a `404`.
+
+## 3. Define the Container class
+
+Replace `src/entry.py`:
+
+```python title="src/entry.py"
+from urllib.parse import parse_qs, urlparse
+
+from containers import Container, get_container, get_random
+from workers import Request, Response, WorkerEntrypoint
+
+
+class MyContainer(Container):
+    default_port = 8080
+    sleep_after = "2m"
+    env_vars = {"MESSAGE": "I was passed in via the Container class!"}
+
+    async def on_start(self) -> None:
+        print("Container successfully started")
+
+    async def on_stop(self, *, exit_code: int, reason: str) -> None:
+        print(f"Container stopped with exit code {exit_code} ({reason})")
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request: Request) -> Response:
+        query = parse_qs(urlparse(request.url).query)
+
+        if "id" in query:
+            # One container per ID: ?id=<id>
+            container = get_container(self.env.MY_CONTAINER, query["id"][0])
+        elif "lb" in query:
+            # One of 3 interchangeable instances: ?lb
+            container = await get_random(self.env.MY_CONTAINER, 3)
+        else:
+            # One shared instance
+            container = get_container(self.env.MY_CONTAINER)
+
+        return await container.fetch(request)
+```
+
+`default_port` is the port `fetch()` forwards to. `sleep_after` stops the
+container after 2 minutes without requests. `env_vars` is passed to the
+container on every start.
+
+`MyContainer` has to be defined in, or imported into, `src/entry.py`. The
+runtime looks for the Durable Object class named in your Wrangler config
+there.
+
+## 4. Configure Wrangler
+
+```jsonc title="wrangler.jsonc"
+{
+  "name": "hello-containers",
+  "main": "src/entry.py",
+  "compatibility_date": "2026-05-12",
+  "compatibility_flags": ["python_workers"],
+  "containers": [
+    {
+      "class_name": "MyContainer",
+      "image": "./Dockerfile",
+      "max_instances": 10
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "class_name": "MyContainer", "name": "MY_CONTAINER" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MyContainer"] }]
+}
+```
+
+| Key                          | What it does                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `containers[].class_name`    | Links the image to your `Container` subclass. Must match the class name in `src/entry.py`.                                                                   |
+| `containers[].image`         | A Dockerfile, a directory or a registry image. See [Image management](https://developers.cloudflare.com/containers/guides/image-management/).                |
+| `containers[].max_instances` | The most instances of this class that can run at once.                                                                                                       |
+| `durable_objects.bindings`   | Exposes the class to the Worker as `self.env.MY_CONTAINER`.                                                                                                  |
+| `migrations`                 | Declares the class as a [SQLite-backed](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/) Durable Object. `Container` needs SQLite. |
+
+For every option, including `instance_type`, see
+[Wrangler configuration](https://developers.cloudflare.com/containers/configuration/wrangler/).
+
+## 5. Run locally
+
+```sh
+uv run pywrangler dev
+```
+
+Wrangler builds the image and runs containers on your machine. The first build
+downloads the base image, so it takes longer than later builds. Worker code
+reloads on save. Container code doesn't, so press `r` in the `dev` session to
+rebuild the image.
+
+In another terminal:
+
+```sh
+curl "http://localhost:8787/?id=abc"
+```
+
+```json
+{"message":"I was passed in via the Container class!"}
+```
+
+```sh
+curl -X POST "http://localhost:8787/echo?id=abc" \
+  -H "content-type: application/json" \
+  -d '{"text": "hello"}'
+```
+
+```json
+{"text":"hello"}
+```
+
+The first request to a new `id` starts a container, which takes a few seconds.
+Later requests with the same `id` reach the running instance until it sleeps.
+The `dev` terminal prints `Container successfully started` once per start.
+
+## 6. Deploy
+
+```sh
+uv run pywrangler deploy
+```
+
+Wrangler builds the image, pushes it to Cloudflare's registry and deploys the
+Worker. The first deploy takes a few minutes to provision. Until then,
+requests that need a container get a `503`. Check progress with:
+
+```sh
+npx wrangler containers list
+```
+
+Then send the same `curl` requests to your `workers.dev` URL.
+
+## Next steps
+
+- [Manage the lifecycle](./lifecycle.mdx) to start containers ahead of
+  traffic, react to hooks and control sleeping.
+- [Route requests](./routing.mdx) to named instances, other ports or your own
+  methods on the class.
+- [Control outbound traffic](./outbound-traffic.mdx) to block the internet or
+  inject credentials.
+- [Troubleshooting](./troubleshooting.mdx) lists the errors you may hit on a
+  first deploy.

@@ -1,0 +1,168 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Connect clients and call Python agent methods"
+sidebarTitle: "Connect clients"
+description: "Connect to a Python agent from React or Node.js with the agents npm package, call @callable methods, and stream results back with async generators."
+icon: "lucide:plug"
+prompt: |
+  Write the cf-agents client guide: connecting with useAgent and AgentClient, @callable methods, errors, streaming with async generators and StreamingResponse.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/websockets/rpc.py).
+  Use @https://www.npmjs.com/package/agents for the client API.
+---
+
+Clients connect to an agent over a WebSocket with the
+[`agents`](https://www.npmjs.com/package/agents) npm package. The package was
+written for the TypeScript SDK and works with a Python agent unchanged. A
+connected client receives the agent's state and can call the agent's
+`@callable` methods.
+
+The examples on this page assume the Worker from
+[Getting started](./getting-started.mdx), which routes `/agents/...` with
+`route_agent_request`.
+
+## Connect from React
+
+```sh
+npm install agents
+```
+
+```tsx
+import { useState } from "react";
+import { useAgent } from "agents/react";
+
+export function Counter() {
+  const [count, setCount] = useState(0);
+  const agent = useAgent({
+    agent: "Counter",
+    name: "my-counter",
+    onStateUpdate: (state: { count: number }) => setCount(state.count),
+  });
+
+  return <button onClick={() => agent.stub.increment(1)}>{count}</button>;
+}
+```
+
+`agent` is the binding name and `name` is the instance. The hook connects to
+`/agents/counter/my-counter` on the page's own host. Set `host` when the
+Worker runs on another origin.
+
+## Connect from Node.js or a script
+
+`AgentClient` takes the same options as `useAgent`, plus `host`:
+
+```js
+import { AgentClient } from "agents/client";
+
+const client = new AgentClient({
+  agent: "Counter",
+  name: "my-counter",
+  host: "localhost:8787",
+});
+
+const count = await client.call("increment", [10]);
+client.close();
+```
+
+`client.call(method, args)` sends `args` as positional arguments, so
+`call("increment", [10])` runs `increment(10)`.
+
+## Make a method callable
+
+Decorate an `async def` method with `@callable`. Only decorated methods can be
+called from a client:
+
+```python
+from agents import Agent, callable
+
+
+class Counter(Agent):
+    initial_state = {"count": 0}
+
+    @callable(description="Add to the count and return the new value")
+    async def increment(self, by: int = 1) -> int:
+        self.set_state({"count": self.state["count"] + by})
+        return self.state["count"]
+```
+
+- `@callable` works bare or with arguments. `description` is optional and
+  shows up in `self.get_callable_methods()`.
+- The method must be `async`. A plain `def` raises `TypeError` when the class
+  is defined.
+- Arguments and return values must be JSON-serializable. A return value of
+  `None` resolves the client's call with `undefined`.
+- Clients can't pass keyword arguments. Give every parameter a default or
+  accept it positionally.
+- A subclass that overrides a callable method must decorate the override
+  again, or the method stops being callable.
+
+## Handle errors
+
+When a callable method raises, the SDK logs the traceback and rejects the
+client's call with the exception's message:
+
+```python
+@callable
+async def withdraw(self, amount: int) -> int:
+    if amount > self.state["balance"]:
+        raise ValueError("insufficient funds")
+    ...
+```
+
+```js
+try {
+  await client.call("withdraw", [500]);
+} catch (error) {
+  console.log(error.message); // "insufficient funds"
+}
+```
+
+Only the message reaches the client. A call to a method that isn't
+`@callable` fails with `Method <name> is not callable`, and one that doesn't
+exist fails with `Method <name> does not exist`.
+
+## Stream results
+
+A callable method can send several results before it finishes. Write it as an
+async generator, and each `yield` becomes one chunk:
+
+```python
+@callable
+async def count_up(self, n: int):
+    for i in range(1, n + 1):
+        yield i
+```
+
+```js
+await client.call("count_up", [3], {
+  onChunk: (chunk) => console.log("chunk", chunk), // 1, 2, 3
+  onDone: () => console.log("done"),
+});
+```
+
+To send a final value as well, declare `streaming=True`. The SDK passes a
+`StreamingResponse` before the client's arguments:
+
+```python
+from agents import StreamingResponse
+
+
+@callable(streaming=True)
+async def countdown(self, response: StreamingResponse, n: int) -> None:
+    for i in range(n, 0, -1):
+        response.send(i)
+    response.end("liftoff")
+```
+
+`end(value)` resolves the client's call with `value`. If the method returns
+without calling `end()`, the SDK ends the stream for you. If it raises, the
+client's call is rejected with the message, as above.
+
+`send()` returns `False` once the client has disconnected, so a long stream can
+check it and stop. An async generator stops on its own when the client goes
+away.
+
+## Call agents from Worker code
+
+To call an agent from your own Worker code rather than a client, use
+[`get_agent_by_name`](./routing.mdx#call-an-agent-from-worker-code). That
+path can call any public `async` method, decorated or not.

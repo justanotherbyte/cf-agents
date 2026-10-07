@@ -1,0 +1,193 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Run durable multi-step tasks in a Python agent"
+sidebarTitle: "Run durable tasks"
+description: "Define @task methods whose steps run once and survive restarts, with retries, timeouts, durable sleeps, idempotency keys and run inspection."
+icon: "lucide:list-checks"
+prompt: |
+  Write the cf-agents durable tasks guide: @task, TaskStep.do, retries, timeouts, sleep, status, replay rules, starting runs with idempotency keys, inspecting and cancelling runs, errors.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/tasks/).
+---
+
+A task is a method that runs in the background as a series of named steps. The
+SDK records each finished step's result in the agent's database. If the
+agent restarts, or a step fails and is retried, the task runs again from its
+first line, and finished steps return their recorded result instead of running
+again.
+
+Use a task when work has side effects that must not repeat, such as charging
+a card and then sending a receipt. For a single call, a
+[queued callback](./schedules-and-queue.mdx#queue-work) is enough.
+
+## Define a task
+
+Decorate an `async` method with `@task`. It receives the run's input and a
+`TaskStep`:
+
+```python
+from agents import Agent, TaskStep, TaskStepAttempt, task
+
+
+class Reports(Agent):
+    @task
+    async def build(self, input: dict, step: TaskStep) -> dict:
+        async def fetch_rows(attempt: TaskStepAttempt) -> int:
+            return input["rows"] * 2
+
+        rows = await step.do("fetch rows", fetch_rows)
+        await step.sleep("cool down", 1)
+        return {"rows": rows}
+```
+
+The task's name is the method's name. Its return value is the run's result and
+must be JSON-serializable.
+
+## Start a run
+
+`self.build` is a `TaskHandle`. Call `run()` with the input:
+
+```python
+from workers import Request, Response
+
+
+class Reports(Agent):
+    async def on_request(self, request: Request) -> Response:
+        receipt = await self.build.run({"rows": 21})
+        return Response.from_json({"run_id": receipt.run_id, "state": receipt.state})
+```
+
+```json
+{"run_id": "task_lrIJhjh3QaPOMFAS5UDK1g", "state": "pending"}
+```
+
+`run()` saves the run and returns a `TaskReceipt` right away. The run starts in
+the background.
+
+To start a run at most once, pass an `idempotency_key`. A second `run()` with
+the same key returns the existing run with `receipt.accepted == False`:
+
+```python
+receipt = await self.build.run({"rows": 21}, idempotency_key=f"report-{date}")
+```
+
+## Write steps
+
+`step.do(name, fn)` runs `fn` once and records its result under `name`. On a
+later attempt of the run, it returns the recorded result without calling
+`fn`.
+
+Every side effect belongs inside a step. Code outside steps runs again on
+every attempt.
+
+```python
+@task
+async def checkout(self, order: dict, step: TaskStep) -> str:
+    async def charge(attempt: TaskStepAttempt) -> str:
+        return await payments.charge(
+            order["card"], order["total"], idempotency_key=attempt.idempotency_key
+        )
+
+    async def send_receipt(attempt: TaskStepAttempt) -> None:
+        await mail.send(order["email"], "Thanks for your order")
+
+    charge_id = await step.do("charge", charge)
+    await step.do("send receipt", send_receipt)
+    return charge_id
+```
+
+`attempt.attempt` is the attempt number, starting at 1.
+`attempt.idempotency_key` is the same on every attempt of a step. Pass it to
+services that deduplicate requests, in case a step ran but the agent stopped
+before recording the result.
+
+### Step rules
+
+- Step names must be unique within one run. Reusing a name raises
+  `DuplicateTaskStepError`.
+- Keep step order and names stable. If you change the steps of a task that
+  has runs in progress, those runs can fail with `TaskReplayDivergedError`.
+  Rename the task instead, for example `checkout_v2`.
+- Step results must be JSON-serializable.
+
+## Retries and timeouts
+
+A step that raises is retried. By default a step gets 5 attempts, starting 1
+second apart and doubling, and each attempt can run for 5 minutes. Set them
+per step:
+
+```python
+from datetime import timedelta
+
+from agents import StepRetries
+
+result = await step.do(
+    "call model",
+    call_model,
+    retries=StepRetries(limit=3, delay=0.5, backoff="linear"),
+    timeout=timedelta(seconds=30),
+)
+```
+
+`backoff` is `"constant"`, `"linear"` or `"exponential"`. An attempt that runs
+past `timeout` raises `StepTimeoutError` and is retried like any other error.
+
+To fail the run without more retries, raise `NonRetryableError`:
+
+```python
+from agents import NonRetryableError
+
+
+async def charge(attempt: TaskStepAttempt) -> str:
+    if order["total"] <= 0:
+        raise NonRetryableError("nothing to charge")
+    ...
+```
+
+When a step runs out of attempts, the run ends as `failed`, and the SDK calls
+`on_error(None, error)`.
+
+## Wait inside a task
+
+`step.sleep(name, duration)` and `step.sleep_until(name, when)` pause the run
+without holding the agent in memory. The SDK sets an alarm and continues the
+run when it fires. The first deadline recorded for a name wins, so a replay
+doesn't restart the timer.
+
+```python
+await step.sleep("wait for review", timedelta(hours=24))
+```
+
+`step.status(message)` records a progress message that shows up on the run as
+`status_message`.
+
+## Check on a run
+
+```python
+run = await self.build.get(run_id)
+if run is not None and run.state == "completed":
+    print(run.result)
+```
+
+`get()` returns `None` for an unknown id, or one of these:
+
+| `run.state`   | Class          | Extra fields                                 |
+| ------------- | -------------- | -------------------------------------------- |
+| `"pending"`   | `PendingRun`   |                                              |
+| `"running"`   | `RunningRun`   | `attempt`, `started_at`, `status_message`    |
+| `"waiting"`   | `WaitingRun`   | `reason` (`"sleep"` or `"retry"`), `wake_at` |
+| `"completed"` | `CompletedRun` | `result`, `settled_at`                       |
+| `"failed"`    | `FailedRun`    | `error` (`name` and `message`), `settled_at` |
+| `"cancelled"` | `CancelledRun` | `reason`, `settled_at`                       |
+
+`self.build.get_by_idempotency_key(key)` looks a run up by its key.
+`self.tasks.list(definition=None, status=None, limit=100)` returns runs of
+every task, newest first.
+
+## Cancel a run
+
+```python
+cancelled = await self.build.cancel(run_id, "customer cancelled")
+```
+
+`cancel()` returns `False` when the run doesn't exist or belongs to another
+task.

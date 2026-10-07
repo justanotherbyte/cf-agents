@@ -1,0 +1,166 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Schedule and queue work in a Python agent"
+sidebarTitle: "Schedule and queue work"
+description: "Run an agent method later, on a cron expression or at a fixed interval, queue work to run in order after a request returns, and set retries."
+icon: "lucide:calendar-clock"
+prompt: |
+  Write the cf-agents guide for schedules and the queue: schedule, schedule_every, cron, listing and cancelling, queue, dequeue, retries and failures.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/agent/agent.py, src/agents/schedules/, src/agents/queue/).
+---
+
+An agent can run one of its own methods later. Schedules run at a time, after a
+delay, on a cron expression or at an interval. The queue runs methods as soon
+as possible, one at a time, in the order you added them.
+
+Both are stored in the agent's database and driven by its
+[alarm](https://developers.cloudflare.com/durable-objects/api/alarms/), so
+they survive restarts and run even when no client is connected. Don't
+override `alarm()` on an agent.
+
+## Schedule a method
+
+```python
+from datetime import timedelta
+from typing import Any
+
+from agents import Agent, Schedule
+
+
+class Reminders(Agent):
+    async def remind_later(self, text: str) -> None:
+        await self.schedule(timedelta(minutes=10), self.remind, {"text": text})
+
+    async def remind(self, payload: Any, schedule: Schedule) -> None:
+        self.broadcast(f"Reminder: {payload['text']}")
+```
+
+The callback receives the payload and the `Schedule` record. Pass it as a
+method of the agent or as the method's name, `"remind"`. The payload must be
+JSON-serializable.
+
+`when` decides how the schedule runs:
+
+| `when`                    | Runs                            | `schedule.type` |
+| ------------------------- | ------------------------------- | --------------- |
+| a `datetime`              | once, at that time              | `"scheduled"`   |
+| a `timedelta` or a number | once, after that many seconds   | `"delayed"`     |
+| a `str`                   | on that cron expression, in UTC | `"cron"`        |
+
+```python
+from datetime import UTC, datetime
+
+await self.schedule(datetime(2026, 12, 25, 9, 0, tzinfo=UTC), self.remind, {"text": "presents"})
+await self.schedule(30, self.remind, {"text": "in 30 seconds"})
+await self.schedule("0 9 * * 1", self.remind, {"text": "weekly sync"})  # Mondays 09:00 UTC
+```
+
+An invalid cron expression raises `InvalidCronExpressionError`.
+
+## Repeat at an interval
+
+`schedule_every` runs the callback every `interval`, up to 30 days apart:
+
+```python
+await self.schedule_every(timedelta(hours=1), self.sync_feeds)
+```
+
+If a run is still in progress when the next one is due, the SDK skips the next
+one. A run counts as hung after `options.hung_schedule_timeout`, 30 seconds by
+default, and then the schedule runs again.
+
+## Avoid duplicate schedules
+
+`on_start` runs on every wake, so creating a schedule there can add a new one
+each time. An idempotent schedule returns an existing pending schedule instead
+of adding one, when both have the same type, callback and payload, and the
+same cron expression or interval. The exact time of a one-off schedule isn't
+compared.
+
+Cron and interval schedules are idempotent by default. One-off schedules
+aren't, and the SDK logs a warning when `on_start` creates one without
+`idempotent`. Pass `idempotent=True` to reuse a match:
+
+```python
+class Feeds(Agent):
+    async def on_start(self) -> None:
+        await self.schedule_every(timedelta(hours=1), self.sync_feeds)  # created once
+        await self.schedule(60, self.warm_cache, idempotent=True)
+```
+
+## List and cancel schedules
+
+```python
+schedules = await self.list_schedules(type="cron")
+one = await self.get_schedule_by_id(schedules[0].id)
+cancelled = await self.cancel_schedule(one.id)  # True if it existed
+```
+
+`list_schedules` also filters by `id`, and by next run time with `start` and
+`end`. Each `Schedule` has `id`, `callback`, `payload`, `type`, `time` (the next
+run, as a UTC `datetime`), and `delay`, `cron` or `interval` for its type.
+
+## Queue work
+
+`queue` runs a callback soon after the current request or message, without
+making the client wait. Items run one at a time in the order they were added:
+
+```python
+from agents import Agent, QueueItem, callable
+
+
+class Documents(Agent):
+    @callable
+    async def upload(self, doc_id: str) -> str:
+        await self.queue(self.index_document, {"doc_id": doc_id})
+        return "queued"
+
+    async def index_document(self, payload: dict, item: QueueItem) -> None:
+        ...
+```
+
+The callback receives the payload and the `QueueItem`. `queue` returns the
+item's id.
+
+Pass `id=` to give an item a stable id. Queuing the same id again replaces the
+pending item, which is useful for debouncing:
+
+```python
+await self.queue(self.rebuild_index, None, id="rebuild-index")
+```
+
+To inspect or cancel items:
+
+| Method                              | Returns                           |
+| ----------------------------------- | --------------------------------- |
+| `queue_items(callback=None)`        | Pending items in order.           |
+| `get_queue(id)`                     | One item, or `None`.              |
+| `dequeue(id)`                       | `True` if the item existed.       |
+| `dequeue_all()`                     | How many items it cancelled.      |
+| `dequeue_all_by_callback(callback)` | How many items for that callback. |
+
+## Retries and failures
+
+A callback that raises is retried. By default the SDK makes 3 attempts and
+waits a random time between them, growing from 0.1 seconds up to at most
+3 seconds. Change the default for every schedule and queue item on the class:
+
+```python
+from agents import Agent, AgentOptions, RetryOptions
+
+
+class Feeds(Agent):
+    options = AgentOptions(retry=RetryOptions(max_attempts=5, max_delay=30))
+```
+
+Or for one call:
+
+```python
+await self.queue(self.send_email, payload, retry=RetryOptions(max_attempts=10))
+```
+
+After the last attempt fails, the SDK logs the error and calls
+`on_error(None, error)`. The queue then moves on to the next item.
+
+For multi-step work where each step should run only once, even across
+retries, use a [durable task](./tasks.mdx).

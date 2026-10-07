@@ -1,0 +1,341 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Agent class API reference for Python"
+sidebarTitle: "Agent class"
+description: "Reference for agents.Agent: class attributes, AgentOptions, hooks, state, connections, schedules, queue, fibers, routing functions, Connection and exceptions."
+icon: "lucide:book-open"
+prompt: |
+  Write the cf-agents Agent class reference from the public API: class attributes, AgentOptions, hooks, every public method, routing functions, Connection, decorators and exceptions.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/agent/, src/agents/websockets/, src/agents/core/, src/agents/schedules/, src/agents/queue/, src/agents/observability/).
+---
+
+`agents.Agent` is a
+[Durable Object](https://developers.cloudflare.com/durable-objects/api/base/).
+Subclass it, override the hooks you need and decorate methods with
+`@callable`. `self.ctx` and `self.env` work as on any Durable Object. Don't
+override `fetch`, `alarm` or the `webSocket*` handlers. The SDK uses them.
+
+Durations are a `timedelta` or a number of seconds everywhere in the SDK.
+Every public name below imports from `agents`.
+
+## Class attributes
+
+| Attribute       | Type                    | Default                  | Description                                                  |
+| --------------- | ----------------------- | ------------------------ | ------------------------------------------------------------ |
+| `initial_state` | `S \| None`             | `None`                   | State a new agent starts with. Each agent gets its own copy. |
+| `options`       | `AgentOptions`          | `AgentOptions()`         | Settings for every instance of the class.                    |
+| `observability` | `Observability \| None` | `LoggingObservability()` | Where structured events go. `None` turns them off.           |
+
+`Agent` is generic over its state type: `class Counter(Agent[CounterState])`.
+`S` defaults to `dict[str, Any]`.
+
+### `AgentOptions`
+
+A frozen dataclass with keyword-only fields. A subclass's `options` replaces
+its parent's. To extend them, use
+`dataclasses.replace(Parent.options, ...)`.
+
+| Field                            | Type               | Default          | Description                                                                |
+| -------------------------------- | ------------------ | ---------------- | -------------------------------------------------------------------------- |
+| `send_identity_on_connect`       | `bool`             | `True`           | Send the `cf_agent_identity` frame when a client connects.                 |
+| `hung_schedule_timeout`          | `Duration`         | `30`             | When a running interval schedule counts as hung and runs again.            |
+| `keep_alive_interval`            | `Duration`         | `30`             | Alarm interval while `keep_alive()` is held.                               |
+| `retry`                          | `RetryOptions`     | `RetryOptions()` | Default retries for scheduled and queued callbacks.                        |
+| `fiber_recovery_hook_timeout`    | `Duration`         | `10`             | Timeout for the SDK's own fiber-recovery hooks.                            |
+| `fiber_recovery_scan_deadline`   | `Duration`         | `10`             | Soft deadline for one fiber-recovery scan.                                 |
+| `fiber_recovery_max_age`         | `Duration \| None` | 24 hours         | When to stop retrying a failed recovery. `None` retries forever.           |
+| `max_alarm_memory_limit_strikes` | `int`              | `3`              | Alarm memory-limit resets tolerated before recovery work stops.            |
+| `expose_error_details`           | `bool`             | `False`          | Send an unhandled error's traceback to the client. Local development only. |
+
+### `RetryOptions`
+
+| Field          | Type       | Default | Description                          |
+| -------------- | ---------- | ------- | ------------------------------------ |
+| `max_attempts` | `int`      | `3`     | Total attempts, including the first. |
+| `base_delay`   | `Duration` | `0.1`   | Base delay for the backoff.          |
+| `max_delay`    | `Duration` | `3.0`   | The longest wait between attempts.   |
+
+The wait before each retry is random, up to
+`min(2 ** attempt * base_delay, max_delay)`.
+
+## Hooks
+
+Override these on your subclass. All are `async def` except
+`validate_state_change`.
+
+| Hook                                                     | Called                                                                                    | Default         |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------- |
+| `on_start()`                                             | Once per wake, before any request, message or alarm.                                      | Does nothing.   |
+| `on_request(request) -> Response`                        | For an HTTP request the SDK doesn't handle itself.                                        | `404`.          |
+| `on_connect(connection, ctx)`                            | After a client connects and receives its protocol frames.                                 | Does nothing.   |
+| `on_message(connection, message)`                        | For a frame that isn't a state update or an RPC call. `message` is `str` or `bytes`.      | Does nothing.   |
+| `on_close(connection, code, reason, was_clean)`          | When a client disconnects.                                                                | Does nothing.   |
+| `on_error(connection, error)`                            | When a hook, callback or socket fails. `connection` is set only for a socket's own error. | Re-raises.      |
+| `on_state_changed(state, source)`                        | After a state change is saved and sent to clients.                                        | Does nothing.   |
+| `validate_state_change(next_state, source)`              | Before a state change is saved. Raise to reject it. Synchronous.                          | Accepts.        |
+| `get_connection_tags(connection, ctx) -> list[str]`      | Once per new connection. At most 9 tags.                                                  | `[]`.           |
+| `should_connection_be_readonly(connection, ctx) -> bool` | Once per new connection.                                                                  | `False`.        |
+| `should_send_protocol_messages(connection, ctx) -> bool` | Once per new connection.                                                                  | `True`.         |
+| `on_alarm()`                                             | On every alarm, after due schedules and queue items.                                      | Does nothing.   |
+| `on_fiber_recovered(ctx) -> FiberRecoveryResult \| None` | On wake, for a fiber whose isolate stopped. Runs before `on_start`.                       | Logs a warning. |
+| `on_before_sub_agent(request, child)`                    | Before a request is forwarded to a sub-agent.                                             | Forwards it.    |
+
+`source` is `"server"` or the `Connection` a client's change came from. `ctx`
+is a `ConnectionContext`, whose `request` is the WebSocket upgrade request.
+
+When `on_error` returns normally, the error counts as handled. A failed
+request gets a `500`, and a failed connect or message leaves the connection
+open.
+
+## Identity
+
+| Member                     | Type                      | Description                                              |
+| -------------------------- | ------------------------- | -------------------------------------------------------- |
+| `name`                     | `str`                     | The instance name.                                       |
+| `sql`                      | `Sql`                     | The agent's SQLite database. See [SQL](#sql).            |
+| `tasks`                    | `Tasks`                   | Durable task runs. See [Run durable tasks](./tasks.mdx). |
+| `dynamic_agents`           | `DynamicAgents`           | This agent's sub-agents.                                 |
+| `parent_path`, `self_path` | `Sequence[AgentPathStep]` | Agents from the root down. Empty on a root.              |
+| `session_affinity`         | `str`                     | A stable key for this instance.                          |
+
+## State
+
+### `state`
+
+```python
+@property
+def state(self) -> S | None
+```
+
+The current state. Treat it as read-only.
+
+### `set_state`
+
+```python
+def set_state(self, state: S) -> None
+```
+
+Validates, saves and broadcasts `state`, then runs `on_state_changed` in the
+background. Raises `ReadonlyConnectionError` when called while serving a
+readonly connection, or whatever `validate_state_change` raises.
+
+## SQL
+
+```python
+def sql(self, query: LiteralString, *params: SqlValue, row: type[R] | None = None) -> Sequence[dict[str, Any]]
+```
+
+`self.sql` is an `Sql` object. Calling it runs one statement and returns its
+rows as dicts. It is synchronous.
+
+- `params` fill the `?` placeholders. `SqlValue` is
+  `int | float | str | bytes | None`.
+- `row` annotates the rows' type for a type checker. Rows aren't validated.
+- Raises `SqlError` when SQLite rejects the statement, `TypeError` for an
+  unsupported parameter type, and `ValueError` for an integer outside
+  ±2<sup>53</sup>.
+
+## Connections
+
+| Method                              | Returns                       | Description                                                              |
+| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| `get_connections(tag=None)`         | `Iterator[Connection]`        | Open connections, optionally only those with `tag`.                      |
+| `get_connection(id)`                | `Connection \| None`          | One connection. Raises `DuplicateConnectionIdError` if two share the id. |
+| `broadcast(message, *, exclude=())` | `None`                        | Sends to every open connection except `exclude` (connections or ids).    |
+| `get_callable_methods()`            | `dict[str, CallableMetadata]` | The `@callable` methods, by name.                                        |
+
+### `Connection`
+
+| Member                          | Type                | Description                                                            |
+| ------------------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `id`                            | `str`               | The client's connection id, or a generated one.                        |
+| `uri`                           | `str \| None`       | The URL the client connected with.                                     |
+| `tags`                          | `Sequence[str]`     | The connection's tags, with its id first.                              |
+| `state`                         | `ConnState \| None` | Per-connection JSON state.                                             |
+| `set_state(state)`              | `None`              | Replaces the state. Raises `ConnectionStateTooLargeError` past 16 KiB. |
+| `readonly`                      | `bool`              | Whether the client may change the agent's state. Settable.             |
+| `protocol_enabled`              | `bool`              | Whether the client gets protocol frames.                               |
+| `send(message)`                 | `None`              | Sends a `str` or `bytes` frame.                                        |
+| `close(code=None, reason=None)` | `None`              | Closes the connection.                                                 |
+
+## `@callable`
+
+```python
+@callable
+@callable(description: str | None = None, streaming: bool = False)
+```
+
+Lets clients call an `async` method over their WebSocket. With
+`streaming=True`, the method receives a `StreamingResponse` before the
+client's arguments. An async generator streams one chunk per `yield` without
+`streaming=True`. Raises `TypeError` for a non-`async` method, or an async
+generator with `streaming=True`.
+
+### `StreamingResponse`
+
+| Member            | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `send(chunk)`     | Sends one chunk. Returns `False` once closed or after the client leaves. |
+| `end(final=None)` | Closes the stream. The client's call resolves with `final`.              |
+| `error(message)`  | Closes the stream and rejects the client's call with `message`.          |
+| `is_closed`       | Whether `end` or `error` has been called.                                |
+
+## Schedules
+
+| Method                                                                             | Returns              |
+| ---------------------------------------------------------------------------------- | -------------------- |
+| `schedule(when, callback, payload=None, *, retry=None, idempotent=None)`           | `Schedule`           |
+| `schedule_every(interval, callback, payload=None, *, retry=None, idempotent=None)` | `Schedule`           |
+| `get_schedule_by_id(id)`                                                           | `Schedule \| None`   |
+| `list_schedules(*, id=None, type=None, start=None, end=None)`                      | `Sequence[Schedule]` |
+| `cancel_schedule(id)`                                                              | `bool`               |
+
+- `when` is a `datetime` to run once at that time, a `timedelta` or number of
+  seconds to run once after that delay, or a cron `str` evaluated in UTC.
+- `interval` is at most 30 days. A longer one raises `ValueError`.
+- `callback` is a method of the agent or its name. It's called as
+  `callback(payload, schedule)`.
+- `idempotent` defaults to `True` for cron and interval schedules and `False`
+  for one-off schedules.
+
+`Schedule` is a dataclass with `id`, `callback`, `payload`, `type`
+(`"scheduled"`, `"delayed"`, `"cron"` or `"interval"`), `time` (next run, UTC
+`datetime`), `retry`, and `delay`, `cron` or `interval` for its type.
+
+## Queue
+
+| Method                                                  | Returns               |
+| ------------------------------------------------------- | --------------------- |
+| `queue(callback, payload=None, *, retry=None, id=None)` | `str`, the item id    |
+| `dequeue(id)`                                           | `bool`                |
+| `dequeue_all()`                                         | `int`                 |
+| `dequeue_all_by_callback(callback)`                     | `int`                 |
+| `get_queue(id)`                                         | `QueueItem \| None`   |
+| `queue_items(callback=None)`                            | `Sequence[QueueItem]` |
+
+The callback is called as `callback(payload, item)`. Queuing an existing `id`
+replaces that pending item. `QueueItem` has `id`, `callback`, `payload`,
+`created_at` and `retry`.
+
+## Fibers and keep-alive
+
+| Method                                                                                                    | Returns                     |
+| --------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `run_fiber(name, fn)`                                                                                     | What `fn` returns           |
+| `stash(data)`                                                                                             | `None`                      |
+| `start_fiber(name, fn, *, fiber_id=None, idempotency_key=None, metadata=None, wait_for_completion=False)` | `StartFiberResult`          |
+| `inspect_fiber(fiber_id)`, `inspect_fiber_by_key(key)`                                                    | `FiberInspection \| None`   |
+| `list_fibers(*, status=None, name=None, limit=None)`                                                      | `Sequence[FiberInspection]` |
+| `cancel_fiber(fiber_id, reason=None)`, `cancel_fiber_by_key(key, reason=None)`                            | `bool`                      |
+| `resolve_fiber(fiber_id, result)`                                                                         | `bool`                      |
+| `delete_fibers(*, status=None, settled_before=None, limit=None)`                                          | `int`                       |
+| `keep_alive()`                                                                                            | `Disposable`                |
+| `keep_alive_while(fn)`                                                                                    | What `fn` returns           |
+
+`fn` receives a `FiberContext` with `id` and `stash(data)`. `stash` outside a
+fiber raises `RuntimeError`. See [Long-running work](./long-running-work.mdx).
+
+## Teardown
+
+```python
+async def destroy(self) -> None
+```
+
+Deletes the agent's storage, alarm and connections. The object resets right
+after this returns, so don't use it again. The next request for the same name
+creates a fresh agent.
+
+## Module functions
+
+### `route_agent_request`
+
+```python
+async def route_agent_request(
+    request: Request,
+    env: Any,
+    *,
+    prefix: str = "agents",
+    cors: bool | Mapping[str, str] = False,
+    jurisdiction: str | None = None,
+    location_hint: str | None = None,
+    routing_retry: RoutingRetryOptions | Literal[False] | None = None,
+    on_before_connect: BeforeHook | None = None,
+    on_before_request: BeforeHook | None = None,
+) -> Response | None
+```
+
+Forwards `/{prefix}/{agent}/{name}/...` to that agent. Returns `None` for any
+other path, and a `400` when `{agent}` matches no binding. See
+[Route requests](./routing.mdx).
+
+### `get_agent_by_name`
+
+```python
+async def get_agent_by_name(
+    namespace: Any,
+    name: str,
+    *,
+    jurisdiction: str | None = None,
+    location_hint: str | None = None,
+    routing_retry: RoutingRetryOptions | Literal[False] | None = None,
+) -> Any
+```
+
+Starts the agent and returns its Durable Object stub for RPC calls.
+
+### `get_sub_agent_by_name` and `route_sub_agent_request`
+
+```python
+async def get_sub_agent_by_name(parent: Any, cls: type, name: str) -> SubAgentStub
+async def route_sub_agent_request(request: Request, parent: Any, *, from_path: str | None = None) -> Response
+```
+
+See [Use sub-agents](./sub-agents.mdx).
+
+### `get_current_agent`
+
+```python
+def get_current_agent() -> CurrentAgent | None
+```
+
+Returns the agent the running code belongs to, with the `connection` and
+`request` being served, or `None` outside an agent. It works in hooks,
+`@callable` methods, callbacks and RPC methods, and in `asyncio` tasks they
+start.
+
+## Exceptions
+
+Every exception the SDK raises on purpose subclasses `AgentsException`.
+
+| Exception                      | Raised when                                                      |
+| ------------------------------ | ---------------------------------------------------------------- |
+| `SqlError`                     | SQLite rejects a statement. `error.query` holds it.              |
+| `ReadonlyConnectionError`      | `set_state` runs while serving a readonly connection.            |
+| `ConnectionStateTooLargeError` | `Connection.set_state` exceeds 16 KiB.                           |
+| `DuplicateConnectionIdError`   | `get_connection` finds two connections with one id.              |
+| `InvalidCronExpressionError`   | `schedule` gets an invalid cron string.                          |
+| `NonRetryableError`            | You raise it in a task step to fail the run without retries.     |
+| `StepTimeoutError`             | A task step attempt runs past its timeout.                       |
+| `DuplicateTaskStepError`       | A task run reuses a step name.                                   |
+| `TaskReplayDivergedError`      | A task's steps changed while a run was in progress.              |
+| `FiberConflictError`           | `fiber_id` and `idempotency_key` name different existing fibers. |
+| `SubAgentAbortedError`         | A call to a sub-agent was cut off by `dynamic_agents.abort`.     |
+
+## Logging and events
+
+The SDK logs to loggers under `agents`, such as `agents.agent` and
+`agents.routing`, with the standard
+[`logging`](https://docs.python.org/3/library/logging.html) module.
+
+It also emits structured events, such as `rpc`, `state:update` and
+`queue:error`. The default `LoggingObservability` writes each event as one
+JSON line to the `agents.events` logger at `DEBUG`. To see them:
+
+```python
+import logging
+
+logging.getLogger("agents.events").setLevel(logging.DEBUG)
+```
+
+To send events elsewhere, set `observability` to an object with an
+`emit(event: ObservabilityEvent)` method.

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://holocron.so/docs.json",
+  "name": "Crosswind",
+  "description": "Typed, async Python SDKs for Cloudflare Python Workers: Agents and Containers.",
+  "colors": {
+    // blue-600, with blue-700 in light mode and blue-400 in dark mode
+    "primary": "#2563eb",
+    "dark": "#1d4ed8",
+    "light": "#60a5fa"
+  },
+  "appearance": { "default": "system" },
+  "fonts": { "family": "IBM Plex Sans" },
+  "icons": { "library": "lucide" },
+  // The hosted AI assistant needs a holocron.so key; off for self-hosting
+  "assistant": { "enabled": false },
+  "navbar": {
+    "links": [
+      { "label": "Agents", "href": "/docs/agents/overview" },
+      { "label": "Containers", "href": "/docs/containers/overview" }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "/docs/agents/getting-started"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Crosswind",
+        "icon": "lucide:house",
+        "pages": ["index"]
+      },
+      {
+        "group": "Agents",
+        "icon": "lucide:bot",
+        "pages": [
+          "docs/agents/overview",
+          "docs/agents/getting-started",
+          {
+            "group": "Guides",
+            "pages": [
+              "docs/agents/state",
+              "docs/agents/clients",
+              "docs/agents/connections",
+              "docs/agents/routing",
+              "docs/agents/schedules-and-queue",
+              "docs/agents/tasks",
+              "docs/agents/chat",
+              "docs/agents/long-running-work",
+              "docs/agents/sub-agents",
+              "docs/agents/coming-from-typescript"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "docs/agents/agent-class",
+              "docs/agents/chat-agent-class",
+              "docs/agents/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "group": "Containers",
+        "icon": "lucide:box",
+        "pages": [
+          "docs/containers/overview",
+          "docs/containers/getting-started",
+          {
+            "group": "Guides",
+            "pages": [
+              "docs/containers/lifecycle",
+              "docs/containers/routing",
+              "docs/containers/outbound-traffic",
+              "docs/containers/examples",
+              "docs/containers/coming-from-typescript"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "docs/containers/container-class",
+              "docs/containers/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  // Old URLs from before the docs moved under /docs
+  "redirects": [
+    { "source": "/containers/*", "destination": "/docs/containers/:splat", "permanent": true }
+  ]
+}

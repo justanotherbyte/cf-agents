@@ -1,0 +1,180 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Handle WebSocket connections in a Python agent"
+sidebarTitle: "Handle connections"
+description: "Run code when clients connect, message and disconnect, broadcast to every client, tag connections, store per-connection state and make connections readonly."
+icon: "lucide:radio"
+prompt: |
+  Write the cf-agents WebSocket connections guide: on_connect, on_message, on_close, broadcast, get_connections, tags, connection state, readonly and protocol frames, hibernation.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/agent/agent.py, src/agents/websockets/).
+---
+
+Every client of an agent holds a WebSocket. The SDK accepts the socket, sends
+the agent's state, and answers `@callable` calls. Override the connection
+hooks to do more, such as greeting a client or relaying its messages to
+others.
+
+The runtime can evict an agent from memory while its sockets stay open. The
+next message wakes it, and `on_start()` runs again before the hook. Keep
+anything a hook needs in state, SQL or connection state, not in instance
+attributes.
+
+## Run code when a client connects
+
+`on_connect` runs after the SDK has accepted the socket and sent its protocol
+frames:
+
+```python
+import json
+
+from agents import Agent, Connection, ConnectionContext
+
+
+class Room(Agent):
+    async def on_connect(self, connection: Connection, ctx: ConnectionContext) -> None:
+        connection.send(json.dumps({"type": "welcome", "id": connection.id}))
+```
+
+`ctx.request` is the WebSocket upgrade request, so you can read its URL,
+query string and headers. `connection.id` is the id the client chose, or a
+generated one.
+
+## Handle messages
+
+`on_message` receives every frame the SDK doesn't handle itself. State
+updates and `@callable` calls never reach it:
+
+```python
+class Room(Agent):
+    async def on_message(self, connection: Connection, message: str | bytes) -> None:
+        self.broadcast(f"{connection.id}: {message}", exclude=[connection])
+```
+
+`message` is a `str` for text frames and `bytes` for binary frames.
+
+## Send to clients
+
+| Call                                          | Sends to                              |
+| --------------------------------------------- | ------------------------------------- |
+| `connection.send(message)`                    | One connection.                       |
+| `self.broadcast(message)`                     | Every open connection.                |
+| `self.broadcast(message, exclude=[...])`      | Every connection except those listed. |
+| `for c in self.get_connections("admin"): ...` | Connections with a tag. See below.    |
+
+`exclude` takes `Connection` objects or ids. An id excludes every connection
+with that id. Use `self.get_connection(id)` to look up one connection.
+
+## Run code when a client leaves
+
+```python
+class Room(Agent):
+    async def on_close(
+        self, connection: Connection, code: int, reason: str, was_clean: bool
+    ) -> None:
+        self.broadcast(json.dumps({"type": "left", "id": connection.id}))
+```
+
+To disconnect a client, call `connection.close(code, reason)`. Codes `1008`
+and `4000` to `4999` tell the JavaScript client not to reconnect.
+
+## Tag connections
+
+Tags group connections so you can find them later, for example by role.
+Return them from `get_connection_tags`. The SDK calls it once per connection,
+before any frame is sent:
+
+```python
+from urllib.parse import parse_qs, urlparse
+
+
+class Room(Agent):
+    async def get_connection_tags(
+        self, connection: Connection, ctx: ConnectionContext
+    ) -> list[str]:
+        query = parse_qs(urlparse(ctx.request.url).query)
+        return ["admin"] if query.get("role") == ["admin"] else []
+```
+
+A connection can have at most 9 tags. `connection.tags` lists them, with the
+connection id first.
+
+## Store data on a connection
+
+`connection.state` holds a small JSON value per connection, such as a user
+name. It survives hibernation along with the socket:
+
+```python
+class Room(Agent):
+    async def on_connect(self, connection: Connection, ctx: ConnectionContext) -> None:
+        connection.set_state({"joined_at": "2026-10-07T12:00:00Z"})
+
+    async def on_message(self, connection: Connection, message: str | bytes) -> None:
+        print(connection.state)  # {"joined_at": "2026-10-07T12:00:00Z"}
+```
+
+Connection state shares a 16 KiB limit with the SDK's own data for that
+socket. `set_state` raises `ConnectionStateTooLargeError` when it doesn't fit.
+Keep larger data in SQL, keyed by `connection.id`.
+
+## Readonly connections
+
+A readonly connection can read state and call methods, but can't change the
+agent's state. Decide when the client connects:
+
+```python
+class Document(Agent):
+    async def should_connection_be_readonly(
+        self, connection: Connection, ctx: ConnectionContext
+    ) -> bool:
+        return "mode=view" in ctx.request.url
+```
+
+A `setState` from a readonly client is rejected, and the client's
+`onStateUpdateError` callback receives the error. A `@callable` method that
+calls `set_state()` while serving a readonly connection raises
+`ReadonlyConnectionError`.
+
+## Plain WebSocket clients
+
+On connect, the SDK sends protocol frames that the `agents` npm package reads:
+the agent's identity, its state and an MCP status frame. A client that doesn't
+use that package gets them too:
+
+```text
+{"type": "cf_agent_identity", "name": "room", "agent": "room"}
+{"type":"cf_agent_mcp_servers","mcp":{"servers":{},"tools":[],"prompts":[],"resources":[]}}
+```
+
+To turn them off for such clients, return `False` from
+`should_send_protocol_messages`. Those connections then get no state updates:
+
+```python
+class Room(Agent):
+    async def should_send_protocol_messages(
+        self, connection: Connection, ctx: ConnectionContext
+    ) -> bool:
+        return "raw=1" not in ctx.request.url
+```
+
+To keep the frames but leave out the identity frame, set
+`options = AgentOptions(send_identity_on_connect=False)`.
+
+## Errors in hooks
+
+When `on_connect` or `on_message` raises, the SDK calls
+`on_error(None, error)`. The default re-raises. Override it and return
+normally to keep the connection open:
+
+```python
+from agents import get_current_agent
+
+
+class Room(Agent):
+    async def on_error(self, connection: Connection | None, error: Exception) -> None:
+        current = get_current_agent()
+        client = current.connection if current else None
+        print("hook failed for", client.id if client else "no client", error)
+```
+
+The `connection` argument is set only when the socket itself reports an error.
+Inside a hook, `get_current_agent().connection` is the client being served.

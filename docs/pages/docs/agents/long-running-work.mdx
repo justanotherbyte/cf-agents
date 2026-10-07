@@ -1,0 +1,148 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Keep a Python agent running during long work"
+sidebarTitle: "Long-running work"
+description: "Keep an agent in memory while slow work runs, checkpoint it with fibers, recover it after the isolate stops, and track managed fibers by id."
+icon: "lucide:timer"
+prompt: |
+  Write the cf-agents guide for long-running work: keep_alive and keep_alive_while, run_fiber with stash and on_fiber_recovered, managed fibers with start_fiber, inspection and cancellation, and when to use tasks instead.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/fibers/, src/agents/agent/agent.py).
+---
+
+The runtime can evict an agent from memory when no request, message or alarm
+is active, even while a coroutine is still waiting on a slow API. This page
+covers two ways to prevent that and to recover when it happens anyway.
+
+| You need                                                | Use                                   |
+| ------------------------------------------------------- | ------------------------------------- |
+| The agent to stay in memory while one coroutine runs    | `keep_alive_while`                    |
+| To resume from a checkpoint if the isolate stops anyway | A fiber: `run_fiber` or `start_fiber` |
+| Steps that each run exactly once, with retries          | A [durable task](./tasks.mdx)         |
+
+## Keep the agent in memory
+
+`keep_alive_while(fn)` runs `fn` and keeps the agent in memory until it
+finishes, however it finishes:
+
+```python
+from agents import Agent, callable
+
+
+class Research(Agent):
+    @callable
+    async def research(self, topic: str) -> str:
+        return await self.keep_alive_while(lambda: self._slow_search(topic))
+
+    async def _slow_search(self, topic: str) -> str:
+        ...
+```
+
+While it runs, the SDK sets the agent's alarm every `keep_alive_interval`, 30
+seconds by default. Each alarm keeps the agent awake.
+
+`keep_alive()` does the same without a function. It returns a handle. Call
+`handle.dispose()` when the work is done:
+
+```python
+handle = await self.keep_alive()
+try:
+    await self._slow_search(topic)
+finally:
+    handle.dispose()
+```
+
+Keep-alive doesn't protect against a deploy, a crash or the runtime's memory
+limit. For those, use a fiber.
+
+## Checkpoint work with a fiber
+
+A fiber is a coroutine the SDK records while it runs. It keeps the agent alive
+like `keep_alive_while`. If the isolate stops before the fiber finishes, the
+SDK calls `on_fiber_recovered` the next time the agent wakes, with the last
+checkpoint you saved:
+
+```python
+from agents import (
+    Agent,
+    FiberContext,
+    FiberRecoveryContext,
+    FiberRecoveryResult,
+    QueueItem,
+)
+
+
+class Importer(Agent):
+    async def import_all(self, urls: list[str]) -> int:
+        async def body(ctx: FiberContext) -> int:
+            for i, url in enumerate(urls):
+                await self._import(url)
+                ctx.stash({"done": i + 1, "urls": urls})
+            return len(urls)
+
+        return await self.run_fiber("import", body)
+
+    async def on_fiber_recovered(
+        self, ctx: FiberRecoveryContext
+    ) -> FiberRecoveryResult | None:
+        if ctx.name == "import" and ctx.snapshot:
+            remaining = ctx.snapshot["urls"][ctx.snapshot["done"] :]
+            await self.queue(self.resume_import, {"urls": remaining})
+        return None
+
+    async def resume_import(self, payload: dict, item: QueueItem) -> None:
+        await self.import_all(payload["urls"])
+```
+
+`_import` stands for your own code that imports one URL. The recovery hook
+queues the URLs that weren't done yet, and the queue runs `import_all` again
+with only those.
+
+- `ctx.stash(data)` saves a checkpoint, replacing the previous one. `data`
+  must be JSON-serializable. It's saved before `stash` returns.
+- `run_fiber` returns what the body returns. Errors propagate and the SDK
+  doesn't retry them.
+- `on_fiber_recovered` runs before `on_start`. The default logs a warning.
+
+If `on_fiber_recovered` raises, the SDK tries again on later wakes for up to
+`options.fiber_recovery_max_age`, 24 hours by default.
+
+## Track fibers by id
+
+`start_fiber` starts a managed fiber in the background and keeps a record you
+can inspect, list and cancel:
+
+```python
+from agents import Agent, FiberContext, callable
+
+
+class Exporter(Agent):
+    @callable
+    async def export(self, account_id: str) -> str:
+        async def body(ctx: FiberContext) -> None:
+            ctx.stash({"step": "started"})
+            await self._export(account_id)
+
+        started = await self.start_fiber(
+            "export", body, idempotency_key=f"export-{account_id}"
+        )
+        return started.fiber_id
+```
+
+A second `start_fiber` with the same `fiber_id` or `idempotency_key` returns
+the existing fiber with `accepted=False` instead of starting another. Pass
+`wait_for_completion=True` to wait until the fiber finishes.
+
+| Method                                    | What it does                                               |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| `inspect_fiber(fiber_id)`                 | Returns the record, or `None`.                             |
+| `inspect_fiber_by_key(key)`               | Looks the record up by idempotency key.                    |
+| `list_fibers(status=, name=, limit=)`     | Returns records, newest first. 50 by default, at most 100. |
+| `cancel_fiber(fiber_id, reason)`          | Aborts a running fiber. Its body gets `CancelledError`.    |
+| `resolve_fiber(fiber_id, result)`         | Settles an `interrupted` fiber yourself.                   |
+| `delete_fibers(status=, settled_before=)` | Deletes finished records.                                  |
+
+A record's `status` is `"pending"`, `"running"`, `"completed"`, `"error"`,
+`"aborted"` or `"interrupted"`. A managed fiber whose isolate stopped becomes
+`interrupted`. To settle it from `on_fiber_recovered`, return
+`FiberCompleted(snapshot=...)`, `FiberErrored(error=...)` or
+`FiberAborted(reason=...)`. Returning `None` leaves it `interrupted`.

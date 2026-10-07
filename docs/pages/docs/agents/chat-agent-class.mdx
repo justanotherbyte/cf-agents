@@ -1,0 +1,157 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "AIChatAgent API reference for Python"
+sidebarTitle: "AIChatAgent class"
+description: "Reference for agents.AIChatAgent: options, hooks, transcript methods, turn control, message and part types, and the stream chunk classes."
+icon: "lucide:message-square-code"
+prompt: |
+  Write the cf-agents AIChatAgent reference: AIChatAgentOptions, hooks, transcript methods, turn control, result types, UIMessage and parts, and chunk classes.
+  Source: @https://github.com/justanotherbyte/agents-py (src/agents/chat/).
+---
+
+`agents.AIChatAgent` extends [`Agent`](./agent-class.mdx), so every hook and
+method there also works here. See [Build a chat agent](./chat.mdx) for a guide.
+
+## Options
+
+Set `options = AIChatAgentOptions(...)` on the class. It extends
+[`AgentOptions`](./agent-class.mdx#agentoptions) with these fields. A plain
+`AgentOptions` on a chat agent raises `TypeError` when the agent is created.
+
+| Field                    | Type                 | Default             | Description                                                                                                  |
+| ------------------------ | -------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `message_concurrency`    | `MessageConcurrency` | `"queue"`           | What a send does while another turn runs: `"queue"`, `"latest"`, `"merge"`, `"drop"` or `Debounce(seconds)`. |
+| `max_persisted_messages` | `int \| None`        | `None`              | Keep at most this many stored messages, deleting the oldest after each save.                                 |
+| `hydration_byte_budget`  | `int \| None`        | `33554432` (32 MiB) | Bytes of the newest messages `self.messages` loads on wake. `None` loads all.                                |
+
+`Debounce(seconds=0.75)` raises `ValueError` for a negative or infinite value.
+
+## Hooks
+
+### `on_chat_message`
+
+```python
+def on_chat_message(
+    self, options: ChatMessageOptions
+) -> AsyncIterator[UIMessageChunk] | AsyncIterator[str]
+```
+
+Produces the reply to `self.messages`. Write it as an async generator that
+yields `str` or chunks, not both. An `async def` that returns an async
+iterator also works. The default raises `NotImplementedError`.
+
+`ChatMessageOptions` fields:
+
+| Field          | Type                           | Description                                                          |
+| -------------- | ------------------------------ | -------------------------------------------------------------------- |
+| `request_id`   | `str`                          | The turn's id.                                                       |
+| `client_tools` | `Sequence[ClientToolSchema]`   | Tools the client declared, with `name`, `description`, `parameters`. |
+| `body`         | `dict[str, JSONValue] \| None` | Extra fields from the client's request body.                         |
+| `continuation` | `bool`                         | `True` when the turn appends to the last assistant message.          |
+
+### `on_chat_response`
+
+```python
+async def on_chat_response(self, result: ChatResponseResult) -> None
+```
+
+Runs after a turn's message is saved. `ChatResponseResult` has `message`,
+`request_id`, `continuation`, `status` (`"completed"`, `"error"` or
+`"aborted"`) and `error`. It may call `save_messages`.
+
+### `sanitize_message_for_persistence`
+
+```python
+def sanitize_message_for_persistence(self, message: UIMessage) -> UIMessage
+```
+
+Returns the message as it should be stored. Runs on every saved message. The
+default returns it unchanged.
+
+### `repair_interrupted_tool_part`
+
+```python
+def repair_interrupted_tool_part(self, part: AnyToolPart) -> UIMessagePart
+```
+
+Replaces a tool call left without a result before the next turn, so the model
+never sees a call with no result. The default returns an `output-error` part.
+
+## Transcript
+
+| Member                                        | Returns               | Description                                                                                               |
+| --------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `messages`                                    | `Sequence[UIMessage]` | The conversation, oldest first. Read-only.                                                                |
+| `persist_messages(messages, *, exclude=())`   | `None`                | Stores `messages` as the transcript without running a turn. Sends the result to clients except `exclude`. |
+| `save_messages(messages)`                     | `SaveMessagesResult`  | Stores messages, then runs a turn to answer them. Waits for a running turn.                               |
+| `continue_last_turn(*, body=None)`            | `SaveMessagesResult`  | Runs a turn that appends to the last assistant message.                                                   |
+| `delete_messages(message_ids, *, exclude=())` | `None`                | Deletes messages by id. Unknown ids are ignored.                                                          |
+
+`save_messages` also accepts an `async` function that receives the current
+messages and returns the new list. `persist_messages` doesn't delete stored
+messages that the list leaves out.
+
+`SaveMessagesResult` has `request_id`, `status` (`"completed"`, `"error"`,
+`"skipped"` or `"aborted"`) and `error`. `"skipped"` means the chat was cleared
+before the turn ran, or `continue_last_turn` found no assistant message.
+Cancelling the code awaiting `save_messages` stops the turn and raises
+`CancelledError`.
+
+## Turn control
+
+| Method                      | Description                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| `abort_request(request_id)` | Stops one running turn. It ends as `"aborted"` and its partial reply is saved. |
+| `abort_all_requests()`      | Stops every running turn. Queued turns still run.                              |
+| `reset_turn_state()`        | Stops the running turn and drops queued ones.                                  |
+
+## Storage attributes
+
+| Attribute  | Type       | Description                                                             |
+| ---------- | ---------- | ----------------------------------------------------------------------- |
+| `sessions` | `Sessions` | Where the transcript is stored.                                         |
+| `streams`  | `Streams`  | Where each turn's output is stored, so reconnecting clients can resume. |
+
+## Messages and parts
+
+`UIMessage` is a dataclass matching the AI SDK's `UIMessage`:
+
+```python
+@dataclass
+class UIMessage:
+    id: str
+    role: Literal["system", "user", "assistant"]
+    parts: list[UIMessagePart] = []
+    metadata: JSONValue = None
+```
+
+`UIMessagePart` is one of: `TextPart`, `ReasoningPart`, `FilePart`,
+`SourceUrlPart`, `SourceDocumentPart`, `StepStartPart`, `DataPart`, a tool part
+(`ToolInputStreamingPart`, `ToolInputAvailablePart`,
+`ToolOutputAvailablePart`, `ToolOutputErrorPart`, `ToolOutputDeniedPart`,
+`ToolApprovalRequestedPart`, `ToolApprovalRespondedPart`) or `UnknownPart`.
+Use `isinstance` to tell them apart.
+
+## Chunks
+
+`on_chat_message` yields classes from `agents.chat.chunks`. Fields are
+`snake_case` versions of the
+[AI SDK v6 chunk](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) fields.
+
+| Group     | Classes                                                                                                                                                         |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Text      | `TextStart(id)`, `TextDelta(id, delta)`, `TextEnd(id)`                                                                                                          |
+| Reasoning | `ReasoningStart(id)`, `ReasoningDelta(id, delta)`, `ReasoningEnd(id)`                                                                                           |
+| Tools     | `ToolInputStart`, `ToolInputDelta`, `ToolInputAvailable`, `ToolInputError`, `ToolOutputAvailable`, `ToolOutputError`, `ToolOutputDenied`, `ToolApprovalRequest` |
+| Sources   | `SourceUrl`, `SourceDocument`, `File`                                                                                                                           |
+| Data      | `Data`, `MessageMetadata`                                                                                                                                       |
+| Steps     | `StartStep`, `FinishStep`                                                                                                                                       |
+| Control   | `Start`, `Finish`, `Error(error_text)`, `Abort`                                                                                                                 |
+
+Rules the SDK enforces:
+
+- The SDK sends `Start` and `Finish` if the stream doesn't.
+- A delta or end chunk must follow a start chunk with the same id
+  (`TextStart`, `ReasoningStart` or `ToolInputStart`). Otherwise the turn fails
+  with `TypeError`.
+- `Error` ends the turn as failed.

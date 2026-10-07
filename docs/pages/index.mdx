@@ -1,0 +1,131 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "Python SDKs for Cloudflare Workers"
+sidebarTitle: Home
+description: "Typed, async Python SDKs for Cloudflare Python Workers: run Containers with containers-py and build stateful agents with cf-agents."
+mode: "center"
+prompt: |
+  Write the Crosswind home page: what the SDKs are, a working code sample for each, the SDK table, concrete reasons to use them, the Mosslight Valley demo, and status.
+  Sources: @https://github.com/justanotherbyte/containers and @https://github.com/justanotherbyte/agents-py.
+---
+
+import { PypiVersion } from '../components/pypi-version.tsx'
+
+<Above>
+<div className='no-bleed flex flex-col gap-(--prose-gap) py-12'>
+
+<h1 className='text-4xl font-semibold tracking-tight'>Python SDKs for Cloudflare Workers<span className='text-primary'>.</span></h1>
+
+<p className='text-lg text-muted-foreground'>Crosswind is a set of typed, async Python packages for Python Workers. Use <code>containers-py</code> to run Cloudflare Containers and <code>cf-agents</code> to build stateful agents with the Agents SDK.</p>
+
+<div className='flex flex-wrap gap-3'>
+  <a href='./docs/agents/getting-started.mdx' className='no-underline rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground'>Build an agent →</a>
+  <a href='./docs/containers/getting-started.mdx' className='no-underline rounded-md border border-border px-4 py-2 text-sm font-medium'>Run a container →</a>
+</div>
+
+<p className='font-mono text-xs text-muted-foreground'>python 3.12+ <span className='text-primary'>/</span> typed <span className='text-primary'>/</span> pre-1.0</p>
+
+</div>
+</Above>
+
+<Tabs>
+<Tab title="Agents">
+
+```python src/entry.py lines=false
+from workers import Request, Response, WorkerEntrypoint
+from agents import Agent, callable, route_agent_request
+
+
+class Counter(Agent):
+    initial_state = {"count": 0}
+
+    @callable  # clients call this over a WebSocket
+    async def increment(self, by: int = 1) -> int:
+        self.set_state({"count": self.state["count"] + by})  # saved, sent to every client
+        return self.state["count"]
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request: Request) -> Response:
+        # /agents/counter/<name> reaches the counter called <name>
+        return await route_agent_request(request, self.env) or Response("Not found", status=404)
+```
+
+</Tab>
+<Tab title="Containers">
+
+```python src/entry.py lines=false
+from workers import Request, Response, WorkerEntrypoint
+from containers import Container, get_container
+
+
+class Transcoder(Container):
+    default_port = 8080
+    sleep_after = "5m"
+    enable_internet = False
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request: Request) -> Response:
+        # One container per video, started on the first request
+        video_id = request.url.rsplit("/", 1)[-1]
+        container = get_container(self.env.TRANSCODER, video_id)
+        return await container.fetch(request)
+```
+
+</Tab>
+</Tabs>
+
+## What Crosswind is
+
+[Python Workers](https://developers.cloudflare.com/workers/languages/python/)
+run Python on Cloudflare's network. Several Cloudflare products ship their
+developer kits only for TypeScript, so using them from Python means calling
+JavaScript objects through Pyodide's foreign function interface.
+
+Each Crosswind package ports one of those kits to Python. You subclass a Python
+class, override `async` methods and call typed functions, and the package
+makes the JavaScript calls.
+
+## SDKs
+
+| SDK                                          | Package         | What it does                                                                                | Version                              |
+| -------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------- | ------------------------------------ |
+| [Agents](./docs/agents/overview.mdx)         | `cf-agents`     | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat.        | <PypiVersion name="cf-agents" />     |
+| [Containers](./docs/containers/overview.mdx) | `containers-py` | Start, stop and route requests to Cloudflare Containers, and filter their outbound traffic. | <PypiVersion name="containers-py" /> |
+
+Other SDKs are in development. This table lists them once they're published.
+
+## Why Crosswind
+
+<CardGroup cols={2}>
+<Card title="Pythonic, all the way" icon="lucide:code">
+Typed, `async`-first APIs. Crosswind opts for Pythonic APIs rather than literal translations of TypeScript code.
+</Card>
+<Card title="Same behaviour as TypeScript" icon="lucide:arrow-left-right">
+Each SDK keeps the defaults and behaviour of the TypeScript SDK it ports, so the TypeScript docs still describe what your code does.
+</Card>
+<Card title="Python framework integrations" icon="lucide:plug">
+Planned: integrations with FastAPI, Starlette, Django and other Python web frameworks. None exist yet.
+</Card>
+<Card title="Works with the TypeScript ecosystem" icon="lucide:link">
+Each SDK speaks the same protocols as its TypeScript counterpart, so existing TypeScript clients and frontend libraries connect without changes where possible.
+</Card>
+</CardGroup>
+
+## Demo
+
+<div className='bleed'>
+<iframe src='https://agents-py-mosslight-valley.reachvishm8605.workers.dev/' title='Mosslight Valley demo game' loading='lazy' allow='fullscreen; autoplay; gamepad' className='aspect-video w-full rounded-md border border-border' />
+</div>
+
+Mosslight Valley is a small game that runs on Python Workers. Its server is
+written with `cf-agents`.
+[Open it in a new tab ↗](https://agents-py-mosslight-valley.reachvishm8605.workers.dev/)
+
+## Status
+
+Both packages are pre-1.0, and their APIs may change between minor releases.
+Each SDK's overview lists the features it doesn't port yet. Crosswind is an
+independent community project. It isn't affiliated with or endorsed by
+Cloudflare.
