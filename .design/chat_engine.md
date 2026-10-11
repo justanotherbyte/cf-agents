@@ -605,3 +605,20 @@ How it turned out, beyond §5.2:
     outputs aren't checked: in 12c they may target calls in earlier
     messages. On `workerd`, upstream's client shows the `TypeError`'s
     message as the turn's error, and nothing is saved.
+
+13. **Malformed `clientTools` are dropped where the body is parsed**
+    (decided 2026-10-11). The request body is untrusted, and its
+    `clientTools` is saved to `cf_ai_chat_request_context` for later
+    `save_messages` and `continue_last_turn` turns. A non-list, or a list
+    item that isn't an object, crashed the turn while building
+    `ChatMessageOptions` (before any frame went to the requester), and the
+    saved junk crashed every later programmatic turn, even after a restart.
+    Upstream passes the array through without calling methods on its items,
+    so it doesn't crash. **Decided:** keep only objects whose `name` is a
+    string; a non-list or an empty result is `None`. A tool without a
+    string name is unusable (`ClientToolSchema.name` is a `str`, and tool
+    results match tools by name). The same filter runs when the context is
+    restored, so a row an older version saved is filtered on the next start.
+    Likewise, `parse_protocol_message` turns a non-object `init` into `{}`:
+    it has no `POST` method, so the frame goes to `on_message`, as
+    upstream's `init.method` check sends it.
