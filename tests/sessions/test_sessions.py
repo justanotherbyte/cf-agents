@@ -130,6 +130,35 @@ def test_client_writes_lose_reserved_metadata() -> None:
     assert c["metadata"] == {"billing": 1}  # server writes keep it
 
 
+def test_stripping_reserved_metadata_keeps_other_fields() -> None:
+    _, sessions, _ = setup(reserved_metadata_keys=["billing"])
+
+    async def scenario() -> list[Any]:
+        session = sessions.session()
+        kept: Any = msg("a", metadata={"billing": 1, "x": 2})
+        kept["createdAt"] = "2026-01-01"
+        emptied: Any = msg("b", metadata={"billing": 1})
+        emptied["createdAt"] = "2026-01-02"
+        await session.append_message(kept, source="client")
+        await session.append_message(emptied, source="client")
+        return await session.get_history()
+
+    a, b = run(sessions, scenario)
+    assert a == {
+        "id": "a",
+        "role": "user",
+        "parts": [{"type": "text", "text": "a"}],
+        "metadata": {"x": 2},
+        "createdAt": "2026-01-01",
+    }
+    assert b == {
+        "id": "b",
+        "role": "user",
+        "parts": [{"type": "text", "text": "b"}],
+        "createdAt": "2026-01-02",
+    }
+
+
 def test_large_messages_span_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sessions_module, "split_content", partial(split_content, budget=40)

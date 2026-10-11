@@ -136,11 +136,9 @@ class Sessions(LifecycleCapability):
         kept = {k: v for k, v in metadata.items() if k not in self._reserved}
         if len(kept) == len(metadata):
             return message
-        stripped: SessionMessage = {
-            "id": message["id"],
-            "role": message["role"],
-            "parts": message["parts"],
-        }
+        stripped = cast(
+            SessionMessage, {k: v for k, v in message.items() if k != "metadata"}
+        )
         if kept:
             stripped["metadata"] = kept
         return stripped
