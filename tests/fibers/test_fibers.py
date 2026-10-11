@@ -447,6 +447,39 @@ def test_a_record_that_never_started_is_interrupted_too() -> None:
     assert asyncio.run(scenario()) == [["queued"], "interrupted"]
 
 
+def test_a_fiber_the_hook_starts_runs_instead_of_being_recovered() -> None:
+    class Redo(Worker):
+        def __init__(self, ctx: Any, env: Any) -> None:
+            super().__init__(ctx, env)
+            self.ran: list[str] = []
+
+        async def on_fiber_recovered(
+            self, ctx: FiberRecoveryContext
+        ) -> FiberRecoveryResult | None:
+            if ctx.name == "job":
+                await self.start_fiber("redo", self.redo, fiber_id="redo")
+            return await super().on_fiber_recovered(ctx)
+
+        async def redo(self, ctx: FiberContext) -> None:
+            self.ran.append(ctx.id)
+
+    agent = make(cls=Redo)
+
+    async def scenario() -> Any:
+        await agent.lifecycle.start()
+        restarted = await crash(agent, lambda: agent.run_fiber("job", agent.hang))
+        await restarted.lifecycle.start()
+        # Returns the existing record, waiting for it if it's still live.
+        return restarted, await restarted.start_fiber(
+            "redo", agent.hang, fiber_id="redo", wait_for_completion=True
+        )
+
+    restarted, result = asyncio.run(scenario())
+    assert result.status == "completed"
+    assert restarted.ran == ["redo"]
+    assert [c.name for c in restarted.recovered] == ["job"]
+
+
 def test_waiting_on_a_fiber_left_by_a_dead_isolate_recovers_it() -> None:
     agent = make()
 

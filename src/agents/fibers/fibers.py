@@ -377,7 +377,8 @@ class Fibers(LifecycleCapability):
                 if self._past_deadline(started):
                     self._emit_deadline(id, record["name"], started, managed=True)
                     break
-                if id in self._active:
+                # A fiber started during this scan has no run row until its task runs.
+                if id in self._active or id in self._executions:
                     continue
                 store.interrupt(id, None)
                 context = FiberRecoveryContext(
@@ -754,6 +755,7 @@ class Fibers(LifecycleCapability):
             return True
         return any(
             record["fiber_id"] not in self._active
+            and record["fiber_id"] not in self._executions
             for record in self._store.orphaned_records()
         )
 
