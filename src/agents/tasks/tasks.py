@@ -1034,7 +1034,9 @@ class Tasks(LifecycleCapability):
     ) -> int:
         """Delete settled runs and their journals, oldest first; return how many."""
         await self.lifecycle.ready()
-        states = _states(status) or _TERMINAL
+        states = _states(status) if status is not None else _TERMINAL
+        if not states:
+            return 0
         before = epoch_ms(settled_before) if settled_before is not None else None
         rows = self._store.settled_runs(states, before, limit)
         for row in rows:
