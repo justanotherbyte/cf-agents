@@ -422,6 +422,10 @@ socket with the core frames.
   `prepareBody` / the `body` option (for example the client tool schemas).
 - `init` may also carry other `RequestInit` fields (`headers`, …); the
   standard client sends `method` and `body`.
+- A request whose `init` isn't an object, or whose `method` isn't `POST`,
+  isn't a turn: it goes to the agent's `on_message`. In the body,
+  `clientTools` keeps only objects with a string `name`; anything else is
+  dropped (chat_engine.md §5.6 item 13).
 
 **Response frames:**
 

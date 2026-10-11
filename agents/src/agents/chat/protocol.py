@@ -160,7 +160,9 @@ def parse_protocol_message(raw: str) -> ChatProtocolEvent | None:
     """Return the chat event a text frame carries, or ``None``.
 
     ``None`` means the frame isn't JSON or isn't a chat frame, and belongs to
-    the agent's ``on_message``. Field types aren't checked, as upstream.
+    the agent's ``on_message``. Field types aren't checked, as upstream, except
+    that a non-object ``init`` becomes ``{}`` (no POST, so it goes to
+    ``on_message`` as upstream's ``init.method`` check sends it).
     """
     try:
         data = json.loads(raw)
@@ -171,7 +173,9 @@ def parse_protocol_message(raw: str) -> ChatProtocolEvent | None:
     match data.get("type"):
         case "cf_agent_use_chat_request":
             init = data.get("init")
-            return ChatRequest(id=data.get("id"), init=init if init is not None else {})
+            return ChatRequest(
+                id=data.get("id"), init=init if isinstance(init, dict) else {}
+            )
         case "cf_agent_chat_clear":
             return Clear()
         case "cf_agent_chat_request_cancel":

@@ -550,6 +550,113 @@ def test_the_request_context_survives_a_restart() -> None:
     assert restarted.options_seen[-1].body == {"mood": "calm"}
 
 
+def stored_client_tools(agent: Any) -> Any:
+    rows = agent.sql(
+        "SELECT value FROM cf_ai_chat_request_context WHERE key = 'lastClientTools'"
+    )
+    return [json.loads(row["value"]) for row in rows]
+
+
+@pytest.mark.parametrize(
+    ("client_tools", "kept"),
+    [
+        (["x"], []),
+        ("abc", []),
+        ({"name": "locate"}, []),
+        (
+            [{"name": "locate"}, "x", {"description": "no name"}, {"name": 5}],
+            ["locate"],
+        ),
+    ],
+)
+def test_malformed_client_tools_are_dropped_and_later_turns_still_run(
+    client_tools: Any, kept: list[str]
+) -> None:
+    agent = make()
+
+    async def first() -> tuple[FakeWebSocket, Any]:
+        ws = await connect(agent)
+        await send(
+            agent, ws, chat_request("r1", [user("u1", "hi")], clientTools=client_tools)
+        )
+        return ws, await agent.save_messages(
+            [UIMessage(id="u2", role="user", parts=[TextPart(text="again")])]
+        )
+
+    ws, saved = run(first())
+    assert chat_frames(ws, "r1")[-1] == {
+        "body": "",
+        "done": True,
+        "id": "r1",
+        "type": RESPONSE,
+        "messageIds": ["u1"],
+    }
+    assert agent.errors == []
+    assert [t.name for t in agent.options_seen[0].client_tools] == kept
+    assert stored_client_tools(agent) == ([[{"name": "locate"}]] if kept else [])
+    assert saved.status == "completed"
+    assert [t.name for t in agent.options_seen[1].client_tools] == kept
+
+    restarted = make(storage=agent.ctx.storage)
+
+    async def second() -> Any:
+        await restarted.lifecycle.start()
+        return await restarted.continue_last_turn()
+
+    assert run(second()).status == "completed"
+    assert [t.name for t in restarted.options_seen[-1].client_tools] == kept
+
+
+def test_a_malformed_client_tools_row_saved_before_a_restart_is_dropped() -> None:
+    agent = make()
+
+    async def first() -> None:
+        ws = await connect(agent)
+        await send(agent, ws, chat_request("r1", [user("u1", "hi")]))
+
+    run(first())
+    # A row an older version saved from an unchecked request.
+    agent.sql(
+        "INSERT OR REPLACE INTO cf_ai_chat_request_context (key, value)"
+        " VALUES ('lastClientTools', ?)",
+        json.dumps(["x", {"name": "locate"}]),
+    )
+    restarted = make(storage=agent.ctx.storage)
+
+    async def second() -> Any:
+        await restarted.lifecycle.start()
+        return await restarted.save_messages(
+            [UIMessage(id="u2", role="user", parts=[TextPart(text="more")])]
+        )
+
+    assert run(second()).status == "completed"
+    assert restarted.errors == []
+    assert [t.name for t in restarted.options_seen[-1].client_tools] == ["locate"]
+
+
+def test_a_chat_request_whose_init_isnt_an_object_goes_to_on_message() -> None:
+    class Listening(Chat):
+        def __init__(self, ctx: Any, env: Any) -> None:
+            super().__init__(ctx, env)
+            self.received: list[str | bytes] = []
+
+        async def on_message(
+            self, connection: Connection, message: str | bytes
+        ) -> None:
+            self.received.append(message)
+
+    agent = make(Listening)
+    frame = {"type": "cf_agent_use_chat_request", "id": "x", "init": "abc"}
+
+    async def scenario() -> None:
+        ws = await connect(agent)
+        await send(agent, ws, frame)
+
+    run(scenario())
+    assert agent.errors == []
+    assert [json.loads(m) for m in agent.received] == [frame]
+
+
 def test_continue_last_turn_appends_to_the_last_assistant_message() -> None:
     agent = make()
 
