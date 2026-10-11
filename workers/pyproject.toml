@@ -1,0 +1,36 @@
+[project]
+name = "crosswind-workers"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The distribution is crosswind-workers, but workerd imports the SDK as `workers`.
+module-name = "workers"
+
+[tool.ruff.lint]
+extend-select = ["E", "W", "N", "I", "TID251"]
+# Stub names mirror workerd's JS helpers.
+per-file-ignores."stubs/**" = ["N"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.cast".msg = "Narrow with isinstance or fix the type instead of casting."
+
+[tool.ty.environment]
+# Stubs for modules only workerd provides. They stay out of the wheel.
+extra-paths = ["stubs"]
+
+[dependency-groups]
+dev = [
+    "pyodide-py>=0.27.8",
+    "pytest>=9.1.1",
+]
