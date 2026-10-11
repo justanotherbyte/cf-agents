@@ -1,4 +1,6 @@
 import asyncio
+import gc
+import weakref
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -636,6 +638,16 @@ def test_task_methods_on_an_agent() -> None:
         assert (await agent.tasks.run("build", {"c": 4})).accepted
 
     asyncio.run(scenario())
+
+
+def test_agents_are_collected_once_unreferenced() -> None:
+    reports = Reports(FakeCtx("r"), env=None)
+    gc.collect()
+    assert reports.build._tasks is reports.tasks  # handles still resolve while alive
+    refs = [weakref.ref(reports), weakref.ref(Agent(FakeCtx("a"), env=None))]
+    del reports
+    gc.collect()
+    assert [ref() for ref in refs] == [None, None]
 
 
 def test_task_requires_async_functions() -> None:
