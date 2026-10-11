@@ -25,6 +25,10 @@ per-file-ignores."stubs/**" = ["N"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.cast".msg = "Narrow with isinstance or fix the type instead of casting."
 
+[tool.pytest.ini_options]
+addopts = ["-m", "not e2e"]
+markers = ["e2e: runs the pinned wrangler dev; needs Node.js and the network"]
+
 [tool.ty.environment]
 # Stubs for modules only workerd provides. They stay out of the wheel.
 extra-paths = ["stubs"]
