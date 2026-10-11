@@ -288,7 +288,9 @@ class Fibers(LifecycleCapability):
         ``interrupted`` records are kept unless asked for. Returns how many
         were deleted (default at most 100, at most 500).
         """
-        wanted = _statuses(status) or _DEFAULT_DELETE_STATUSES
+        wanted = _statuses(status)
+        if wanted is None:
+            wanted = _DEFAULT_DELETE_STATUSES
         terminal = [value for value in wanted if value in TERMINAL]
         if not terminal:
             return 0

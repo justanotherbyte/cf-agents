@@ -510,6 +510,27 @@ def test_list_and_delete_fibers() -> None:
     assert deleted_interrupted == 1 and nothing == 0
 
 
+def test_delete_fibers_with_an_empty_status_list_deletes_nothing() -> None:
+    agent = make()
+
+    async def noop(ctx: FiberContext) -> None:
+        pass
+
+    async def scenario() -> tuple[int, list[str]]:
+        await agent.lifecycle.start()
+        for i in range(3):
+            await agent.start_fiber(
+                "ok", noop, fiber_id=f"ok{i}", wait_for_completion=True
+            )
+        deleted = await agent.delete_fibers(status=[])
+        remaining = [f.fiber_id for f in await agent.list_fibers(status="completed")]
+        return deleted, remaining
+
+    deleted, remaining = asyncio.run(scenario())
+    assert deleted == 0
+    assert sorted(remaining) == ["ok0", "ok1", "ok2"]
+
+
 def test_recovery_waits_for_capabilities_a_subclass_installs() -> None:
     class Late(LifecycleCapability):
         def __init__(self) -> None:

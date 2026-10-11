@@ -263,6 +263,7 @@ terminal states, and `settled_before` is an aware `datetime`. Same rule as
 `list_schedules` and `Queue.list` (API doc §2.9); TypeScript's option bags
 only stand in for keyword arguments. Upstream: `list({definition,
 status, limit})`, `delete({status, settledBefore, limit})`.
+`delete(status=[])` deletes nothing and returns `0`, as upstream does.
 - (a) **Keyword arguments**: `list(definition=None, status=None, limit=100)`,
   `delete(status=None, settled_before=None, limit=100)`, where `status` is a
   state or a sequence of states. **Recommended** (the rule from API doc §2.9).

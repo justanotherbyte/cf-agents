@@ -349,6 +349,7 @@ pending ──▶ running ──▶ completed | error | aborted
   and returns `True`; otherwise returns `False`.
 - **`delete_fibers`:** defaults to deleting `completed`, `error`, and `aborted`
   records. **`interrupted` records are kept unless requested explicitly.**
+  An empty `status` list deletes nothing and returns `0`.
   `settled_before` filters on `completed_at`.
 - **Waiting** uses in-memory notifications per fiber, released whenever a record
   reaches a terminal status.

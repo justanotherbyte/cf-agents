@@ -587,6 +587,24 @@ def test_retain_false_deletes_the_run_and_delete_purges_old_ones() -> None:
     assert event_types(events).count("task:deleted") == 3
 
 
+def test_delete_with_an_empty_status_list_deletes_nothing() -> None:
+    async def handler(_input: Any, _step: TaskStep) -> int:
+        return 1
+
+    _, tasks, events = setup({"h": handler})
+
+    async def scenario() -> None:
+        runs = [await tasks.run("h") for _ in range(3)]
+        await settle(tasks)
+        assert await tasks.delete(status=[]) == 0
+        for run in runs:
+            assert isinstance(await tasks.get(run.run_id), CompletedRun)
+        assert len(await tasks.list(status="completed")) == 3
+
+    asyncio.run(scenario())
+    assert "task:deleted" not in event_types(events)
+
+
 # @task on an agent
 
 
