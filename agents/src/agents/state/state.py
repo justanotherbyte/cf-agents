@@ -129,7 +129,8 @@ class State[T](LifecycleCapability):
         if self._validate is not None:
             self._validate(state, source)
         self._ensure_table()
-        serialized = json.dumps(state)
+        # NaN would be saved and broadcast as text no browser can parse.
+        serialized = json.dumps(state, allow_nan=False)
         self.lifecycle.sql(
             "INSERT OR REPLACE INTO cf_agents_state (id, state) VALUES (?, ?)",
             _ROW_ID,

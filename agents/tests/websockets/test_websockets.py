@@ -243,6 +243,30 @@ def test_client_state_is_saved_and_broadcast_to_everyone_else() -> None:
     assert len(sender.frames()) == 2  # identity and initial state only
 
 
+def test_text_json_parse_rejects_reaches_on_message_and_changes_no_state() -> None:
+    # Python's json accepts all three; browsers' JSON.parse rejects NaN.
+    nan_state = '{"type":"cf_agent_state","state":{"n":NaN}}'
+    huge_int = '{"n":' + "1" * 5000 + "}"
+    deep = "[" * 100_000 + "]" * 100_000
+    lifecycle, _, state, recorder = with_state({"n": 0})
+
+    async def scenario() -> list[FakeWebSocket]:
+        sender = await connect(lifecycle, "_pk=a")
+        other = await connect(lifecycle, "_pk=b")
+        for text in (nan_state, huge_int, deep):
+            await lifecycle.websocket_message(sender, text)
+        return [sender, other, await connect(lifecycle, "_pk=late")]
+
+    servers = asyncio.run(scenario())
+    assert state.get() == {"n": 0}
+    assert not any("NaN" in str(m) for s in servers for m in s.sent)
+    assert [e for e in recorder.events if e[0] == "message"] == [
+        ("message", nan_state),
+        ("message", huge_int),
+        ("message", deep),
+    ]
+
+
 def test_readonly_and_rejected_state_frames_get_state_errors(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -508,7 +508,10 @@ class MyAgent(Agent):
 
    Anything else JSON can't represent gets
    `{success: false, error: "Result is not JSON-serializable: …"}` (upstream's
-   WebSockets capability does the same).
+   WebSockets capability does the same). That includes NaN and infinities:
+   `to_json` refuses them (`allow_nan=False`), as `State.set` and sessions do,
+   because `JSON.parse` in the browser can't read them. Upstream's
+   `JSON.stringify` writes `null` instead; failing loudly is the Python choice.
 6. **Errors:** `{success: false, error: str(exc)}`; if `str(exc)` is empty, the
    exception's class name. Only the message crosses the wire.
 7. **`StreamingResponse`:**
