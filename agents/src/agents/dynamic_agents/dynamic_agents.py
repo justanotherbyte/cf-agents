@@ -556,15 +556,6 @@ class SubAgentsEngine(LifecycleCapability):
         match = parse_sub_agent_path(uri, known)
         if match is None:
             return None
-        if (
-            match.child_class == type(self._host).__name__
-            and match.child_name == self._host.lifecycle.name
-        ):
-            match = parse_sub_agent_path(
-                rewrite_pathname(uri, match.remaining_path), known
-            )
-            if match is None:
-                return None
         forward = request
         if request is not None and gate:
             route = AgentRoute(class_name=match.child_class, name=match.child_name)
