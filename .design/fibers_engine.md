@@ -208,6 +208,14 @@ How it turned out, beyond §2:
 9. **Facet list queries filter with `json_each`.** Status filters are bound
    as a JSON array (`status IN (SELECT value FROM json_each(?))`), so SQL
    stays a literal string; results match upstream's per-status queries.
+10. **The scan skips fibers this isolate is starting.** `start_fiber`
+   inserts the `pending` record and schedules its task, so the run row
+   appears only on a later loop step (upstream's `startFiber` inserts it
+   synchronously). A recovery hook that calls `start_fiber` left a record
+   with no run row, and the same scan's orphan pass marked it `interrupted`
+   before its body ran. The orphan pass and `_has_pending_recovery` now skip
+   ids in `_executions` as well as `_active` (*fixed 2026-10-11*,
+   `test_a_fiber_the_hook_starts_runs_instead_of_being_recovered`).
 
 ---
 

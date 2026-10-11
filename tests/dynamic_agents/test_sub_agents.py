@@ -402,6 +402,48 @@ def test_nested_sockets_reach_the_grandchild() -> None:
     assert asyncio.run(scenario()).sent == ["note:ping"]
 
 
+class Folder(Agent):
+    def __init__(self, ctx: Any, env: Any) -> None:
+        super().__init__(ctx, env)
+        self.log: list[Any] = []
+
+    async def on_connect(self, connection: Connection, ctx: ConnectionContext) -> None:
+        self.log.append(("connect", connection.id))
+
+    async def on_message(self, connection: Connection, message: str | bytes) -> None:
+        self.log.append(("message", message))
+        connection.send(f"depth {len(self.self_path)}:{message}")
+
+    async def on_request(self, request: Request) -> Response:
+        return Response(f"depth {len(self.self_path)}")
+
+
+def test_a_child_named_like_its_parent_gets_its_own_socket() -> None:
+    world = FakeWorld()
+    world.export(Folder)
+    root = world.instance(Folder, "x")
+    url = "https://x.dev/agents/folder/x/sub/folder/x"
+
+    async def scenario() -> tuple[Response, FakeWebSocket]:
+        http = await root.fetch(Request(url))
+        response = await root.fetch(
+            Request(f"{url}?_pk=a", headers={"Upgrade": "websocket"})
+        )
+        ws = response.web_socket.peer
+        ws.sent.clear()
+        await root.webSocketMessage(ws, "hi")
+        return http, ws
+
+    http, ws = asyncio.run(scenario())
+    child = root.ctx.facets.live["Folder\0x"]
+    assert http.body == "depth 2"
+    assert ws.sent == ["depth 2:hi"]
+    assert child.log == [("connect", "a"), ("message", "hi")]
+    assert root.log == []
+    assert [c.id for c in child.get_connections()] == ["a"]
+    assert list(root.get_connections()) == []
+
+
 def test_a_pass_through_socket_is_not_the_middle_agents_own() -> None:
     world, inbox = make_world()
 

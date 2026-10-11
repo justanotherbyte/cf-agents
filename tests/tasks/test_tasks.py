@@ -1,4 +1,6 @@
 import asyncio
+import gc
+import weakref
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -587,6 +589,24 @@ def test_retain_false_deletes_the_run_and_delete_purges_old_ones() -> None:
     assert event_types(events).count("task:deleted") == 3
 
 
+def test_delete_with_an_empty_status_list_deletes_nothing() -> None:
+    async def handler(_input: Any, _step: TaskStep) -> int:
+        return 1
+
+    _, tasks, events = setup({"h": handler})
+
+    async def scenario() -> None:
+        runs = [await tasks.run("h") for _ in range(3)]
+        await settle(tasks)
+        assert await tasks.delete(status=[]) == 0
+        for run in runs:
+            assert isinstance(await tasks.get(run.run_id), CompletedRun)
+        assert len(await tasks.list(status="completed")) == 3
+
+    asyncio.run(scenario())
+    assert "task:deleted" not in event_types(events)
+
+
 # @task on an agent
 
 
@@ -620,6 +640,16 @@ def test_task_methods_on_an_agent() -> None:
     asyncio.run(scenario())
 
 
+def test_agents_are_collected_once_unreferenced() -> None:
+    reports = Reports(FakeCtx("r"), env=None)
+    gc.collect()
+    assert reports.build._tasks is reports.tasks  # handles still resolve while alive
+    refs = [weakref.ref(reports), weakref.ref(Agent(FakeCtx("a"), env=None))]
+    del reports
+    gc.collect()
+    assert [ref() for ref in refs] == [None, None]
+
+
 def test_task_requires_async_functions() -> None:
     with pytest.raises(TypeError, match="async"):
 
@@ -644,6 +674,70 @@ def test_a_step_result_that_is_not_json_fails_the_run() -> None:
 
     run = asyncio.run(scenario())
     assert isinstance(run, FailedRun) and run.error.name == "TaskSerializationError"
+
+
+def test_the_size_limit_counts_utf8_bytes_not_escaped_json() -> None:
+    # About 600 KB as UTF-8 JSON each, but 1.2 MB if escaped to \uXXXX.
+    big_input = "中" * 200_000
+    big_result = "語" * 200_000
+    inputs: list[Any] = []
+
+    async def handler(input: str, step: TaskStep) -> str:
+        inputs.append(input)
+
+        async def fetch(_attempt: TaskStepAttempt) -> str:
+            return big_result
+
+        fetched = await step.do("fetch", fetch)
+        await step.sleep("pause", 0.05)
+        return fetched
+
+    lifecycle, tasks, _ = setup({"h": handler})
+
+    async def scenario() -> Any:
+        receipt = await tasks.run("h", big_input)
+        await settle(tasks)
+        await wake(lifecycle, tasks, after=0.08)
+        return await tasks.get(receipt.run_id)
+
+    run = asyncio.run(scenario())
+    assert isinstance(run, CompletedRun) and run.result == big_result
+    # The first attempt and the replay both read the stored input.
+    assert inputs == [big_input, big_input]
+
+
+def test_values_over_the_limit_in_utf8_are_rejected() -> None:
+    async def handler(_input: Any, _step: TaskStep) -> None: ...
+
+    _, tasks, _ = setup({"h": handler})
+    # 1,048,574 UTF-8 bytes of text plus two quotes is exactly 1 MiB of JSON.
+    at_limit = "中" * 349_524 + "aa"
+
+    async def scenario() -> Any:
+        receipt = await tasks.run("h", at_limit)
+        await settle(tasks)
+        return await tasks.get(receipt.run_id)
+
+    assert isinstance(asyncio.run(scenario()), CompletedRun)
+    with pytest.raises(TaskSerializationError, match="1048577 bytes"):
+        asyncio.run(tasks.run("h", at_limit + "a"))
+    with pytest.raises(TaskSerializationError):
+        asyncio.run(tasks.run("h", "中" * 350_000))
+
+
+def test_a_lone_surrogate_round_trips() -> None:
+    async def echo(input: str, _step: TaskStep) -> str:
+        return input
+
+    _, tasks, _ = setup({"h": echo})
+
+    async def scenario() -> Any:
+        receipt = await tasks.run("h", "a\ud800b")
+        await settle(tasks)
+        return await tasks.get(receipt.run_id)
+
+    run = asyncio.run(scenario())
+    assert isinstance(run, CompletedRun) and run.result == "a\ud800b"
 
 
 # Facets: the run lives on the facet, its wake on the root

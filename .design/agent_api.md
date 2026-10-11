@@ -508,7 +508,10 @@ class MyAgent(Agent):
 
    Anything else JSON can't represent gets
    `{success: false, error: "Result is not JSON-serializable: …"}` (upstream's
-   WebSockets capability does the same).
+   WebSockets capability does the same). That includes NaN and infinities:
+   `to_json` refuses them (`allow_nan=False`), as `State.set` and sessions do,
+   because `JSON.parse` in the browser can't read them. Upstream's
+   `JSON.stringify` writes `null` instead; failing loudly is the Python choice.
 6. **Errors:** `{success: false, error: str(exc)}`; if `str(exc)` is empty, the
    exception's class name. Only the message crosses the wire.
 7. **`StreamingResponse`:**
@@ -900,6 +903,14 @@ class Agent(...):
 - **`destroy()`**: same sequence, including the pending-destroy marker and
   the alarm preamble. Documented as "the agent is gone after this; don't use
   it again", and as not returning normally on a sub-agent.
+- **Finishing a teardown cut short:** step 2 deletes the alarm, so a teardown
+  that dies before `deleteAll()` has no alarm left. Every start that finds the
+  marker pushes an exclusive host job (`cf:destroy`, due now), as upstream's
+  `_syncHostJobs()` does, so the alarm fires at once and no later job can push
+  it out. The job never dispatches: the alarm preamble sees the marker first
+  and `deleteAll()` drops the queue. As upstream, the marker doesn't gate
+  requests; the wake that re-arms it runs normally. Facets never write the
+  marker.
 - `_cf_scheduleDestroy` (deferred destroy, used by MCP) is out of scope.
 - **Aborting without an alarm retry (verified in production,
   [platform_verification.md](./platform_verification.md) §7.5):** an abort

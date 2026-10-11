@@ -447,6 +447,39 @@ def test_a_record_that_never_started_is_interrupted_too() -> None:
     assert asyncio.run(scenario()) == [["queued"], "interrupted"]
 
 
+def test_a_fiber_the_hook_starts_runs_instead_of_being_recovered() -> None:
+    class Redo(Worker):
+        def __init__(self, ctx: Any, env: Any) -> None:
+            super().__init__(ctx, env)
+            self.ran: list[str] = []
+
+        async def on_fiber_recovered(
+            self, ctx: FiberRecoveryContext
+        ) -> FiberRecoveryResult | None:
+            if ctx.name == "job":
+                await self.start_fiber("redo", self.redo, fiber_id="redo")
+            return await super().on_fiber_recovered(ctx)
+
+        async def redo(self, ctx: FiberContext) -> None:
+            self.ran.append(ctx.id)
+
+    agent = make(cls=Redo)
+
+    async def scenario() -> Any:
+        await agent.lifecycle.start()
+        restarted = await crash(agent, lambda: agent.run_fiber("job", agent.hang))
+        await restarted.lifecycle.start()
+        # Returns the existing record, waiting for it if it's still live.
+        return restarted, await restarted.start_fiber(
+            "redo", agent.hang, fiber_id="redo", wait_for_completion=True
+        )
+
+    restarted, result = asyncio.run(scenario())
+    assert result.status == "completed"
+    assert restarted.ran == ["redo"]
+    assert [c.name for c in restarted.recovered] == ["job"]
+
+
 def test_waiting_on_a_fiber_left_by_a_dead_isolate_recovers_it() -> None:
     agent = make()
 
@@ -508,6 +541,27 @@ def test_list_and_delete_fibers() -> None:
     assert len(listed) == 2 and errors == ["bad"]
     assert deleted == 4 and remaining == ["int"]
     assert deleted_interrupted == 1 and nothing == 0
+
+
+def test_delete_fibers_with_an_empty_status_list_deletes_nothing() -> None:
+    agent = make()
+
+    async def noop(ctx: FiberContext) -> None:
+        pass
+
+    async def scenario() -> tuple[int, list[str]]:
+        await agent.lifecycle.start()
+        for i in range(3):
+            await agent.start_fiber(
+                "ok", noop, fiber_id=f"ok{i}", wait_for_completion=True
+            )
+        deleted = await agent.delete_fibers(status=[])
+        remaining = [f.fiber_id for f in await agent.list_fibers(status="completed")]
+        return deleted, remaining
+
+    deleted, remaining = asyncio.run(scenario())
+    assert deleted == 0
+    assert sorted(remaining) == ["ok0", "ok1", "ok2"]
 
 
 def test_recovery_waits_for_capabilities_a_subclass_installs() -> None:

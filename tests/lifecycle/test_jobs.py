@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -15,6 +16,7 @@ from agents.lifecycle import (
     MemoryLimitContext,
     Reschedule,
 )
+from agents.lifecycle.job_queue import JobQueue
 
 FAST_RETRY = RetryOptions(max_attempts=2, base_delay=0.001, max_delay=0.002)
 
@@ -339,6 +341,85 @@ def test_clean_alarm_clears_previous_strikes() -> None:
         await worker.lifecycle.jobs.push(fn="ok", time=past())
         await lifecycle.alarm()
         assert "cf_agents:oom_alarm_strikes" not in host.ctx.storage.kv
+
+    asyncio.run(scenario())
+
+
+def test_failed_sync_after_a_strike_skips_the_isolate_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_ffi.aborts.clear()
+    worker = Policy()
+    lifecycle, _, host = setup(worker)
+    worker.behavior = {
+        "heavy": RuntimeError("Durable Object's isolate exceeded its memory limit")
+    }
+
+    async def failing_sync() -> None:
+        raise RuntimeError("sync failed")
+
+    monkeypatch.setattr(host.ctx.storage, "sync", failing_sync)
+
+    async def scenario() -> None:
+        await lifecycle.start()
+        await worker.lifecycle.jobs.push(fn="heavy", time=past())
+        await lifecycle.alarm()  # still swallowed: the platform must not retry
+        assert host.ctx.storage.kv["cf_agents:oom_alarm_strikes"] == 1
+
+    asyncio.run(scenario())
+    # A reset would discard the unconfirmed strike, backoff and re-armed alarm.
+    assert _fake_ffi.aborts == []
+
+
+def test_failed_clear_running_on_memory_limit_still_records_a_strike(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_ffi.aborts.clear()
+    worker = Policy()
+    lifecycle, _, host = setup(worker)
+    worker.behavior = {
+        "heavy": RuntimeError("Durable Object's isolate exceeded its memory limit")
+    }
+
+    def failing_clear_running(_self: JobQueue, _id: str) -> None:
+        raise sqlite3.OperationalError("write failed on a condemned isolate")
+
+    monkeypatch.setattr(JobQueue, "clear_running", failing_clear_running)
+
+    async def scenario() -> None:
+        await lifecycle.start()
+        job = await worker.lifecycle.jobs.push(fn="heavy", time=past())
+        await lifecycle.alarm()  # swallowed by the breaker, not the SQL error
+        assert host.ctx.storage.kv["cf_agents:oom_alarm_strikes"] == 1
+        stored = worker.lifecycle.jobs.get(job.id)
+        assert stored is not None
+        assert stored.time > datetime.now(UTC)
+
+    asyncio.run(scenario())
+    assert len(_fake_ffi.aborts) == 1
+
+
+def test_failed_strike_clear_after_a_clean_alarm_still_rearms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lifecycle, worker, host = setup()
+    storage = host.ctx.storage
+    real_get = storage.get
+
+    async def get(key: str) -> Any:
+        if key == "cf_agents:oom_alarm_strikes":
+            raise RuntimeError("storage get failed")
+        return await real_get(key)
+
+    monkeypatch.setattr(storage, "get", get)
+
+    async def scenario() -> None:
+        await lifecycle.start()
+        await worker.lifecycle.jobs.push(fn="ok", time=past())
+        later = await worker.lifecycle.jobs.push(fn="later", time=future())
+        await lifecycle.alarm()  # clean: must not raise to the platform
+        assert worker.runs == [("ok", 1)]
+        assert storage.alarm == int(later.time.timestamp() * 1000)
 
     asyncio.run(scenario())
 

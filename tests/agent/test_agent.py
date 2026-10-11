@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
 import _fake_ffi
@@ -454,6 +455,42 @@ def test_a_pending_destroy_is_finished_by_the_next_alarm() -> None:
     run(agent.alarm())
     assert _fake_ffi.aborts == ["destroyed"]
     assert agent.log == []
+
+
+def test_a_destroy_cut_short_is_finished_after_the_next_wake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_ffi.aborts.clear()
+    first = make()
+    storage = first.ctx.storage
+
+    async def evicted() -> None:
+        raise RuntimeError("isolate evicted mid-teardown")
+
+    async def interrupted_destroy() -> None:
+        await first.fetch(Request("https://example.com/"))
+        # Cut short after the alarm is deleted, before storage is wiped.
+        monkeypatch.setattr(first.lifecycle, "dispose", evicted)
+        with pytest.raises(RuntimeError, match="evicted"):
+            await first.destroy()
+
+    run(interrupted_destroy())
+    assert storage.alarm is None
+
+    async def wake_and_write() -> None:
+        later = CounterAgent(FakeCtx("room-1", storage=storage), env=None)
+        await later.fetch(Request("https://example.com/"))  # ty: ignore[unresolved-attribute]
+        later.set_state(Counter(count=5))
+        await later.schedule(timedelta(days=30), "process", 1)
+
+    run(wake_and_write())
+    # The wake re-armed the teardown, and a later schedule can't push it out.
+    assert storage.alarm is not None
+    assert storage.alarm <= int(datetime.now(UTC).timestamp() * 1000)
+
+    run(CounterAgent(FakeCtx("room-1", storage=storage), env=None).alarm())
+    assert _fake_ffi.aborts == ["destroyed"]
+    assert storage.kv == {}
 
 
 def test_ensure_initialized_starts_the_agent() -> None:

@@ -506,8 +506,10 @@ async def _nothing() -> None:
 
 def _dumps(message: SessionMessage) -> str:
     # Compact and keeping non-ASCII characters, like JSON.stringify, so stored
-    # sizes and byte budgets match upstream's.
-    return json.dumps(message, separators=(",", ":"), ensure_ascii=False)
+    # sizes and byte budgets match upstream's. NaN raises: browsers can't parse it.
+    return json.dumps(
+        message, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
 
 
 def _digest(text: str) -> str:

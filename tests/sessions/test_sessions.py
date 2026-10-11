@@ -157,6 +157,16 @@ def test_stripping_reserved_metadata_keeps_other_fields() -> None:
         "parts": [{"type": "text", "text": "b"}],
         "createdAt": "2026-01-02",
     }
+def test_a_nan_message_raises_and_stores_nothing() -> None:
+    _, sessions, _ = setup()
+
+    async def scenario() -> list[Any]:
+        session = sessions.session()
+        with pytest.raises(ValueError):
+            await session.append_message(msg("a", metadata={"score": float("nan")}))
+        return await session.get_history()
+
+    assert run(sessions, scenario) == []
 
 
 def test_large_messages_span_rows(monkeypatch: pytest.MonkeyPatch) -> None:
