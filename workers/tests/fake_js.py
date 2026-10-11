@@ -1,32 +1,95 @@
-"""A fake JS layer, so the SDK imports and runs on the host."""
+"""A fake JS layer, so the SDK imports and runs on the host.
+
+It follows Pyodide's conversion rules for containers: to_py turns Array, Object,
+Map and Set into list, dict and set and hands every other JS value to the
+default converter; to_js does the reverse and hands every Python object it
+can't convert to the default converter.
+"""
 
 import sys
+from collections.abc import Callable
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
 
-class FakeJsRequest:
-    constructor = SimpleNamespace(name="Request")
+class JsValue:
+    """A JS value: a constructor name, contents for to_py, and any attributes."""
 
-    def __init__(self, url: str, method: str = "GET") -> None:
-        self.url = url
-        self.method = method
+    def __init__(self, name: str, contents: Any = None, **attributes: Any) -> None:
+        self.constructor = SimpleNamespace(name=name)
+        self.contents = contents
+        self.__dict__.update(attributes)
+
+    def __iter__(self) -> Any:
+        # Pyodide makes JS arrays and sets iterable from Python.
+        if self.constructor.name not in ("Array", "Set"):
+            raise TypeError(f"{self.constructor.name} is not iterable")
+        return iter(self.contents)
+
+    def to_py(self, *, default_converter: Callable[..., Any] | None = None) -> Any:
+        def convert(value: Any) -> Any:
+            if not isinstance(value, JsValue):
+                return value
+            name = value.constructor.name
+            if name == "Array":
+                return [convert(item) for item in value.contents]
+            if name in ("Object", "Map"):
+                return {key: convert(item) for key, item in value.contents.items()}
+            if name == "Set":
+                return {convert(item) for item in value.contents}
+            if default_converter is None:
+                return value
+            return default_converter(value, convert, {})
+
+        return convert(self)
 
 
-class FakeJsResponse:
-    def __init__(self, body: Any, init: Any) -> None:
-        self.body = body
-        self.init = init
-
-    @classmethod
-    def new(cls, body: Any = None, init: Any = None) -> "FakeJsResponse":
-        return cls(body, init)
+class JsNull:
+    """Pyodide's jsnull, which has no constructor to read."""
 
 
-def to_js(value: Any, dict_converter: Any = None) -> Any:
-    if isinstance(value, dict) and dict_converter is not None:
-        return dict_converter(value.items())
-    return value
+jsnull = JsNull()
+
+
+def js_request(url: str, method: str = "GET") -> JsValue:
+    return JsValue("Request", url=url, method=method)
+
+
+def js_date(milliseconds: float) -> JsValue:
+    return JsValue("Date", getTime=lambda: milliseconds)
+
+
+def js_error(message: str) -> JsValue:
+    return JsValue("Error", message=message, toString=lambda: f"Error: {message}")
+
+
+def create_proxy(function: Any) -> SimpleNamespace:
+    return SimpleNamespace(proxied=function)
+
+
+def to_js(
+    value: Any,
+    *,
+    dict_converter: Callable[..., Any] | None = None,
+    default_converter: Callable[..., Any] | None = None,
+) -> Any:
+    def convert(item: Any) -> Any:
+        if item is None or isinstance(
+            item, (str, int, float, bytes, memoryview, JsValue, JsNull)
+        ):
+            return item
+        if isinstance(item, dict):
+            entries = [(key, convert(v)) for key, v in item.items()]
+            return dict_converter(entries) if dict_converter else dict(entries)
+        if isinstance(item, (list, tuple)):
+            return [convert(v) for v in item]
+        if isinstance(item, set):
+            return {convert(v) for v in item}
+        if default_converter is not None:
+            return default_converter(item, convert, {})
+        return item
+
+    return convert(value)
 
 
 def fake_module(name: str, **attrs: Any) -> ModuleType:
@@ -40,6 +103,14 @@ def install() -> None:
     import pyodide.code  # noqa: F401
 
     sys.modules["js"] = fake_module(
-        "js", Object=SimpleNamespace(fromEntries=dict), Response=FakeJsResponse
+        "js",
+        Object=SimpleNamespace(fromEntries=dict),
+        Response=SimpleNamespace(
+            new=lambda body=None, init=None: JsValue("Response", body=body, init=init)
+        ),
+        Date=SimpleNamespace(new=js_date),
+        Error=SimpleNamespace(new=js_error),
     )
-    sys.modules["pyodide.ffi"] = fake_module("pyodide.ffi", to_js=to_js)
+    sys.modules["pyodide.ffi"] = fake_module(
+        "pyodide.ffi", to_js=to_js, create_proxy=create_proxy, jsnull=jsnull
+    )

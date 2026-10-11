@@ -3,7 +3,7 @@ from inspect import isawaitable
 from typing import Any
 
 import pytest
-from fake_js import FakeJsRequest, FakeJsResponse
+from fake_js import js_request
 from pyodide.code import relaxed_call
 
 from workers import (
@@ -36,17 +36,15 @@ def test_fetch_returns_a_js_response() -> None:
         async def fetch(self, request: Request) -> Response:
             return Response(f"{self.env} {request.method} {request.url}", status=201)
 
-    js_response = call(
-        Default("ctx", "env"), "fetch", FakeJsRequest("https://x/", "POST")
-    )
+    js_response = call(Default("ctx", "env"), "fetch", js_request("https://x/", "POST"))
 
-    assert isinstance(js_response, FakeJsResponse)
+    assert js_response.constructor.name == "Response"
     assert js_response.body == "env POST https://x/"
     assert js_response.init == {"status": 201}
 
 
 def test_fetch_receives_the_js_request_wrapped() -> None:
-    js_request = FakeJsRequest("https://x/")
+    sent = js_request("https://x/")
     seen = []
 
     class Default(WorkerEntrypoint):
@@ -54,9 +52,9 @@ def test_fetch_receives_the_js_request_wrapped() -> None:
             seen.append(request.js_object)
             return Response()
 
-    call(Default(None, None), "fetch", js_request)
+    call(Default(None, None), "fetch", sent)
 
-    assert seen == [js_request]
+    assert seen == [sent]
 
 
 LEGACY_NAMES = [
@@ -74,16 +72,16 @@ LEGACY_NAMES = [
 @pytest.mark.parametrize(("base", "name"), LEGACY_NAMES)
 def test_legacy_dates_call_the_short_name(base: type, name: str) -> None:
     async def handler(self: Any, *args: Any) -> Any:
-        return args
+        return list(args)
 
     cls = type("Handler", (base,), {name: handler})
     on_name = getattr(cls(None, None), f"on_{name}")
 
     if name == "fetch":
-        assert call(cls(None, None), "on_fetch", "r") == ("r", "env", "ctx")
+        assert call(cls(None, None), "on_fetch", "r") == ["r", "env", "ctx"]
     else:
         # workerd calls the other handlers directly, without wrapper_func.
-        assert asyncio.run(on_name(1, 2)) == (1, 2)
+        assert asyncio.run(on_name(1, 2)) == [1, 2]
 
 
 def test_the_alias_finds_a_handler_from_a_mixin() -> None:
@@ -94,7 +92,7 @@ def test_the_alias_finds_a_handler_from_a_mixin() -> None:
     class Default(Mixin, WorkerEntrypoint):
         pass
 
-    js_response = call(Default(None, None), "on_fetch", FakeJsRequest("/"))
+    js_response = call(Default(None, None), "on_fetch", js_request("/"))
 
     assert js_response.body == "mixin"
 
@@ -107,7 +105,7 @@ def test_a_defined_on_name_is_kept() -> None:
         async def on_fetch(self, request: Request) -> Response:
             return Response("on_fetch")
 
-    js_response = call(Default(None, None), "on_fetch", FakeJsRequest("/"))
+    js_response = call(Default(None, None), "on_fetch", js_request("/"))
 
     assert js_response.body == "on_fetch"
 
@@ -121,6 +119,6 @@ def test_the_alias_follows_a_subclass_override() -> None:
         async def fetch(self, request: Request) -> Response:
             return Response("child")
 
-    js_response = call(Child(None, None), "on_fetch", FakeJsRequest("/"))
+    js_response = call(Child(None, None), "on_fetch", js_request("/"))
 
     assert js_response.body == "child"
