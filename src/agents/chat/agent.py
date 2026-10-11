@@ -476,7 +476,7 @@ class AIChatAgent(Agent[S]):
             _log.warning("Ignoring a chat request without messages")
             return
         messages: list[WireMessage] = parsed.pop("messages")
-        client_tools = parsed.pop("clientTools", None) or None
+        client_tools = _valid_client_tools(parsed.pop("clientTools", None))
         trigger = parsed.pop("trigger", None)
         body = parsed or None
         request_id = event.id
@@ -1301,7 +1301,7 @@ class AIChatAgent(Agent[S]):
             if row["key"] == "lastBody":
                 self._last_body = value
             elif row["key"] == "lastClientTools":
-                self._last_client_tools = value
+                self._last_client_tools = _valid_client_tools(value)
 
     # Helpers
 
@@ -1425,6 +1425,14 @@ def _new_id() -> str:
 
 def _assistant_id() -> str:
     return f"assistant_{now_ms()}_{secrets.token_hex(5)[:9]}"
+
+
+def _valid_client_tools(raw: Any) -> list[dict[str, Any]] | None:
+    # Untrusted and saved for later turns: keep only tool objects with a name.
+    if not isinstance(raw, list):
+        return None
+    tools = [t for t in raw if isinstance(t, dict) and isinstance(t.get("name"), str)]
+    return tools or None
 
 
 def _client_tool_schema(tool: Any) -> ClientToolSchema:
