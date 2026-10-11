@@ -1070,6 +1070,14 @@ class _AgentHooks:
         try:
             # Every capability has started (including any a subclass
             # installed), and the user's on_start hasn't: upstream's order.
+            if await agent.ctx.storage.get(_DESTROY_PENDING_KEY):
+                # Re-arm a teardown cut short; exclusive, so no later job delays it.
+                await agent._lifecycle.jobs.push(
+                    id="cf:destroy",
+                    fn="destroy",
+                    time=datetime.now(UTC),
+                    exclusive=True,
+                )
             await agent._fibers.recover_on_wake()
             await agent.on_start()
         except Exception as error:
