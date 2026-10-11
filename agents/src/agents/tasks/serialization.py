@@ -5,6 +5,7 @@ Inputs, step results, metadata, and results are stored as JSON in SQLite.
 """
 
 import json
+import re
 from typing import Any
 
 from .errors import TaskSerializationError
@@ -13,6 +14,8 @@ __all__ = ("MAX_SERIALIZED_BYTES", "deserialize_task_value", "serialize_task_val
 
 MAX_SERIALIZED_BYTES = 1_048_576
 """The largest serialized value (1 MiB)."""
+
+_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 def serialize_task_value(value: Any, context: str) -> str | None:
@@ -29,14 +32,18 @@ def serialize_task_value(value: Any, context: str) -> str | None:
     ------
     TaskSerializationError
         If ``value`` isn't plain JSON (dataclasses, ``datetime``, sets, and
-        NaN aren't), or its JSON exceeds 1 MiB.
+        NaN aren't), or its JSON exceeds 1 MiB as UTF-8.
     """
     if value is None:
         return None
     try:
-        text = json.dumps(value, allow_nan=False, separators=(",", ":"))
+        text = json.dumps(
+            value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        )
     except (TypeError, ValueError) as error:
         raise TaskSerializationError(context, str(error)) from error
+    # Escape surrogates as JS's JSON.stringify does, so the text is valid UTF-8.
+    text = _SURROGATE.sub(lambda m: f"\\u{ord(m[0]):04x}", text)
     size = len(text.encode())
     if size > MAX_SERIALIZED_BYTES:
         raise TaskSerializationError(
