@@ -136,11 +136,11 @@ class Sessions(LifecycleCapability):
         kept = {k: v for k, v in metadata.items() if k not in self._reserved}
         if len(kept) == len(metadata):
             return message
-        stripped = cast(
-            SessionMessage, {k: v for k, v in message.items() if k != "metadata"}
-        )
+        stripped = message.copy()
         if kept:
             stripped["metadata"] = kept
+        else:
+            del stripped["metadata"]
         return stripped
 
     def _append(
