@@ -194,7 +194,8 @@ class JobDriver:
         if self._strike_recorded_this_isolate:
             return
         self._strike = None
-        await self._clear_memory_limit_strikes()
+        # A stale strike only costs one extra tolerated reset later.
+        await _best_effort(self._clear_memory_limit_strikes)
 
     async def _drive_due_jobs(self) -> None:
         now = now_ms()
@@ -256,7 +257,14 @@ class JobDriver:
             if self._disabled():
                 return
             if is_platform_failure(error):
-                self._queue.clear_running(row["id"])
+                try:
+                    self._queue.clear_running(row["id"])
+                except Exception:
+                    # A condemned isolate can fail this write; the hung timeout
+                    # recovers the flag, and the cause must still reach the breaker.
+                    _log.exception(
+                        "Couldn't clear the running flag of job %s", row["id"]
+                    )
                 _log.warning(
                     "Deferring job %s to a fresh invocation after a platform "
                     "failure; the job is preserved.",
@@ -371,8 +379,13 @@ class JobDriver:
             return
         await _best_effort(self._rearm)
         # Sync first: a reset discards unconfirmed writes, and the strike and
-        # backoff must land. The backoff alarm owns the next wake.
-        await _best_effort(self._storage.sync)
+        # backoff must land, so a failed sync skips the reset. The backoff
+        # alarm owns the next wake.
+        try:
+            await self._storage.sync()
+        except Exception:
+            _log.exception("Couldn't sync the memory-limit strike; not resetting")
+            return
         self._reset(
             f"Alarm memory-limit strike {strike.strikes}/{strike.limit}"
             f"{' (sealed)' if strike.sealed else ''}; resetting isolate"
