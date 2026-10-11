@@ -276,3 +276,10 @@ How it turned out, beyond §3:
    `callables=self`; `Agent._message_locally` applies state frames, then
    answers RPC with its own `RpcDispatcher`, so forwarded and native
    connections share one path (§3.2 item 7).
+9. **No self-hop skip when resolving a socket.** Upstream's connection
+   resolver skips a `/sub/` hop whose class and name equal the host's own
+   (from #1443, when a child still received the outer URL). #2400 stopped
+   forwarding the outer URL, and here a facet only ever sees the tail, so
+   the skip fires only for a real child named like its parent (a socket to
+   `/agents/folder/x/sub/folder/x` ran on the root). Python drops it, so
+   sockets route like HTTP, which never had the skip.

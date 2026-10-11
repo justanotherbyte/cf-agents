@@ -209,7 +209,9 @@ class FakeFacets:
             spec = getter()
             storage = self.storages.setdefault(key, FakeStorage())
             ctx = FakeCtx(spec["id"].name, world=self.world, storage=storage)
-            self.live[key] = spec["class"](ctx, env=self.world.env)
+            # A bound class is exported as its namespace; workerd accepts either.
+            cls = getattr(spec["class"], "cls", spec["class"])
+            self.live[key] = cls(ctx, env=self.world.env)
         return self.live[key]
 
     def abort(self, key: str, reason: Exception) -> None:
