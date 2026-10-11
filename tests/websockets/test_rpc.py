@@ -43,6 +43,10 @@ class Api:
         return object()
 
     @callable
+    async def ratio(self) -> float:
+        return float("nan")
+
+    @callable
     async def fails(self) -> None:
         raise ValueError("bad input")
 
@@ -64,6 +68,10 @@ class Api:
     async def breaks_midway(self, response: StreamingResponse) -> None:
         response.send(1)
         raise RuntimeError("midway")
+
+    @callable(streaming=True)
+    async def ends_with_nan(self, response: StreamingResponse) -> None:
+        response.end(float("nan"))
 
     @callable
     async def ticks(self, n: int):
@@ -136,6 +144,15 @@ def test_unserializable_result_still_settles_the_call() -> None:
     frame = call(lifecycle, "unserializable")[0]
     assert frame["success"] is False
     assert frame["error"].startswith("Result is not JSON-serializable")
+
+
+def test_nan_result_settles_the_call_with_an_error() -> None:
+    lifecycle, _ = setup()
+    frame = call(lifecycle, "ratio")[0]
+    assert frame["success"] is False
+    assert frame["error"].startswith("Result is not JSON-serializable")
+    (frame,) = call(lifecycle, "ends_with_nan")
+    assert frame["success"] is False and "NaN" not in json.dumps(frame)
 
 
 def test_errors_carry_only_the_message() -> None:

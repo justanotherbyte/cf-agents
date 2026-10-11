@@ -145,8 +145,8 @@ class StreamingResponse:
 
         Raises
         ------
-        TypeError
-            If ``chunk`` isn't JSON-serializable.
+        TypeError, ValueError
+            If ``chunk`` isn't JSON-serializable (``ValueError`` for NaN).
         """
         if self._closed:
             _log.warning("StreamingResponse.send() after the stream closed; dropped")
@@ -162,8 +162,10 @@ class StreamingResponse:
         """
         if self._closed:
             return False
+        # Serialized first: a final the encoder refuses must leave room for error().
+        text = _done_frame(self._id, final)
         self._closed = True
-        return _send(self._connection, _done_frame(self._id, final))
+        return _send(self._connection, text)
 
     def error(self, message: str) -> bool:
         """Close the stream with an error; the client's call rejects."""

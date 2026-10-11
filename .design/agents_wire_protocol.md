@@ -162,7 +162,9 @@ intercepts its types and binary audio first (§8), chat hosts intercept the
 1. **Sub-agent forwarding:** a frame on a connection bound to a facet is
    forwarded to the child.
 2. **Binary frame:** to user `onMessage`.
-3. **Text that isn't JSON:** to user `onMessage`.
+3. **Text that isn't JSON:** to user `onMessage`. The Python port also sends
+   `NaN`/`Infinity` (which `JSON.parse` rejects) and text Python's parser
+   can't handle (integers over 4,300 digits, very deep nesting) this way.
 4. **`cf_agent_state`:** applied as a state update (§5.2). Consumed.
 5. **`rpc` request:** handled as RPC (§5.4). Consumed.
 6. **Anything else:** to user `onMessage`.

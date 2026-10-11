@@ -25,9 +25,10 @@ def to_json(value: Any) -> str:
         If ``value`` contains something JSON can't represent (including a
         naive ``datetime``).
     ValueError
-        If ``value`` contains a circular reference.
+        If ``value`` contains a circular reference, NaN, or an infinity
+        (``JSON.parse`` can't read those back).
     """
-    return json.dumps(value, default=_encode, separators=(",", ":"))
+    return json.dumps(value, default=_encode, separators=(",", ":"), allow_nan=False)
 
 
 def _encode(value: Any) -> Any:

@@ -130,6 +130,18 @@ def test_client_writes_lose_reserved_metadata() -> None:
     assert c["metadata"] == {"billing": 1}  # server writes keep it
 
 
+def test_a_nan_message_raises_and_stores_nothing() -> None:
+    _, sessions, _ = setup()
+
+    async def scenario() -> list[Any]:
+        session = sessions.session()
+        with pytest.raises(ValueError):
+            await session.append_message(msg("a", metadata={"score": float("nan")}))
+        return await session.get_history()
+
+    assert run(sessions, scenario) == []
+
+
 def test_large_messages_span_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sessions_module, "split_content", partial(split_content, budget=40)
