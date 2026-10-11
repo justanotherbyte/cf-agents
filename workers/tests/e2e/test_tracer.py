@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-WRANGLER = "wrangler@4.129.0"  # Wynd's pin
 FIXTURE = Path(__file__).parent / "tracer"
-SDK = Path(__file__).parents[2] / "src" / "workers"
+CROSSWIND = Path(__file__).parents[2]
+WYND = CROSSWIND.parent / "wynd"
 
 pytestmark = pytest.mark.e2e
 
@@ -35,10 +35,10 @@ def free_port() -> int:
 )
 def test_tracer_answers_http(tmp_path: Path, date: str, version: str) -> None:
     shutil.copytree(FIXTURE, tmp_path, dirs_exist_ok=True)
-    shutil.copytree(
-        SDK,
-        tmp_path / "python_modules" / "workers",
-        ignore=shutil.ignore_patterns("__pycache__"),
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "tracer"\nversion = "0"\n'
+        'dependencies = ["crosswind-workers"]\n'
+        f'[tool.uv.sources]\ncrosswind-workers = {{ path = "{CROSSWIND}" }}\n'
     )
     config = {
         "name": "tracer",
@@ -48,22 +48,22 @@ def test_tracer_answers_http(tmp_path: Path, date: str, version: str) -> None:
     }
     (tmp_path / "wrangler.json").write_text(json.dumps(config))
     port = free_port()
-    log = tmp_path / "wrangler.log"
+    log = tmp_path / "dev.log"
     with log.open("w") as out:
-        wrangler = subprocess.Popen(
-            ["npx", "--yes", WRANGLER, "dev", "--port", str(port)],
+        server = subprocess.Popen(
+            ["uv", "run", "--project", WYND, "wynd", "dev", "--port", str(port)],
             cwd=tmp_path,
             stdin=subprocess.DEVNULL,
             stdout=out,
             stderr=subprocess.STDOUT,
-            # Its own process group, so one kill also stops workerd.
+            # Its own process group, so one kill also stops Wrangler and workerd.
             start_new_session=True,
         )
     try:
-        status, body = wait_for_response(f"http://127.0.0.1:{port}/", wrangler, log)
+        status, body = wait_for_response(f"http://127.0.0.1:{port}/", server, log)
     finally:
-        os.killpg(wrangler.pid, signal.SIGTERM)
-        wrangler.wait()
+        os.killpg(server.pid, signal.SIGTERM)
+        server.wait()
 
     assert status == 201
     py_version, method, sdk_file = body.split(" ")
@@ -72,12 +72,12 @@ def test_tracer_answers_http(tmp_path: Path, date: str, version: str) -> None:
 
 
 def wait_for_response(
-    url: str, wrangler: subprocess.Popen[bytes], log: Path
+    url: str, server: subprocess.Popen[bytes], log: Path
 ) -> tuple[int, str]:
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
-        if wrangler.poll() is not None:
-            pytest.fail(f"wrangler dev exited:\n{log.read_text()}")
+        if server.poll() is not None:
+            pytest.fail(f"wynd dev exited:\n{log.read_text()}")
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
                 return response.status, response.read().decode()
@@ -86,4 +86,4 @@ def wait_for_response(
             pytest.fail(f"HTTP {error.code}: {body}\n{log.read_text()}")
         except OSError:
             time.sleep(1)
-    pytest.fail(f"wrangler dev never answered:\n{log.read_text()}")
+    pytest.fail(f"wynd dev never answered:\n{log.read_text()}")

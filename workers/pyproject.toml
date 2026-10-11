@@ -27,7 +27,7 @@ per-file-ignores."stubs/**" = ["N"]
 
 [tool.pytest.ini_options]
 addopts = ["-m", "not e2e"]
-markers = ["e2e: runs the pinned wrangler dev; needs Node.js and the network"]
+markers = ["e2e: runs wynd dev from ../wynd; needs uv, Node.js and the network"]
 
 [tool.ty.environment]
 # Stubs for modules only workerd provides. They stay out of the wheel.
