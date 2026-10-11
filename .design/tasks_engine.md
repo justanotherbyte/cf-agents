@@ -144,7 +144,11 @@ and `delete()` default `limit=100`; `retain=True`.
 3. **One wire format for values: plain JSON.** Inputs, step results,
    metadata, and results go through `json.dumps` (not the SDK's
    dataclass/`datetime` encoder) and must be at most 1 MiB, or
-   `TaskSerializationError`. A step that returns a dataclass or `datetime`
+   `TaskSerializationError`. Like upstream, the limit counts the UTF-8 bytes
+   of JSON that keeps non-ASCII characters raw (`ensure_ascii=False`), so a
+   CJK string isn't charged six bytes per character. Lone surrogates are
+   escaped as `\uXXXX`, as JS's `JSON.stringify` does, so the stored text is
+   valid UTF-8. A step that returns a dataclass or `datetime`
    would come back as a `dict` / number on replay, so Python refuses it up
    front rather than letting the first run and the replay see different
    types.
