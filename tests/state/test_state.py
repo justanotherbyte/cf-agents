@@ -62,6 +62,13 @@ def test_unserializable_state_is_never_cached() -> None:
     assert state.get() == {"count": 1}
 
 
+def test_nan_state_is_refused() -> None:
+    state = install(State(initial_state={"count": 1}))
+    with pytest.raises(ValueError):
+        state.set({"count": float("nan")})
+    assert state.get() == {"count": 1}
+
+
 def test_the_cache_is_a_copy_of_what_the_caller_passed() -> None:
     state = install(State())
     value = {"items": [1]}

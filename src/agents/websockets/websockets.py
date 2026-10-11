@@ -485,10 +485,15 @@ def _parse_frame(message: str | bytes) -> dict[str, Any] | None:
     if not isinstance(message, str):
         return None
     try:
-        frame = json.loads(message)
-    except json.JSONDecodeError:
+        frame = json.loads(message, parse_constant=_reject_constant)
+    except (ValueError, RecursionError):
+        # JSON.parse rejects NaN; on_message also gets what Python can't parse.
         return None
     return frame if isinstance(frame, dict) else None
+
+
+def _reject_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not JSON")
 
 
 def _is_state_frame(frame: Any) -> bool:
