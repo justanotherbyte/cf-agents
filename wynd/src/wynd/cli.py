@@ -1,6 +1,6 @@
 import sys
 
-from wynd import wrangler
+from . import wrangler
 
 
 def main(argv: list[str] | None = None) -> int:
