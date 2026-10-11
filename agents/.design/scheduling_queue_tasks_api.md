@@ -425,7 +425,11 @@ Scheduler(target=self, callbacks={"old_remind": self.remind})
   may store it under any attribute name. `Tasks(target=obj)` records itself in
   a module-level `WeakKeyDictionary` keyed by `obj`, and the descriptor's
   `__get__` looks it up there. If there is no entry, it raises an error saying
-  no `Tasks` capability was created with `target=self`.
+  no `Tasks` capability was created with `target=self`. The value is a
+  `weakref.ref` to the `Tasks`, because `Tasks` references `obj` (its
+  Lifecycle host and the bound `@task` handlers), and a strong value would keep
+  every `obj` alive forever. `obj` keeps its `Tasks` alive itself, as
+  `self.tasks` or through its Lifecycle.
 - **`Agent` uses the same public mechanism**: `Scheduler(target=self)`,
   `Queue(target=self)`, `Tasks(target=self)`. The port needs **no private
   resolver setters** (`setSchedulerCallbackResolver`,
