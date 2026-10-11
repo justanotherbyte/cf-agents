@@ -12,7 +12,7 @@ import random
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
-from .timing import to_seconds, to_timedelta
+from .timing import to_seconds
 from .types import Duration, RetryOptions, ShouldRetry
 
 __all__ = ("backoff_delay", "retry", "run_with_retries", "validate_retry_options")
@@ -136,8 +136,9 @@ def backoff_delay(attempt: int, options: RetryOptions) -> timedelta:
     timedelta
         A uniformly random delay in ``[0, min(2 ** attempt * base, max))``.
     """
+    # 2.0 ** 1024 overflows a float; by then the window is capped at max anyway.
     upper = min(
-        to_timedelta(options.base_delay) * 2**attempt,
-        to_timedelta(options.max_delay),
+        to_seconds(options.base_delay) * 2.0 ** min(attempt, 1023),
+        to_seconds(options.max_delay),
     )
-    return upper * random.random()
+    return timedelta(seconds=upper * random.random())

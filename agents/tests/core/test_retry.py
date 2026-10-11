@@ -109,3 +109,20 @@ def test_backoff_is_bounded_by_full_jitter_window() -> None:
         for _ in range(50):
             delay = backoff_delay(attempt, options)
             assert timedelta(0) <= delay < timedelta(seconds=upper)
+
+
+@pytest.mark.parametrize("attempt", [50, 60, 1023, 1024, 5000])
+def test_backoff_for_large_attempts_stays_within_max_delay(attempt: int) -> None:
+    options = RetryOptions(base_delay=0.1, max_delay=3)
+    for _ in range(50):
+        delay = backoff_delay(attempt, options)
+        assert timedelta(0) <= delay < timedelta(seconds=3)
+
+
+def test_many_attempts_raise_the_operations_own_error() -> None:
+    fn = Flaky(failures=100)
+    with pytest.raises(RuntimeError, match="fail 70"):
+        asyncio.run(
+            retry(fn, max_attempts=70, base_delay=FAST_BASE, max_delay=FAST_MAX)
+        )
+    assert fn.attempts == list(range(1, 71))
