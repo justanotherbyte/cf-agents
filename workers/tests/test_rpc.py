@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime
 
 import pytest
-from fake_js import JsValue, js_date, js_error, js_request, jsnull
+from fake_js import JsValue, js_date, js_error, js_request, js_response, jsnull
 
 from workers import Request, Response, python_from_rpc, python_to_rpc
 
@@ -42,7 +42,7 @@ def test_js_values_with_python_twins_are_converted() -> None:
                 js_date(86_400_000),
                 js_error("boom"),
                 JsValue("Number", valueOf=lambda: 7),
-                JsValue("Response"),
+                js_response(),
                 js_request("https://x/", "POST"),
             ],
         )

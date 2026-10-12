@@ -5,16 +5,11 @@ from typing import Any
 import js
 from pyodide.ffi import create_proxy, to_js
 
-from ._js import js_name
+from ._js import js_name, jsnull
+from .blob import Blob, File
+from .formdata import FormData
 from .request import Request
 from .response import Response
-
-try:
-    # Pyodide 0.28 added jsnull. The pyodide-py stubs for 3.12 (0.27.8) lack it.
-    from pyodide.ffi import jsnull  # ty: ignore[unresolved-import]
-except ImportError:
-    # Pyodide 0.26 (the 3.12 target) has no jsnull, so None crosses as undefined.
-    jsnull = None
 
 
 def python_from_rpc(obj: Any) -> Any:
@@ -54,11 +49,12 @@ class JsDict(dict):
         self[name] = value
 
 
-# shortcut: FormData, Blob and File pass through as JS values until crosswind 3
-# adds their wrappers.
 _PYTHON_TWINS = {
     "Response": Response,
     "Request": Request,
+    "FormData": FormData,
+    "Blob": Blob,
+    "File": File,
     "Date": lambda date: datetime.datetime.fromtimestamp(date.getTime() / 1000),
     "Error": lambda error: Exception(error.toString()),
     "Number": lambda number: number.valueOf(),

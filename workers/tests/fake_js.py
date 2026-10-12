@@ -55,6 +55,11 @@ def js_request(url: str, method: str = "GET") -> JsValue:
     return JsValue("Request", url=url, method=method)
 
 
+def js_response(body: Any = None, init: Any = None, **options: Any) -> JsValue:
+    # Pyodide passes Python keyword arguments as a trailing options object.
+    return JsValue("Response", body=body, init=init or options, url="")
+
+
 def js_date(milliseconds: float) -> JsValue:
     return JsValue("Date", getTime=lambda: milliseconds)
 
@@ -99,18 +104,25 @@ def fake_module(name: str, **attrs: Any) -> ModuleType:
 
 
 def install() -> None:
-    # The real pyodide.code (relaxed_call is pure Python) needs the real ffi.
-    import pyodide.code  # noqa: F401
+    # Pure-Python Pyodide modules the SDK uses (relaxed_call, FetchResponse)
+    # import the real ffi, so they load before the fake replaces it.
+    import pyodide.code
+    import pyodide.ffi
+    import pyodide.http
 
     sys.modules["js"] = fake_module(
         "js",
         Object=SimpleNamespace(fromEntries=dict),
-        Response=SimpleNamespace(
-            new=lambda body=None, init=None: JsValue("Response", body=body, init=init)
-        ),
+        Response=SimpleNamespace(new=js_response),
         Date=SimpleNamespace(new=js_date),
         Error=SimpleNamespace(new=js_error),
     )
     sys.modules["pyodide.ffi"] = fake_module(
-        "pyodide.ffi", to_js=to_js, create_proxy=create_proxy, jsnull=jsnull
+        "pyodide.ffi",
+        **{
+            **vars(pyodide.ffi),
+            "to_js": to_js,
+            "create_proxy": create_proxy,
+            "jsnull": jsnull,
+        },
     )
