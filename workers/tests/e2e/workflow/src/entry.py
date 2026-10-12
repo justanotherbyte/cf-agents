@@ -1,6 +1,7 @@
+import json
 from urllib.parse import parse_qs, urlparse
 
-from js import JSON, Error, Object
+from js import Error, Object
 from pyodide.ffi import JsException, create_once_callable, to_js
 
 from workers import Response, WorkerEntrypoint, WorkflowEntrypoint
@@ -47,4 +48,4 @@ class Default(WorkerEntrypoint):
             instance = await self.env.FLOW.create()
             return Response(instance.id)
         instance = await self.env.FLOW.get(parse_qs(url.query)["id"][0])
-        return Response(JSON.stringify(await instance.status()))
+        return Response(json.dumps(await instance.status()))

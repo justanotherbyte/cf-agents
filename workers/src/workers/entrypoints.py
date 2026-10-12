@@ -1,7 +1,26 @@
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pyodide.code import relaxed_call
+
+from .bindings import _EnvWrapper
+
+EnvT = TypeVar("EnvT")
+
+if TYPE_CHECKING:
+
+    class _Typed[Env]:
+        env: Env
+
+else:
+
+    class _Typed:
+        # Generic only to type checkers. A class that is generic at runtime
+        # can't follow Generic[S] in a base list (Python reports an
+        # inconsistent MRO), so subscripting here just returns the class and
+        # Generic mixes in before or after an entrypoint.
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
 
 
 class _Entrypoint:
@@ -9,9 +28,11 @@ class _Entrypoint:
     # makeEntrypointProxyHandler in workerd's python-entrypoint-helper.ts.
     _legacy_names: tuple[str, ...] = ()
 
+    env: Any
+
     def __init__(self, ctx: Any, env: Any) -> None:
         self.ctx = ctx
-        self.env = env
+        self.env = _EnvWrapper(env)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -31,11 +52,11 @@ def _alias(name: str) -> Callable[..., Any]:
     return alias
 
 
-class WorkerEntrypoint(_Entrypoint):
+class WorkerEntrypoint(_Typed[EnvT], _Entrypoint):
     _legacy_names = ("fetch", "connect")
 
 
-class DurableObject(_Entrypoint):
+class DurableObject(_Typed[EnvT], _Entrypoint):
     _legacy_names = (
         "fetch",
         "connect",
@@ -46,5 +67,5 @@ class DurableObject(_Entrypoint):
     )
 
 
-class WorkflowEntrypoint(_Entrypoint):
+class WorkflowEntrypoint(_Typed[EnvT], _Entrypoint):
     pass

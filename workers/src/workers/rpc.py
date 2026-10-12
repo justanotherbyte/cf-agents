@@ -89,7 +89,8 @@ def _none_to_null(value: Any) -> Any:
 
 
 def _refuse_unsendable(value: Any) -> None:
-    if callable(value) and not isinstance(value, type):
+    # A wrapper is sent as its JS object, and callables as proxies.
+    if hasattr(value, "js_object") or (callable(value) and not isinstance(value, type)):
         return
     if js_name(value) == "RegExp":
         raise TypeError(f"{value.constructor.name} cannot be sent over RPC.")

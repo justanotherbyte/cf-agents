@@ -3,7 +3,7 @@ from inspect import isawaitable
 from typing import Any
 
 import pytest
-from fake_js import js_request
+from fake_js import JsValue, js_request
 from pyodide.code import relaxed_call
 
 from workers import (
@@ -34,9 +34,11 @@ def call(instance: Any, method: str, *args: Any) -> Any:
 def test_fetch_returns_a_js_response() -> None:
     class Default(WorkerEntrypoint):
         async def fetch(self, request: Request) -> Response:
-            return Response(f"{self.env} {request.method} {request.url}", status=201)
+            name = self.env.NAME
+            return Response(f"{name} {request.method} {request.url}", status=201)
 
-    js_response = call(Default("ctx", "env"), "fetch", js_request("https://x/", "POST"))
+    env = JsValue("Object", NAME="env")
+    js_response = call(Default("ctx", env), "fetch", js_request("https://x/", "POST"))
 
     assert js_response.constructor.name == "Response"
     assert js_response.body == "env POST https://x/"

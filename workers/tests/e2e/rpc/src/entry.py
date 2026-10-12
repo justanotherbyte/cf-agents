@@ -10,8 +10,6 @@ from workers import (
     Request,
     Response,
     WorkerEntrypoint,
-    python_from_rpc,
-    python_to_rpc,
 )
 
 
@@ -42,8 +40,8 @@ class Default(WorkerEntrypoint):
         failures = []
 
         async def call(method, *args):
-            stub = getattr(self.env.OTHER, method)
-            return python_from_rpc(await stub(*map(python_to_rpc, args)))
+            # The env's Fetcher converts arguments and results both ways.
+            return await getattr(self.env.OTHER, method)(*args)
 
         def check(name, ok):
             if not ok:
