@@ -68,7 +68,7 @@ def test_sync_drops_the_sdk_a_library_pulls_in(tmp_path: Path) -> None:
     )
     config = {
         "main": "src/entry.py",
-        "compatibility_date": "2025-10-01",
+        "compatibility_date": "2025-06-01",
         "compatibility_flags": ["python_workers"],
     }
     (project / "wrangler.json").write_text(json.dumps(config))
