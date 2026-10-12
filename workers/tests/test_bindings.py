@@ -1,8 +1,7 @@
-import asyncio
 from typing import Any, Generic, TypeVar
 
 import pytest
-from fake_js import JsValue, jsnull
+from fake_js import JsBinding, JsValue, jsnull, run
 
 from workers import DurableObject, WorkerEntrypoint, python_to_rpc
 from workers.bindings import (
@@ -16,52 +15,6 @@ from workers.bindings import (
     Workflow,
     WorkflowInstance,
 )
-
-
-class Promise:
-    """A settled JS promise: awaitable, and thenable like the real one."""
-
-    def __init__(self, value: Any) -> None:
-        self.value = value
-
-    def then(self, *callbacks: Any) -> None:
-        pass
-
-    def __await__(self) -> Any:
-        return self.value
-        yield
-
-
-class JsBinding(JsValue):
-    """A JS binding whose methods record their calls and return `returns`."""
-
-    def __init__(
-        self,
-        name: str,
-        returns: Any = None,
-        sync: dict[str, Any] | None = None,
-        **attributes: Any,
-    ) -> None:
-        super().__init__(name, **attributes)
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-        self.returns = returns
-        self.sync = sync or {}
-
-    def __getattr__(self, method: str) -> Any:
-        if method.startswith("_"):
-            raise AttributeError(method)
-
-        def call(*args: Any) -> Any:
-            self.calls.append((method, args))
-            if method in self.sync:
-                return self.sync[method]
-            return Promise(self.returns)
-
-        return call
-
-
-def run(coroutine: Any) -> Any:
-    return asyncio.run(coroutine)
 
 
 def worker_env(**bindings: Any) -> Any:

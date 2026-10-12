@@ -6,6 +6,7 @@ default converter; to_js does the reverse and hands every Python object it
 can't convert to the default converter.
 """
 
+import asyncio
 import sys
 from collections.abc import Callable
 from types import ModuleType, SimpleNamespace
@@ -69,7 +70,7 @@ def js_error(message: str) -> JsValue:
 
 
 def create_proxy(function: Any) -> SimpleNamespace:
-    return SimpleNamespace(proxied=function)
+    return SimpleNamespace(proxied=function, destroy=lambda: None)
 
 
 def to_js(
@@ -97,6 +98,57 @@ def to_js(
     return convert(value)
 
 
+# What the SDK handed workerd's patchWaitUntil and queueMicrotask.
+PATCHED_CONTEXTS: list[Any] = []
+MICROTASKS: list[Any] = []
+
+
+class Promise:
+    """A settled JS promise: awaitable, and thenable like the real one."""
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+    def then(self, *callbacks: Any) -> None:
+        pass
+
+    def __await__(self) -> Any:
+        return self.value
+        yield
+
+
+class JsBinding(JsValue):
+    """A JS binding whose methods record their calls and return `returns`."""
+
+    def __init__(
+        self,
+        name: str,
+        returns: Any = None,
+        sync: dict[str, Any] | None = None,
+        **attributes: Any,
+    ) -> None:
+        super().__init__(name, **attributes)
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.returns = returns
+        self.sync = sync or {}
+
+    def __getattr__(self, method: str) -> Any:
+        if method.startswith("_"):
+            raise AttributeError(method)
+
+        def call(*args: Any) -> Any:
+            self.calls.append((method, args))
+            if method in self.sync:
+                return self.sync[method]
+            return Promise(self.returns)
+
+        return call
+
+
+def run(coroutine: Any) -> Any:
+    return asyncio.run(coroutine)
+
+
 def fake_module(name: str, **attrs: Any) -> ModuleType:
     fake = ModuleType(name)
     fake.__dict__.update(attrs)
@@ -110,12 +162,21 @@ def install() -> None:
     import pyodide.ffi
     import pyodide.http
 
+    sys.modules["_pyodide_entrypoint_helper"] = fake_module(
+        "_pyodide_entrypoint_helper", patchWaitUntil=PATCHED_CONTEXTS.append
+    )
     sys.modules["js"] = fake_module(
         "js",
+        queueMicrotask=MICROTASKS.append,
         Object=SimpleNamespace(fromEntries=dict),
         Response=SimpleNamespace(new=js_response),
         Date=SimpleNamespace(new=js_date),
         Error=SimpleNamespace(new=js_error),
+        Promise=SimpleNamespace(
+            resolve=lambda value: JsValue(
+                "Promise", finally_=lambda callback: JsValue("Promise", source=value)
+            )
+        ),
     )
     sys.modules["pyodide.ffi"] = fake_module(
         "pyodide.ffi",
@@ -123,6 +184,7 @@ def install() -> None:
             **vars(pyodide.ffi),
             "to_js": to_js,
             "create_proxy": create_proxy,
+            "create_once_callable": lambda function: function,
             "jsnull": jsnull,
         },
     )
