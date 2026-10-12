@@ -6,6 +6,7 @@ from pathlib import Path
 from . import wrangler
 from .host import warn_on_venv_mismatch
 from .project import WyndError, load_project
+from .stage import stage
 from .sync import sync
 from .targets import select_target
 
@@ -19,13 +20,17 @@ _parser.add_argument("--cwd")
 _parser.add_argument("--env-file", action="append")
 _parser.add_argument("--profile")
 
+# Takes only the config flag, so the remaining arguments keep their order.
+_config_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+_config_parser.add_argument("-c", "--config")
+
 
 def main(argv: list[str] | None = None) -> int:
     """Run a `wynd` command line. Commands Wynd doesn't own go to Wrangler."""
     args = sys.argv[1:] if argv is None else argv
     options, rest = _parser.parse_known_args(args)
     command = next((arg for arg in rest if not arg.startswith("-")), None)
-    if command not in ("dev", "sync"):
+    if command not in ("deploy", "dev", "sync"):
         return wrangler.run(args)
     try:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
@@ -33,10 +38,14 @@ def main(argv: list[str] | None = None) -> int:
         project = load_project(cwd, options.config, env)
         target = select_target(project)
         sync(project, target)
+        staged = stage(project) if command == "deploy" else None
     except WyndError as error:
         print(f"wynd: error: {error}", file=sys.stderr)
         return 1
     if command == "sync":
         return 0
+    if staged is not None:
+        _, rest = _config_parser.parse_known_args(args)
+        return wrangler.run([*rest, "--config", str(staged)])
     warn_on_venv_mismatch(project, target)
     return wrangler.run(args)

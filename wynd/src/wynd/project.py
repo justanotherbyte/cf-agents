@@ -17,6 +17,10 @@ class WyndError(Exception):
 class Project:
     root: Path
     config_path: Path
+    # The config file as parsed, every environment included.
+    config: dict[str, Any]
+    main: str | None
+    base_dir: str | None
     compatibility_date: str | None
     compatibility_flags: tuple[str, ...]
     dependencies: tuple[str, ...]
@@ -34,7 +38,7 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
     if root is None:
         raise WyndError(f"no pyproject.toml in {cwd} or any parent directory")
     config_path = cwd / config if config else _find_config(cwd)
-    settings = _read(config_path)
+    raw = settings = _read(config_path)
     envs = settings.get("env") or {}
     # Without any env table, Wrangler warns and uses the top level, as Wynd does.
     if env is not None and envs:
@@ -46,6 +50,9 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
     return Project(
         root=root,
         config_path=config_path,
+        config=raw,
+        main=settings.get("main"),
+        base_dir=settings.get("base_dir"),
         compatibility_date=settings.get("compatibility_date"),
         compatibility_flags=tuple(settings.get("compatibility_flags", ())),
         dependencies=tuple(pyproject.get("project", {}).get("dependencies", ())),
