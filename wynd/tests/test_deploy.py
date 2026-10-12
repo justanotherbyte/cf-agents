@@ -222,3 +222,44 @@ def test_an_entry_outside_base_dir_fails(
     assert main(["deploy"]) == 1
     assert "subdirectory" in capsys.readouterr().err
     assert tools.wrangler() == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["versions", "upload", "--dry-run"],
+        # A flag's value comes before the subcommand.
+        ["versions", "--message", "m", "upload"],
+        ["preview", "--name", "pr-1"],
+    ],
+)
+def test_every_upload_command_runs_wrangler_on_the_staged_tree(
+    tools: Tools, project: Path, command: list[str]
+) -> None:
+    assert main(["-c", "wrangler.jsonc", *command]) == 0
+
+    build = project / ".wynd" / "build"
+    assert (build / "python_modules" / "workers" / "__init__.py").is_file()
+    assert tools.wrangler() == [[*command, "--config", str(build / "wrangler.json")]]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["versions", "list", "-c", "wrangler.jsonc"],
+        ["versions", "deploy", "--message", "upload"],
+        ["preview", "delete", "-c", "wrangler.jsonc"],
+        ["preview", "--name", "pr-1", "delete"],
+        ["preview", "secret", "put", "TOKEN"],
+        ["preview", "settings"],
+        ["preview", "base-config"],
+    ],
+)
+def test_commands_that_upload_no_code_pass_through(
+    tools: Tools, project: Path, command: list[str]
+) -> None:
+    assert main(command) == 0
+
+    assert tools.wrangler() == [command]
+    assert tools.uv() == []
+    assert not (project / ".wynd" / "build").exists()

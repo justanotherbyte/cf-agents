@@ -21,6 +21,13 @@ _parser.add_argument("--cwd")
 _parser.add_argument("--env-file", action="append")
 _parser.add_argument("--profile")
 
+# Wrangler 4.129.0's subcommands. Of these, only `versions upload` uploads code,
+# and `preview` uploads code when it has none of them.
+SUBCOMMANDS = {
+    "versions": {"view", "list", "upload", "deploy", "secret"},
+    "preview": {"delete", "settings", "secret", "base-config"},
+}
+
 # Takes only the config flag, so the remaining arguments keep their order.
 _config_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
 _config_parser.add_argument("-c", "--config")
@@ -30,8 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     """Run a `wynd` command line. Commands Wynd doesn't own go to Wrangler."""
     args = sys.argv[1:] if argv is None else argv
     options, rest = _parser.parse_known_args(args)
-    command = next((arg for arg in rest if not arg.startswith("-")), None)
-    if command not in ("deploy", "dev", "sync"):
+    flow = _flow(rest)
+    if flow == "passthrough":
         return wrangler.run(args)
     try:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
@@ -39,17 +46,34 @@ def main(argv: list[str] | None = None) -> int:
         project = load_project(cwd, options.config, env)
         target = select_target(project)
         sync(project, target)
-        staged = stage(project) if command == "deploy" else None
+        staged = stage(project) if flow == "upload" else None
     except WyndError as error:
         print(f"wynd: error: {error}", file=sys.stderr)
         return 1
-    if command == "sync":
+    if flow == "sync":
         return 0
     if staged is not None:
         path, plan = staged
         if "--dry-run" in rest:
-            print(f"wynd: {size_report(project.python_modules, plan)}")
+            # Flushed, so it comes before Wrangler's output in a pipe.
+            print(f"wynd: {size_report(project.python_modules, plan)}", flush=True)
         _, rest = _config_parser.parse_known_args(args)
         return wrangler.run([*rest, "--config", str(path)])
     warn_on_venv_mismatch(project, target)
     return wrangler.run(args)
+
+
+def _flow(rest: list[str]) -> str:
+    """Sort a command line into the upload, dev, sync or passthrough flow."""
+    words = [arg for arg in rest if not arg.startswith("-")]
+    command = words[0] if words else ""
+    # A known name, not the second word, because a flag's value can come first.
+    known = SUBCOMMANDS.get(command, set())
+    subcommand = next((word for word in words[1:] if word in known), "")
+    if (
+        command == "deploy"
+        or (command == "versions" and subcommand == "upload")
+        or (command == "preview" and not subcommand)
+    ):
+        return "upload"
+    return command if command in ("dev", "sync") else "passthrough"
