@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .project import Project, WyndError
+from .shake import ShakePlan, shake
 
 # Fields Wrangler resolves from the config directory, by table. A list value
 # holds one table per item.
@@ -23,8 +24,8 @@ PATH_FIELDS = {
 LEFT_ALONE = {"$schema", "main", "base_dir", "build", "rules", "vars", "define"}
 
 
-def stage(project: Project) -> Path:
-    """Copy the Worker into .wynd/build/ and return its staged config's path."""
+def stage(project: Project) -> tuple[Path, ShakePlan]:
+    """Shake and copy the Worker into .wynd/build/. Return the staged config."""
     config_dir = project.config_path.parent
     config = copy.deepcopy(project.config)
     _rewrite(config, config_dir)
@@ -38,14 +39,32 @@ def stage(project: Project) -> Path:
             "from .wynd/build/. Use an absolute path."
         )
     source = _source_dir(project)
+    entry = config_dir / (project.main or "")
+    plan = shake(project.python_modules, config_dir / source, entry, project.keep)
+    if plan.errors:
+        raise WyndError("\n".join(plan.errors))
     build = project.root / ".wynd" / "build"
     shutil.rmtree(build, ignore_errors=True)
     shutil.copytree(config_dir / source, build / source)
-    shutil.copytree(project.python_modules, build / "python_modules")
+    for name in plan.kept:
+        target = build / "python_modules" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(project.python_modules / name, target)
+    decisions = {
+        "kept": plan.kept,
+        "dropped": plan.dropped,
+        "unresolved": plan.unresolved,
+    }
+    lines = [
+        f"{decision}\t{name}\t{reason}\n"
+        for decision, names in decisions.items()
+        for name, reason in names.items()
+    ]
+    (build.parent / "shake.txt").write_text("".join(lines))
     staged = build / "wrangler.json"
     # default=str writes TOML dates the way Wrangler reads them.
     staged.write_text(json.dumps(config, indent=2, default=str))
-    return staged
+    return staged, plan
 
 
 def _source_dir(project: Project) -> Path:
@@ -60,6 +79,7 @@ def _source_dir(project: Project) -> Path:
         source == config_dir
         or not source.is_relative_to(config_dir)
         or project.root.resolve().is_relative_to(source)
+        or not (config_dir / project.main).resolve().is_relative_to(source)
     ):
         raise WyndError(
             f"main and base_dir must point into a subdirectory beside "

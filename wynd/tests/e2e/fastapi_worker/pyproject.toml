@@ -1,0 +1,7 @@
+[project]
+name = "fastapi-fixture"
+version = "0"
+requires-python = ">=3.12"
+# FastAPI 0.142.0 added opentelemetry-api, which reads entropy at import time,
+# and workerd refuses that outside a request. That breaks the full tree too.
+dependencies = ["workers-runtime-sdk", "fastapi<0.142"]

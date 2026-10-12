@@ -32,3 +32,8 @@ markers = ["e2e: runs real uv and the pinned Wrangler; needs Node.js and the net
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.ty.src]
+# The FastAPI fixture's packages exist only in the Pyodide install its e2e
+# test makes.
+exclude = ["tests/e2e/fastapi_worker"]

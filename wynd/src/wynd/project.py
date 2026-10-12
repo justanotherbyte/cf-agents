@@ -25,6 +25,8 @@ class Project:
     compatibility_flags: tuple[str, ...]
     dependencies: tuple[str, ...]
     allow_build: bool
+    # Modules the shaker keeps although nothing imports them by a literal name.
+    keep: tuple[str, ...]
 
     @property
     def python_modules(self) -> Path:
@@ -47,6 +49,10 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         # An environment's value replaces the top-level one; nothing merges.
         settings = {**settings, **envs[env]}
     pyproject = _read(root / "pyproject.toml")
+    wynd = pyproject.get("tool", {}).get("wynd", {})
+    keep = wynd.get("keep", [])
+    if not isinstance(keep, list) or not all(isinstance(k, str) for k in keep):
+        raise WyndError("[tool.wynd] keep must be a list of module names")
     return Project(
         root=root,
         config_path=config_path,
@@ -56,7 +62,8 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         compatibility_date=settings.get("compatibility_date"),
         compatibility_flags=tuple(settings.get("compatibility_flags", ())),
         dependencies=tuple(pyproject.get("project", {}).get("dependencies", ())),
-        allow_build=bool(pyproject.get("tool", {}).get("wynd", {}).get("allow-build")),
+        allow_build=bool(wynd.get("allow-build")),
+        keep=tuple(keep),
     )
 
 

@@ -1,0 +1,343 @@
+import ast
+import csv
+from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+
+WASM = b"\x00asm"
+
+# Leading bytes of binaries built for a host OS.
+HOST_BINARIES = {
+    b"\x7fELF": "ELF",
+    b"\xfe\xed\xfa\xce": "Mach-O",
+    b"\xfe\xed\xfa\xcf": "Mach-O",
+    b"\xce\xfa\xed\xfe": "Mach-O",
+    b"\xcf\xfa\xed\xfe": "Mach-O",
+    b"\xca\xfe\xba\xbe": "Mach-O",
+    b"MZ": "PE",
+}
+
+
+class Kind(Enum):
+    MODULE = "module"
+    # A `from pkg import name` member, which may not be a module at all.
+    MEMBER = "member"
+    # `from pkg import *`, named by pkg.
+    STAR = "star"
+    # A computed name with a literal start, named "package:start".
+    PREFIX = "prefix"
+
+
+@dataclass(frozen=True)
+class ShakePlan:
+    """Kept and dropped files by POSIX path, unresolved names, and build errors."""
+
+    kept: dict[str, str] = field(default_factory=dict)
+    dropped: dict[str, str] = field(default_factory=dict)
+    # Imported names with no vendored file, and who imported them.
+    unresolved: dict[str, str] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+
+
+def shake(site: Path, source: Path, entry: Path, keep: tuple[str, ...]) -> ShakePlan:
+    """Decide which files of `site` the Worker in `source` can import."""
+    plan = ShakePlan()
+    roots = (source, site)
+    entry_name = ".".join(entry.relative_to(source).with_suffix("").parts)
+    queue = deque([(entry_name, "entry module", Kind.MODULE)])
+    queue += [(name, "keep list", Kind.MODULE) for name in keep]
+    queue += _pth_roots(site, plan)
+    seen: set[tuple[str, Kind]] = set()
+    missing: set[str] = set()
+    while queue:
+        name, reason, kind = queue.popleft()
+        if (name, kind) in seen:
+            continue
+        if kind is Kind.PREFIX:
+            seen.add((name, kind))
+            queue += [(m, reason, Kind.MODULE) for m in _prefixed(name, roots)]
+            continue
+        parent = name if kind is Kind.STAR else name.rpartition(".")[0]
+        # Python imports a module's packages first.
+        if parent and (parent, Kind.MODULE) not in seen:
+            queue.appendleft((name, reason, kind))
+            queue.appendleft((parent, f"package of {name}", Kind.MODULE))
+            continue
+        seen.add((name, kind))
+        if kind is Kind.STAR:
+            path = None if name in missing else _find(name, roots)
+            for member in _all(_parse(path)) if path else []:
+                queue.append((f"{name}.{member}", reason, Kind.MEMBER))
+            continue
+        path = None if parent in missing else _find(name, roots)
+        if path is None:
+            missing.add(name)
+            if kind is Kind.MODULE and parent not in missing:
+                plan.unresolved.setdefault(name, reason)
+            continue
+        if path.is_file() and path.is_relative_to(site):
+            plan.kept.setdefault(path.relative_to(site).as_posix(), reason)
+        package = name if path.name == "__init__.py" or path.is_dir() else parent
+        for imported, why, imported_kind in _imports(_parse(path), package):
+            queue.append((imported, f"imported by {name}{why}", imported_kind))
+    _decide_files(site, plan)
+    _check_binaries(site, plan)
+    return plan
+
+
+def size_report(site: Path, plan: ShakePlan) -> str:
+    """Bytes in the full tree and its kept files, without Wrangler's wrapping."""
+    before = sum((site / name).stat().st_size for name in [*plan.kept, *plan.dropped])
+    after = sum((site / name).stat().st_size for name in plan.kept)
+    return (
+        f"python_modules is {before:,} bytes, {after:,} after pruning "
+        f"({before - after:,} fewer). Each file's decision is in .wynd/shake.txt."
+    )
+
+
+def _pth_roots(site: Path, plan: ShakePlan) -> list[tuple[str, str, Kind]]:
+    """The modules .pth files import. Other .pth lines are build errors."""
+    roots = []
+    for pth in sorted(site.glob("*.pth")):
+        plan.kept[pth.name] = "startup hook"
+        for number, line in enumerate(pth.read_text().splitlines(), 1):
+            imported = _pth_imports(line)
+            if imported is None:
+                plan.errors.append(
+                    f"{pth.name} line {number} is not a plain import: {line}"
+                )
+            for name in imported or []:
+                roots.append((name, f"imported by {pth.name}", Kind.MODULE))
+    return roots
+
+
+def _pth_imports(line: str) -> list[str] | None:
+    """The modules a .pth line imports, or None if it does anything else."""
+    if not line.strip() or line.startswith("#"):
+        return []
+    try:
+        (statement,) = ast.parse(line).body
+    except (SyntaxError, ValueError):
+        return None
+    if not isinstance(statement, ast.Import):
+        return None
+    return [alias.name for alias in statement.names]
+
+
+def _decide_files(site: Path, plan: ShakePlan) -> None:
+    """Decide every file that isn't an imported module."""
+    files = sorted(p.relative_to(site) for p in site.rglob("*") if p.is_file())
+    kept_packages = {Path(name).parts[0] for name in plan.kept}
+    metadata = [f for f in files if f.parts[0].endswith(".dist-info")]
+    decisions = [
+        (file, *_decide(file, kept_packages))
+        for file in files
+        if file.as_posix() not in plan.kept and file not in metadata
+    ]
+    for file, kept, reason in decisions:
+        (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
+    # Metadata goes last, once every other file has its decision.
+    dists = {d: _metadata(site / d, plan.kept) for d in {f.parts[0] for f in metadata}}
+    for file in metadata:
+        kept, reason = dists[file.parts[0]]
+        (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
+
+
+def _decide(file: Path, kept_packages: set[str]) -> tuple[bool, str]:
+    """Whether to keep a file that isn't an imported module, and why."""
+    if "__pycache__" in file.parts:
+        return False, "bytecode cache"
+    if file.suffix == ".pyi":
+        return False, "type stub"
+    if file.name == "py.typed":
+        return False, "typing marker"
+    for part in file.parts[:-1]:
+        if part in ("tests", "test"):
+            return False, "tests"
+        if part in ("docs", "doc"):
+            return False, "docs"
+    if file.suffix == ".py":
+        return False, "not imported"
+    if len(file.parts) == 1:
+        return False, "outside any package"
+    # Packages load data by computed paths, such as tzdata's zone files, so a
+    # kept package keeps the data files anywhere in its tree.
+    package = file.parts[0]
+    if package in kept_packages:
+        return True, f"data file of {package}"
+    return False, f"no kept module in {package}"
+
+
+def _metadata(dist_info: Path, kept: dict[str, str]) -> tuple[bool, str]:
+    """Whether to keep a distribution's .dist-info, and why."""
+    dist = dist_info.name.removesuffix(".dist-info")
+    record = dist_info / "RECORD"
+    if not record.is_file():
+        return True, f"metadata of {dist}, which has no RECORD"
+    with record.open(newline="") as file:
+        if any(row and row[0] in kept for row in csv.reader(file)):
+            return True, f"metadata of {dist}, which keeps a file"
+    return False, f"metadata of {dist}, which keeps no file"
+
+
+def _check_binaries(site: Path, plan: ShakePlan) -> None:
+    """Fail the build for every kept .so that isn't WebAssembly."""
+    for name in plan.kept:
+        if not name.endswith(".so"):
+            continue
+        with (site / name).open("rb") as file:
+            head = file.read(4)
+        if head.startswith(WASM):
+            continue
+        kind = next((k for m, k in HOST_BINARIES.items() if head.startswith(m)), None)
+        plan.errors.append(
+            f"{name} is in {kind or 'an unknown'} format, not WebAssembly built "
+            "for Pyodide, so it can't load in a Worker."
+        )
+
+
+def _parse(path: Path) -> ast.Module:
+    """A module's syntax tree, empty for an extension or code that won't compile."""
+    if path.suffix != ".py":
+        return ast.Module(body=[], type_ignores=[])
+    try:
+        return ast.parse(path.read_bytes())
+    except (SyntaxError, ValueError):
+        # Python raises the same error at import, which the importer may catch.
+        return ast.Module(body=[], type_ignores=[])
+
+
+def _find(name: str, roots: tuple[Path, ...]) -> Path | None:
+    """The file of a module, the directory of a namespace package, or None."""
+    *parents, last = name.split(".")
+    for root in roots:
+        directory = root.joinpath(*parents)
+        if (package := directory / last / "__init__.py").is_file():
+            return package
+        # An extension module wins over a source module of the same name.
+        extensions = sorted(directory.glob(f"{last}.*.so")) + [directory / f"{last}.so"]
+        for candidate in [*extensions, directory / f"{last}.py"]:
+            if candidate.is_file():
+                return candidate
+    # A directory without __init__.py is a namespace package, the last resort.
+    return next((d for r in roots if (d := r.joinpath(*parents, last)).is_dir()), None)
+
+
+def _prefixed(name: str, roots: tuple[Path, ...]) -> list[str]:
+    """Every module under a "package:start" name whose next part begins with start."""
+    package, _, start = name.partition(":")
+    path = _find(package, roots)
+    if path is None or (path.is_file() and path.name != "__init__.py"):
+        return []
+    directory = path if path.is_dir() else path.parent
+    modules = []
+    for file in sorted(directory.rglob("*")):
+        relative = file.relative_to(directory)
+        if file.suffix not in (".py", ".so") or "__pycache__" in relative.parts:
+            continue
+        parts = [*relative.parent.parts, file.name.split(".")[0]]
+        if parts[-1] == "__init__":
+            parts.pop()
+        if parts and parts[0].startswith(start):
+            modules.append(".".join([package, *parts]))
+    return modules
+
+
+def _imports(tree: ast.Module, package: str) -> list[tuple[str, str, Kind]]:
+    """What a module imports, as (name, reason suffix, kind)."""
+    names = []
+    stack: list[ast.AST] = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.If) and _is_type_checking(node.test):
+            stack += node.orelse
+            continue
+        stack += ast.iter_child_nodes(node)
+        if isinstance(node, ast.Import):
+            names += [(alias.name, "", Kind.MODULE) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            base = _resolve_relative(node.module or "", node.level, package)
+            if not base:
+                continue
+            names.append((base, "", Kind.MODULE))
+            for alias in node.names:
+                if alias.name == "*":
+                    names.append((base, "", Kind.STAR))
+                else:
+                    names.append((f"{base}.{alias.name}", "", Kind.MEMBER))
+        elif isinstance(node, ast.Call) and _is_import_call(node.func) and node.args:
+            names += _computed_import(node.args[0], package)
+    return names
+
+
+def _computed_import(argument: ast.expr, package: str) -> list[tuple[str, str, Kind]]:
+    """The modules an import_module or __import__ argument can name."""
+    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+        level = len(argument.value) - len(argument.value.lstrip("."))
+        base = _resolve_relative(argument.value[level:], level, package)
+        return [(base, "", Kind.MODULE)] if base else []
+    # f"pkg._backends._{name}" or "pkg." + name can name any module that the
+    # literal start allows, as pydantic's lazy f".{name}" imports do.
+    start = _literal_start(argument)
+    level = len(start) - len(start.lstrip("."))
+    head, _, rest = start[level:].rpartition(".")
+    base = _resolve_relative(head, level, package)
+    if not base:
+        return []
+    return [(f"{base}:{rest}", " by a computed name", Kind.PREFIX)]
+
+
+def _literal_start(argument: ast.expr) -> str:
+    """The literal text a computed string starts with, or ""."""
+    if isinstance(argument, ast.JoinedStr) and argument.values:
+        first = argument.values[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return first.value
+    if isinstance(argument, ast.BinOp) and isinstance(argument.op, ast.Add):
+        left = argument.left
+        if isinstance(left, ast.Constant) and isinstance(left.value, str):
+            return left.value
+        return _literal_start(left)
+    return ""
+
+
+def _is_type_checking(test: ast.expr) -> bool:
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return (
+        isinstance(test, ast.Attribute)
+        and test.attr == "TYPE_CHECKING"
+        and isinstance(test.value, ast.Name)
+        and test.value.id == "typing"
+    )
+
+
+def _is_import_call(func: ast.expr) -> bool:
+    if isinstance(func, ast.Name):
+        return func.id in ("__import__", "import_module")
+    return isinstance(func, ast.Attribute) and func.attr == "import_module"
+
+
+def _all(tree: ast.Module) -> list[str]:
+    """A module's literal __all__, or nothing."""
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets)
+            and isinstance(node.value, (ast.List, ast.Tuple))
+        ):
+            names = [e.value for e in node.value.elts if isinstance(e, ast.Constant)]
+            return [name for name in names if isinstance(name, str)]
+    return []
+
+
+def _resolve_relative(module: str, level: int, package: str) -> str | None:
+    """The absolute name of a relative import, or None above the top package."""
+    if not level:
+        return module
+    parts = package.split(".") if package else []
+    if level - 1 >= len(parts):
+        return None
+    base = ".".join(parts[: len(parts) - level + 1])
+    return f"{base}.{module}" if module else base

@@ -6,6 +6,7 @@ from pathlib import Path
 from . import wrangler
 from .host import warn_on_venv_mismatch
 from .project import WyndError, load_project
+from .shake import size_report
 from .stage import stage
 from .sync import sync
 from .targets import select_target
@@ -45,7 +46,10 @@ def main(argv: list[str] | None = None) -> int:
     if command == "sync":
         return 0
     if staged is not None:
+        path, plan = staged
+        if "--dry-run" in rest:
+            print(f"wynd: {size_report(project.python_modules, plan)}")
         _, rest = _config_parser.parse_known_args(args)
-        return wrangler.run([*rest, "--config", str(staged)])
+        return wrangler.run([*rest, "--config", str(path)])
     warn_on_venv_mismatch(project, target)
     return wrangler.run(args)

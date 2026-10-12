@@ -207,3 +207,18 @@ def test_a_source_directory_holding_the_project_fails(
     assert main(["deploy"]) == 1
     assert "subdirectory" in capsys.readouterr().err
     assert tools.wrangler() == []
+
+
+def test_an_entry_outside_base_dir_fails(
+    tools: Tools,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = worker(tmp_path / "w", {"base_dir": "lib"})
+    (root / "lib").mkdir()
+    monkeypatch.chdir(root)
+
+    assert main(["deploy"]) == 1
+    assert "subdirectory" in capsys.readouterr().err
+    assert tools.wrangler() == []
