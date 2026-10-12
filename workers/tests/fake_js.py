@@ -98,6 +98,27 @@ def to_js(
     return convert(value)
 
 
+# The cloudflare:workers module workerd imports ahead of time, and the modules
+# doAnImport finds. A test that needs one sets it.
+CLOUDFLARE_ENV = JsValue("Object", TEXT="hi")
+
+
+class _WaitUntil:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    def __call__(self, promise: Any) -> None:
+        self.calls.append(promise)
+
+
+CLOUDFLARE_WAIT_UNTIL = _WaitUntil()
+
+
+CLOUDFLARE_WORKERS = JsValue(
+    "Module", env=CLOUDFLARE_ENV, waitUntil=CLOUDFLARE_WAIT_UNTIL
+)
+JS_MODULES: dict[str, Any] = {}
+
 # What the SDK handed workerd's patchWaitUntil and queueMicrotask.
 PATCHED_CONTEXTS: list[Any] = []
 MICROTASKS: list[Any] = []
@@ -163,7 +184,11 @@ def install() -> None:
     import pyodide.http
 
     sys.modules["_pyodide_entrypoint_helper"] = fake_module(
-        "_pyodide_entrypoint_helper", patchWaitUntil=PATCHED_CONTEXTS.append
+        "_pyodide_entrypoint_helper",
+        patchWaitUntil=PATCHED_CONTEXTS.append,
+        cloudflareWorkersModule=CLOUDFLARE_WORKERS,
+        cloudflareSocketsModule=JsValue("Module", specifier="cloudflare:sockets"),
+        doAnImport=lambda name: JS_MODULES[name],
     )
     sys.modules["js"] = fake_module(
         "js",
@@ -185,6 +210,8 @@ def install() -> None:
             "to_js": to_js,
             "create_proxy": create_proxy,
             "create_once_callable": lambda function: function,
+            # Settled already, so run_sync returns the value.
+            "run_sync": lambda value: value,
             "jsnull": jsnull,
         },
     )

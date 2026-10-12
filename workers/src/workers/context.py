@@ -14,6 +14,7 @@ from typing import Any
 import js
 from pyodide.ffi import create_once_callable, create_proxy
 
+from ._js import js_name
 from .bindings import Binding, _js_options
 from .rpc import python_from_rpc, python_to_rpc
 
@@ -35,14 +36,23 @@ class _RawContext(Binding):
         )
 
     def wait_until(self, awaitable: Awaitable[Any]) -> None:
-        """Keep the invocation alive until `awaitable`, a coroutine or task,
-        finishes."""
-        # workerd's patchWaitUntil does this for an ExecutionContext only: JS
-        # waits on a real promise that follows the task through a persistent
-        # proxy, and the proxy is destroyed once the promise settles.
-        proxy = create_proxy(asyncio.ensure_future(awaitable))
-        promise = js.Promise.resolve(proxy)
-        self.js_object.waitUntil(promise.finally_(create_once_callable(proxy.destroy)))
+        """Keep the invocation alive until `awaitable`, a coroutine, task or
+        JS promise, finishes."""
+        self.js_object.waitUntil(js_promise(awaitable))
+
+
+def js_promise(awaitable: Any) -> Any:
+    """A JS promise that settles when `awaitable` does.
+
+    Handing JS a coroutine loses it once the call returns, unless workerd's
+    patchWaitUntil applies, and it applies only to an ExecutionContext. So JS
+    gets a real promise that follows a task through a persistent proxy, which
+    is destroyed once the promise settles.
+    """
+    if js_name(awaitable) == "Promise":
+        return awaitable
+    proxy = create_proxy(asyncio.ensure_future(awaitable))
+    return js.Promise.resolve(proxy).finally_(create_once_callable(proxy.destroy))
 
 
 def _unwrap(value: Any) -> Any:

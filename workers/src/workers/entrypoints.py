@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import _pyodide_entrypoint_helper
 from pyodide.code import relaxed_call
 
+from ._js import js_name
 from .bindings import Binding, _convert, _EnvWrapper
 from .context import DurableObjectAbort, DurableObjectContext, ExecutionContext
+from .request import Request
 
 __all__ = [
     "DurableObject",
@@ -14,6 +16,7 @@ __all__ = [
     "DurableObjectContext",
     "WorkerEntrypoint",
     "WorkflowEntrypoint",
+    "handler",
 ]
 
 EnvT = TypeVar("EnvT")
@@ -146,3 +149,19 @@ class DurableObject(_Typed[EnvT], _Entrypoint):
 class WorkflowEntrypoint(_Typed[EnvT], _Entrypoint):
     # The stock SDK leaves a Workflow's ctx raw. crosswind 9 builds Workflows.
     pass
+
+
+def handler(func: Callable[..., Any]) -> Callable[..., Any]:
+    """For a module-level handler such as `on_fetch`, which workerd calls only
+    on dates before 2025-08-14: converts a JS Request argument to a Request
+    and wraps the env, as in the stock SDK."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if args and js_name(args[0]) == "Request":
+            args = (Request(args[0]), *args[1:])
+        if len(args) > 1:
+            args = (args[0], _EnvWrapper(args[1]), *args[2:])
+        return func(*args, **kwargs)
+
+    return wrapper
