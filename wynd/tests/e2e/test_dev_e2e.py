@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 FIXTURE = Path(__file__).parent / "stock"
+CROSSWIND = Path(__file__).parents[3] / "crosswind-workers"
 WYND = Path(sys.executable).parent / "wynd"
 
 pytestmark = pytest.mark.e2e
@@ -43,6 +45,42 @@ def test_dev_serves_a_stock_sdk_worker(tmp_path: Path, date: str, version: str) 
     assert py_version == version
     assert "python_modules" in sdk_file, "workerd loaded its builtin workers SDK"
     assert (tmp_path / "pylock.toml").is_file()
+
+
+def test_sync_drops_the_sdk_a_library_pulls_in(tmp_path: Path) -> None:
+    library = tmp_path / "libdep"
+    (library / "src" / "libdep").mkdir(parents=True)
+    (library / "src" / "libdep" / "__init__.py").write_text("")
+    (library / "pyproject.toml").write_text(
+        '[project]\nname = "libdep"\nversion = "0"\n'
+        'dependencies = ["workers-runtime-sdk"]\n'
+        '[build-system]\nrequires = ["uv_build>=0.12.19,<0.13.0"]\n'
+        'build-backend = "uv_build"\n'
+    )
+    project = tmp_path / "worker"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "fixture"\nversion = "0"\n'
+        'dependencies = ["crosswind-workers", "libdep"]\n'
+        "[tool.uv.sources]\n"
+        f'crosswind-workers = {{ path = "{CROSSWIND}" }}\n'
+        f'libdep = {{ path = "{library}" }}\n'
+    )
+    config = {
+        "main": "src/entry.py",
+        "compatibility_date": "2025-10-01",
+        "compatibility_flags": ["python_workers"],
+    }
+    (project / "wrangler.json").write_text(json.dumps(config))
+
+    subprocess.run([str(WYND), "sync"], cwd=project, check=True)
+
+    lock = tomllib.loads((project / "pylock.toml").read_text())
+    names = sorted(package["name"] for package in lock["packages"])
+    assert names == ["crosswind-workers", "libdep"]
+    installed = {path.name for path in (project / "python_modules").iterdir()}
+    assert "libdep" in installed
+    assert not any(name.startswith("workers_runtime_sdk") for name in installed)
 
 
 def serve(project: Path, command: list[str]) -> str:

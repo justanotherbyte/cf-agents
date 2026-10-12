@@ -19,9 +19,9 @@ def sync(project: Project, target: Target) -> None:
     token_path = project.root / ".wynd" / "synced"
     if project.python_modules.is_dir() and _text(token_path) == _token(project, target):
         return
-    select_sdk(project.dependencies)
+    sdk = select_sdk(project.dependencies)
     _check_uv(project)
-    _compile(project, target)
+    _compile(project, target, sdk)
     # Install beside python_modules/ and swap it in only once uv succeeds, so a
     # failed install never leaves a half-built tree for Wrangler.
     staging = project.root / ".wynd" / "site-packages"
@@ -91,8 +91,13 @@ def _check_uv(project: Project) -> None:
         )
 
 
-def _compile(project: Project, target: Target) -> None:
+def _compile(project: Project, target: Target, sdk: str) -> None:
+    # A library may depend on the other SDK. Both ship the `workers` package.
+    excludes = project.root / ".wynd" / "excludes.txt"
+    excludes.parent.mkdir(exist_ok=True)
+    excludes.write_text("".join(f"{name}\n" for name in SDKS if name != sdk))
     args = ["pip", "compile", "pyproject.toml", "--python", target.interpreter]
+    args += ["--excludes", str(excludes.relative_to(project.root))]
     args += ["--extra-index-url", target.index, "--index-strategy", "unsafe-best-match"]
     args += ["--no-header", "-o", "pylock.toml"]
     if not project.allow_build:

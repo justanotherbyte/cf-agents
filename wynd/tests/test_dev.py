@@ -423,3 +423,27 @@ def test_a_resync_replaces_python_modules(tools: Tools, project: Path) -> None:
     ]
     assert not (project / "python_modules" / "dropped.py").exists()
     assert (project / "python_modules" / "workers").is_dir()
+
+
+@pytest.mark.parametrize(
+    ("declared", "excluded"),
+    [
+        ("crosswind-workers", "workers-runtime-sdk"),
+        ("workers-runtime-sdk", "crosswind-workers"),
+    ],
+)
+def test_resolution_excludes_the_sdk_the_project_did_not_choose(
+    tools: Tools,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared: str,
+    excluded: str,
+) -> None:
+    root = make_project(tmp_path / "w", config(), (declared, "some-library"))
+    monkeypatch.chdir(root)
+
+    main(["sync"])
+
+    (compile_args,) = tools.uv("pip", "compile")
+    excludes = root / compile_args[compile_args.index("--excludes") + 1]
+    assert excludes.read_text().split() == [excluded]
