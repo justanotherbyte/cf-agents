@@ -1,0 +1,258 @@
+"""
+Top level entropy patches for packages
+"""
+
+import sys
+from collections.abc import Sequence
+from contextlib import contextmanager
+from importlib.abc import MetaPathFinder
+from importlib.machinery import ModuleSpec
+from importlib.metadata import PackageNotFoundError, version
+from types import ModuleType
+
+from _cloudflare.allow_entropy import (
+    allow_bad_entropy_calls,
+)
+from _cloudflare.import_patch_manager import (
+    block_calls,
+    register_after_snapshot,
+    register_before_first_request,
+    register_create_patch,
+    register_exec_patch,
+)
+
+
+@contextmanager
+def allow_bad_entropy_calls_for_version(
+    package_name: str,
+    num_calls: int,
+    min_version: tuple[int, ...],
+    max_version: tuple[int, ...] | None = None,
+):
+    try:
+        package_version = tuple(map(int, version(package_name).split(".")))
+    except PackageNotFoundError:
+        yield
+        return
+
+    if package_version < min_version or (
+        max_version is not None and package_version > max_version
+    ):
+        yield
+        return
+
+    with allow_bad_entropy_calls(num_calls):
+        yield
+
+
+class STATE:
+    imported_rust_package = False
+    numpy_random = None
+
+
+@register_create_patch("tiktoken._tiktoken")
+@register_exec_patch("cryptography.exceptions")
+@register_exec_patch("jiter")
+@register_exec_patch("rpds")
+@register_exec_patch("uuid_utils._uuid_utils")
+@contextmanager
+def rust_package_context(module):
+    """Rust packages need one entropy call if they create a rust hash map at
+    init time.
+
+    For reasons I don't entirely understand, in Pyodide 0.28 only the first Rust
+    package to be imported makes the get_entropy call. See gen_rust_import_tests()
+    which tests that importing four rust packages in different permutations works
+    correctly.
+    """
+    if STATE.imported_rust_package:
+        yield
+        return
+    STATE.imported_rust_package = True
+    with allow_bad_entropy_calls(1):
+        yield
+
+
+@register_exec_patch("numpy.random")
+@contextmanager
+def numpy_random_context(numpy_random):
+    """numpy.random doesn't call getentropy() itself, but we want to block calls
+    that might use the bad seed.
+
+    TODO: Maybe there are more calls we can whitelist?
+    TODO: Is it not enough to just block numpy.random.mtrand calls?
+    """
+    yield
+    # Calling default_rng() with a given seed is fine, calling it without a seed
+    # will call getentropy() and fail.
+    block_calls(numpy_random, allowlist=("default_rng", "RandomState"))
+
+
+@register_after_snapshot("numpy.random")
+def numpy_random_after_snapshot(numpy_random):
+    r1 = numpy_random.random()
+    numpy_random.set_state(STATE.numpy_random)
+    r2 = numpy_random.random()
+    if r1 != r2:
+        raise RuntimeError("random seed in bad state")
+
+
+@register_before_first_request("numpy.random")
+def numpy_random_before_first_request(numpy_random):
+    numpy_random.seed()
+
+
+@register_exec_patch("numpy.random.mtrand")
+@contextmanager
+def numpy_random_mtrand_context(module):
+    # numpy.random.mtrand calls secrets.randbits at top level to seed itself.
+    # This will fail if we don't let it through.
+    with allow_bad_entropy_calls(1):
+        yield
+    # Block calls until we get a chance to replace the bad random seed.
+    STATE.numpy_random = module.get_state()
+    block_calls(module, allowlist=("RandomState",))
+
+
+@register_exec_patch("pydantic_core")
+@contextmanager
+def pydantic_core_context(module):
+    try:
+        # Initial import needs one entropy call to initialize
+        # std::collections::HashMap hash seed
+        with allow_bad_entropy_calls(1):
+            yield
+    finally:
+        # Build a tiny validator instead so any lazy hash-map seeds are initialized
+        # before the snapshot is captured.
+        with allow_bad_entropy_calls(1):
+            module.SchemaValidator({"type": "any"})
+
+
+@register_exec_patch("aiohttp.http_websocket")
+@contextmanager
+def aiohttp_http_websocket_context(module):
+    import random
+
+    original = random.Random
+    # The module stands in for the Random() aiohttp builds at import time.
+    # setattr, because the stand-in is not a type, so ty rejects an assignment.
+    setattr(random, "Random", lambda: random)  # noqa: B010
+    try:
+        yield
+    finally:
+        random.Random = original
+
+
+class NoSslFinder(MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: Sequence[str] | None,
+        target: ModuleType | None = None,
+    ) -> ModuleSpec | None:
+        if fullname == "ssl":
+            raise ModuleNotFoundError(
+                f"No module named {fullname!r}", name=fullname
+            ) from None
+        return None
+
+
+@contextmanager
+def no_ssl():
+    """
+    Various packages will call ssl.create_default_context() at top level which uses
+    entropy if they can import ssl. By temporarily making importing ssl raise an
+    import error, we exercise the workaround code and so avoid the entropy calls.
+    After, we put the ssl module back to the normal value.
+    """
+    try:
+        f = NoSslFinder()
+        ssl = sys.modules.pop("ssl", None)
+        sys.meta_path.insert(0, f)
+        yield
+    finally:
+        sys.meta_path.remove(f)
+        if ssl:
+            sys.modules["ssl"] = ssl
+
+
+@register_exec_patch("aiohttp.connector")
+@contextmanager
+def aiohttp_connector_context(module):
+    with no_ssl():
+        yield
+
+
+@register_exec_patch("requests.adapters")
+@contextmanager
+def requests_adapters_context(module):
+    with no_ssl():
+        yield
+
+
+@register_exec_patch("urllib3.util.ssl_")
+@contextmanager
+def urllib3_util_ssl__context(module):
+    with no_ssl():
+        yield
+
+
+@register_exec_patch("langsmith._internal._constants")
+@contextmanager
+def langsmith__internal__constants_context(module):
+    # Langsmith uses a UUID to communicate with a background thread. This obviously
+    # won't work so we might as well allow it to make a UUID.
+    with allow_bad_entropy_calls(1):
+        yield
+
+
+@register_exec_patch("langchain_openai.chat_models.base")
+@contextmanager
+def langchain_openai_chat_models_base_context(module):
+    with allow_bad_entropy_calls(1):
+        yield
+
+
+@register_exec_patch("opentelemetry.context")
+@contextmanager
+def opentelemetry_context(module):
+    # OpenTelemetry creates three UUID-backed keys.
+    with allow_bad_entropy_calls_for_version("opentelemetry-api", 3, (1, 40, 0)):
+        yield
+
+
+@register_exec_patch("opentelemetry.trace.propagation")
+@contextmanager
+def opentelemetry_trace_propagation_context(module):
+    # OpenTelemetry creates a UUID-backed key.
+    with allow_bad_entropy_calls(1):
+        yield
+
+
+@register_exec_patch("opentelemetry.baggage")
+@contextmanager
+def opentelemetry_baggage_context(module):
+    # OpenTelemetry creates a UUID-backed key.
+    with allow_bad_entropy_calls(1):
+        yield
+
+
+@register_exec_patch("fastapi.telemetry")
+@contextmanager
+def fastapi_telemetry_context(module):
+    # fastapi 0.142.0 added opentelemetry support
+    # which creates a UUID-backed key.
+    with allow_bad_entropy_calls_for_version("fastapi", 1, (0, 142, 0)):
+        yield
+
+
+@register_exec_patch("litestar.openapi.controller")
+@register_exec_patch("litestar.constants")
+@contextmanager
+def litestar_context(module):
+    # Uses os.urandom() to generate a OPENAPI_JSON_HANDLER_NAME
+    # https://github.com/litestar-org/litestar/blob/e3b6a1d103a9160a575dce01ae34839e6e9bf990/litestar/constants.py#L19
+    # https://github.com/litestar-org/litestar/blob/v2.24.0/litestar/openapi/controller.py#L27
+    with allow_bad_entropy_calls(1):
+        yield

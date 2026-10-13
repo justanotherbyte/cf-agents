@@ -32,12 +32,18 @@ TARGETS = pytest.mark.parametrize(
 )
 
 
-def make_project(project: Path, fixture: Path, config: dict[str, Any]) -> None:
+def make_project(
+    project: Path,
+    fixture: Path,
+    config: dict[str, Any],
+    dependencies: tuple[str, ...] = (),
+) -> None:
     """Copy `fixture` into `project` with crosswind from this checkout."""
     shutil.copytree(fixture, project, dirs_exist_ok=True)
+    names = ", ".join(f'"{name}"' for name in ("crosswind-workers", *dependencies))
     (project / "pyproject.toml").write_text(
         '[project]\nname = "fixture"\nversion = "0"\n'
-        'dependencies = ["crosswind-workers"]\n'
+        f"dependencies = [{names}]\n"
         f'[tool.uv.sources]\ncrosswind-workers = {{ path = "{CROSSWIND}" }}\n'
     )
     config = {"name": "fixture", "main": "src/entry.py", **config}
