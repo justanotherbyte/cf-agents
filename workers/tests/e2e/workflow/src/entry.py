@@ -1,44 +1,36 @@
 import json
 from urllib.parse import parse_qs, urlparse
 
-from js import Error, Object
-from pyodide.ffi import JsException, create_once_callable, to_js
-
 from workers import Response, WorkerEntrypoint, WorkflowEntrypoint
+from workers.workflows import NonRetryableError
 
-ATTEMPTS = {"non_retryable": 0, "other_name": 0}
+ATTEMPTS = {"non_retryable": 0, "retryable": 0}
 RETRIES = {"retries": {"limit": 2, "delay": "1 second", "backoff": "constant"}}
-
-
-def js_object(value):
-    return to_js(value, dict_converter=Object.fromEntries)
-
-
-def rejecting_thenable(name, message):
-    error = Error.new(message)
-    error.name = name
-    # A thenable, so no rejected promise exists before the engine adopts it.
-    return js_object({"then": create_once_callable(lambda _res, rej: rej(error))})
 
 
 class Flow(WorkflowEntrypoint):
     async def run(self, event, step):
-        async def non_retryable(ctx=None):
+        @step.do("non_retryable", config=RETRIES)
+        async def non_retryable():
             ATTEMPTS["non_retryable"] += 1
-            return rejecting_thenable("NonRetryableError", "stop")
+            raise NonRetryableError("stop")
 
-        # The control: the same thenable under another name.
-        async def other_name(ctx=None):
-            ATTEMPTS["other_name"] += 1
-            return rejecting_thenable("OtherError", "stop")
+        # The control: an ordinary exception, which the engine retries.
+        @step.do("retryable", config=RETRIES)
+        async def retryable():
+            ATTEMPTS["retryable"] += 1
+            raise ValueError("again")
 
         errors = {}
-        for callback in (non_retryable, other_name):
+        for name, run_step in [
+            ("non_retryable", non_retryable),
+            ("retryable", retryable),
+        ]:
             try:
-                await step.do(callback.__name__, js_object(RETRIES), callback)
-            except JsException as error:
-                errors[callback.__name__] = str(error)
-        return js_object({"attempts": ATTEMPTS, "errors": errors})
+                await run_step()
+            except (NonRetryableError, ValueError) as error:
+                errors[name] = [type(error).__name__, str(error)]
+        return {"attempts": ATTEMPTS, "errors": errors}
 
 
 class Default(WorkerEntrypoint):

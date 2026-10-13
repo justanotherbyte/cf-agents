@@ -1,5 +1,5 @@
-"""Spike: a step callback that returns a thenable rejecting with an error named
-NonRetryableError stops the Workflows engine's retries, with no JavaScript."""
+"""A NonRetryableError raised in a step stops the local Workflows engine's
+retries, through crosswind's rejecting thenable and no JavaScript."""
 
 import json
 import time
@@ -12,7 +12,7 @@ pytestmark = pytest.mark.e2e
 
 
 @TARGETS
-def test_rejecting_thenable_stops_retries(
+def test_non_retryable_error_stops_retries(
     tmp_path: Path, date: str, version: str
 ) -> None:
     make_project(
@@ -39,10 +39,9 @@ def test_rejecting_thenable_stops_retries(
 
     assert status["status"] == "complete", status
     output = status["output"]
-    # Only the error's name differs, and only NonRetryableError stops the retries.
-    assert output["attempts"] == {"non_retryable": 1, "other_name": 3}, output
-    # The engine rethrows the step error into run() with the name in the message.
-    assert output["errors"] == {
-        "non_retryable": "Error: NonRetryableError: stop",
-        "other_name": "Error: OtherError: stop",
-    }
+    # Both steps allow two retries. Only the ordinary error is retried.
+    assert output["attempts"] == {"non_retryable": 1, "retryable": 3}, output
+    # The engine rethrows each step's error into run() as its Python type.
+    assert output["errors"]["non_retryable"] == ["NonRetryableError", "stop"]
+    assert output["errors"]["retryable"][0] == "ValueError", output
+    assert "again" in output["errors"]["retryable"][1], output

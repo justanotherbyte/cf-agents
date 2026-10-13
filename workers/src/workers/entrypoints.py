@@ -9,6 +9,7 @@ from ._js import js_name
 from .bindings import Binding, _convert, _EnvWrapper
 from .context import DurableObjectAbort, DurableObjectContext, ExecutionContext
 from .request import Request
+from .workflows import wrap_run
 
 __all__ = [
     "DurableObject",
@@ -146,8 +147,13 @@ class DurableObject(_Typed[EnvT], _Entrypoint):
 
 
 class WorkflowEntrypoint(_Typed[EnvT], _Entrypoint):
-    # The stock SDK leaves a Workflow's ctx raw. crosswind 9 builds Workflows.
-    pass
+    # The stock SDK leaves a Workflow's ctx raw.
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Only a run this class defines, so an inherited one isn't rewrapped.
+        if "run" in cls.__dict__:
+            setattr(cls, "run", wrap_run(cls.__dict__["run"]))  # noqa: B010
 
 
 def handler(func: Callable[..., Any]) -> Callable[..., Any]:

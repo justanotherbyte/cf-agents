@@ -176,6 +176,10 @@ def fake_module(name: str, **attrs: Any) -> ModuleType:
     return fake
 
 
+# workerd's compatibility flags, all off. A test sets one with monkeypatch.
+COMPAT_FLAGS = ModuleType("_cloudflare_compat_flags")
+
+
 def install() -> None:
     # Pure-Python Pyodide modules the SDK uses (relaxed_call, FetchResponse)
     # import the real ffi, so they load before the fake replaces it.
@@ -183,6 +187,7 @@ def install() -> None:
     import pyodide.ffi
     import pyodide.http
 
+    sys.modules["_cloudflare_compat_flags"] = COMPAT_FLAGS
     sys.modules["_pyodide_entrypoint_helper"] = fake_module(
         "_pyodide_entrypoint_helper",
         patchWaitUntil=PATCHED_CONTEXTS.append,
