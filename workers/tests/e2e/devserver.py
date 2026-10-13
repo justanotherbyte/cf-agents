@@ -58,16 +58,29 @@ class DevServer:
 
     def get(self, path: str) -> tuple[int, str]:
         """GET `path`, waiting up to 3 minutes for the server to come up."""
+        return self.request("GET", path)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        """Send a request, waiting up to 3 minutes for the server to come up."""
+        request = urllib.request.Request(
+            self.url + path, body, headers or {}, method=method
+        )
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 pytest.fail(f"wynd dev exited:\n{self.log.read_text()}")
             try:
-                with urllib.request.urlopen(self.url + path, timeout=30) as response:
+                with urllib.request.urlopen(request, timeout=30) as response:
                     return response.status, response.read().decode()
             except urllib.error.HTTPError as error:
-                body = error.read().decode()
-                pytest.fail(f"HTTP {error.code}: {body}\n{self.log.read_text()}")
+                answer = error.read().decode()
+                pytest.fail(f"HTTP {error.code}: {answer}\n{self.log.read_text()}")
             except OSError:
                 time.sleep(1)
         pytest.fail(f"wynd dev never answered:\n{self.log.read_text()}")

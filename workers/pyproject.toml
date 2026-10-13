@@ -15,7 +15,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 # The distribution is crosswind-workers, but workerd imports the SDK as `workers`.
-module-name = ["workers", "_crosswind_patches"]
+module-name = ["workers", "_crosswind_patches", "asgi"]
 # Lands in site-packages itself, where Python runs .pth files at startup. The
 # hook's name sorts after an editable install's crosswind_workers.pth, which
 # must put src/ on the path first.
@@ -38,9 +38,9 @@ markers = ["e2e: runs wynd dev from ../wynd; needs uv, Node.js and the network"]
 extra-paths = ["stubs"]
 
 [tool.ty.src]
-# The entropy fixture's packages exist only in the Pyodide install its e2e
-# test makes.
-exclude = ["tests/e2e/entropy"]
+# These fixtures' packages exist only in the Pyodide installs their e2e tests
+# make.
+exclude = ["tests/e2e/entropy", "tests/e2e/asgi", "tests/e2e/wsgi"]
 
 [dependency-groups]
 dev = [
