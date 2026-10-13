@@ -9,8 +9,12 @@ from test_dev import config, make_project
 from wynd.cli import main
 
 
-def worker(root: Path, settings: dict[str, Any]) -> Path:
-    make_project(root, {**config(), **settings})
+def worker(
+    root: Path,
+    settings: dict[str, Any],
+    dependencies: tuple[str, ...] = ("workers-runtime-sdk>=1.9",),
+) -> Path:
+    make_project(root, {**config(), **settings}, dependencies)
     (root / "src").mkdir(exist_ok=True)
     (root / "src" / "entry.py").write_text("from workers import Response\n")
     return root

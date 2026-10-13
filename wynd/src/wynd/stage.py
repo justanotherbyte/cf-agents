@@ -64,17 +64,14 @@ def _staged_config(project: Project) -> dict[str, Any]:
 
 def _source_dir(project: Project) -> Path:
     """The module root, relative to the config directory."""
-    if project.main is None:
-        raise WyndError(f"{project.config_path.name} sets no main")
+    source = project.source_dir
     config_dir = project.config_path.parent.resolve()
-    source = config_dir / (project.base_dir or Path(project.main).parent)
-    source = source.resolve()
     # A source holding .wynd/ would be copied into itself.
     if (
         source == config_dir
         or not source.is_relative_to(config_dir)
         or project.root.resolve().is_relative_to(source)
-        or not (config_dir / project.main).resolve().is_relative_to(source)
+        or not (config_dir / (project.main or "")).resolve().is_relative_to(source)
     ):
         raise WyndError(
             f"main and base_dir must point into a subdirectory beside "

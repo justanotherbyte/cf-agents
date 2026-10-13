@@ -10,6 +10,21 @@ __all__ = ["Project", "WyndError", "load_project"]
 # Wrangler walks every parent for one name before it tries the next.
 CONFIG_NAMES = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")
 
+# Top-level keys Wynd reads that an environment inherits when it leaves them out.
+# Bindings, vars and the rest stay with the table that sets them.
+INHERITED = (
+    "main",
+    "base_dir",
+    "compatibility_date",
+    "compatibility_flags",
+    "rules",
+    "assets",
+    "build",
+    "python_modules",
+    # Wrangler 4.129 inherits logfwdr, although it holds bindings.
+    "logfwdr",
+)
+
 
 class WyndError(Exception):
     """An error Wynd reports to the user as one message."""
@@ -21,6 +36,9 @@ class Project:
     config_path: Path
     # The config file as parsed, every environment included.
     config: dict[str, Any]
+    # The chosen environment's table over the top-level keys it inherits, or
+    # the top level without an environment.
+    settings: dict[str, Any]
     main: str | None
     base_dir: str | None
     compatibility_date: str | None
@@ -34,6 +52,14 @@ class Project:
     def python_modules(self) -> Path:
         # Wrangler collects python_modules/ beside the config file.
         return self.config_path.parent / "python_modules"
+
+    @property
+    def source_dir(self) -> Path:
+        """The module root: base_dir, or the entrypoint's directory."""
+        if self.main is None:
+            raise WyndError(f"{self.config_path.name} sets no main")
+        config_dir = self.config_path.parent.resolve()
+        return (config_dir / (self.base_dir or Path(self.main).parent)).resolve()
 
     @property
     def wynd_dir(self) -> Path:
@@ -54,7 +80,8 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         if env not in envs:
             raise WyndError(f"{config_path.name} has no environment named {env!r}")
         # An environment's value replaces the top-level one; nothing merges.
-        settings = {**settings, **envs[env]}
+        inherited = {key: settings[key] for key in INHERITED if key in settings}
+        settings = {**inherited, **envs[env]}
     pyproject = _read(root / "pyproject.toml")
     wynd = pyproject.get("tool", {}).get("wynd", {})
     keep = wynd.get("keep", [])
@@ -64,6 +91,7 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         root=root,
         config_path=config_path,
         config=raw,
+        settings=settings,
         main=settings.get("main"),
         base_dir=settings.get("base_dir"),
         compatibility_date=settings.get("compatibility_date"),

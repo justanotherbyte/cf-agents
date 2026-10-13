@@ -34,6 +34,6 @@ dev = [
 ]
 
 [tool.ty.src]
-# The FastAPI fixture's packages exist only in the Pyodide install its e2e
-# test makes.
-exclude = ["tests/e2e/fastapi_worker"]
+# The fixtures' packages exist only in the Pyodide installs their e2e tests
+# make, and the typed fixture's env.py only once Wynd generates it.
+exclude = ["tests/e2e/fastapi_worker", "tests/e2e/typed"]

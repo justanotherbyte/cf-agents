@@ -7,8 +7,9 @@ from . import wrangler
 from .host import warn_on_venv_mismatch
 from .project import WyndError, load_project
 from .stage import stage
-from .sync import sync
+from .sync import select_sdk, sync
 from .targets import select_target
+from .typegen import write_env
 
 __all__ = ["main"]
 
@@ -45,8 +46,13 @@ def main(argv: list[str] | None = None) -> int:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
         env = options.env or os.environ.get("CLOUDFLARE_ENV")
         project = load_project(cwd, options.config, env)
+        if flow == "types":
+            write_env(project, check="--check" in rest)
+            return 0
         target = select_target(project)
         sync(project, target)
+        if flow != "sync" and select_sdk(project.dependencies) == "crosswind-workers":
+            write_env(project)
         staged = stage(project) if flow == "upload" else None
     except WyndError as error:
         print(f"wynd: error: {error}", file=sys.stderr)
@@ -65,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _flow(rest: list[str]) -> str:
-    """Sort a command line into the upload, dev, sync or passthrough flow."""
+    """Sort a command line into the upload, dev, sync, types or passthrough flow."""
     words = [arg for arg in rest if not arg.startswith("-")]
     command = words[0] if words else ""
     # A known name, not the second word, because a flag's value can come first.
@@ -77,4 +83,4 @@ def _flow(rest: list[str]) -> str:
         or (command == "preview" and not subcommand)
     ):
         return "upload"
-    return command if command in ("dev", "sync") else "passthrough"
+    return command if command in ("dev", "sync", "types") else "passthrough"
