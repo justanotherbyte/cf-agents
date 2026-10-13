@@ -32,6 +32,9 @@ def test_fastapi_app_answers(tmp_path: Path, date: str, version: str) -> None:
         )
         assert json.loads(created) == {"name": "X"}
         assert server.get("/stream") == (200, "0\n1\n2\n")
+        # GZipMiddleware compressed it once, and the runtime must not again.
+        gzipped = server.request("GET", "/large", headers={"Accept-Encoding": "gzip"})
+        assert gzipped == (200, "x" * 5000)
         # crosswind's anyio patch runs a sync route inline instead of on a thread.
         assert json.loads(server.get("/sync")[1]) == {"sync": True}
 

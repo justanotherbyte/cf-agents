@@ -254,6 +254,10 @@ def _make_streaming_response(
         # `append` (not `set`) preserves repeated headers such as Set-Cookie.
         js_headers.append(key, value)
     options["headers"] = js_headers
+    if any(key.lower() == "content-encoding" for key, _ in headers):
+        # The app encoded the body already. Without this the runtime encodes
+        # it a second time.
+        options["encodeBody"] = "manual"
 
     if code in NULL_BODY_STATUSES:
         # 101/103/204/205/304 must not carry a body per the Fetch spec.

@@ -126,3 +126,22 @@ def _default_to_js(value: Any, converter: Any, cache: Any) -> Any:
         return create_proxy(value)
     _refuse_unsendable(value)
     return value
+
+
+# The stock SDK's private wrapper names, which its own tests import from here,
+# and the crosswind classes that play their parts.
+_STOCK_PRIVATE_NAMES = {
+    "_BindingWrapper": "Binding",
+    "_EnvWrapper": "_EnvWrapper",
+    "_FetcherWrapper": "Fetcher",
+    "_RpcStubWrapper": "_RpcStub",
+}
+
+
+def __getattr__(name: str) -> Any:
+    # Served lazily, because bindings imports this module.
+    if name in _STOCK_PRIVATE_NAMES:
+        from . import bindings
+
+        return getattr(bindings, _STOCK_PRIVATE_NAMES[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

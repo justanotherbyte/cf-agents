@@ -271,18 +271,14 @@ async def process_request(
                 transform_stream = TransformStream.new()
                 readable = transform_stream.readable
                 writer = transform_stream.writable.getWriter()
-                resp = Response.new(
-                    readable, headers=_to_js_headers(headers), status=status
-                )
+                resp = Response.new(readable, **_response_init(headers, status))
                 result.set_result(resp)
                 with acquire_js_buffer(body) as jsbytes:
                     await writer.write(jsbytes.slice())
             elif status in NULL_BODY_STATUSES:
                 # 101/103/204/205/304 must not carry a body per the Fetch spec.
                 # https://fetch.spec.whatwg.org/#null-body-status
-                resp = Response.new(
-                    None, headers=_to_js_headers(headers), status=status
-                )
+                resp = Response.new(None, **_response_init(headers, status))
                 result.set_result(resp)
                 finished_response.set()
             else:
@@ -290,9 +286,7 @@ async def process_request(
                 px = create_proxy(body)
                 buf = px.getBuffer()
                 px.destroy()
-                resp = Response.new(
-                    buf.data, headers=_to_js_headers(headers), status=status
-                )
+                resp = Response.new(buf.data, **_response_init(headers, status))
                 result.set_result(resp)
                 finished_response.set()
 
@@ -340,6 +334,17 @@ async def process_request(
     if writer is None:
         await request_task
     return response, request_task
+
+
+def _response_init(
+    headers: list[tuple[str, str]] | None, status: int | None
+) -> dict[str, Any]:
+    init: dict[str, Any] = {"headers": _to_js_headers(headers), "status": status}
+    if any(name.lower() == "content-encoding" for name, _ in headers or []):
+        # The app encoded the body already, as GZipMiddleware does. Without
+        # this the runtime encodes it a second time.
+        init["encodeBody"] = "manual"
+    return init
 
 
 def _wait_until(
@@ -494,9 +499,11 @@ def entrypoint(app: Any) -> type[WorkerEntrypoint]:
 
     class Default(WorkerEntrypoint):
         async def fetch(self, request):
+            # getattr: stock's tests build this class without calling __init__.
+            ctx = getattr(self, "ctx", None)
             if (request.headers.get("upgrade") or "").lower() == "websocket":
-                return await websocket(app, request, self.env, self.ctx)
-            return await fetch(app, request, self.env, self.ctx)
+                return await websocket(app, request, self.env, ctx)
+            return await fetch(app, request, self.env, ctx)
 
     return Default
 

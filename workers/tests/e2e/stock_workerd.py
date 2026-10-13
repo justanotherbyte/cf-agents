@@ -56,17 +56,7 @@ STOCK_CONFIGS = pytest.mark.parametrize(
 
 def run_stock_test(target: Path, name: str, date: str, flags: list[str]) -> None:
     """Run the stock workerd test `name` in `target`. Raises if it fails."""
-    if not WORKERD_TESTS.is_dir():
-        pytest.skip(f"no stock SDK checkout at {STOCK_SDK}; set STOCK_SDK")
-    source = WORKERD_TESTS / name
-    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".venv"))
-    _declare_crosswind(target / "pyproject.toml")
-    (wd_test,) = target.glob("*.wd-test")
-    for config in (target / "wrangler.jsonc", wd_test):
-        text = config.read_text().replace("%COMPAT_DATE", date)
-        for flag in flags:
-            text = text.replace('"python_workers"', f'"python_workers", "{flag}"')
-        config.write_text(text)
+    (wd_test,) = prepare(WORKERD_TESTS / name, target, date, flags).glob("*.wd-test")
     subprocess.run(
         ["uv", "run", "--project", WYND, "wynd", "sync"], cwd=target, check=True
     )
@@ -95,6 +85,21 @@ def run_stock_test(target: Path, name: str, date: str, flags: list[str]) -> None
     subprocess.run(
         [*workerd, "--python-load-snapshot", "snapshot.bin"], cwd=target, check=True
     )
+
+
+def prepare(source: Path, target: Path, date: str, flags: list[str]) -> Path:
+    """Copy a stock test project to `target`, declaring crosswind and setting
+    the compatibility date and flags as the stock runner does."""
+    if not source.is_dir():
+        pytest.skip(f"no stock SDK checkout at {STOCK_SDK}; set STOCK_SDK")
+    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".venv"))
+    _declare_crosswind(target / "pyproject.toml")
+    for config in [target / "wrangler.jsonc", *target.glob("*.wd-test")]:
+        text = config.read_text().replace("%COMPAT_DATE", date)
+        for flag in flags:
+            text = text.replace('"python_workers"', f'"python_workers", "{flag}"')
+        config.write_text(text)
+    return target
 
 
 def _declare_crosswind(pyproject: Path) -> None:
@@ -127,7 +132,10 @@ def _embed(directory: Path, root: Path) -> list[str]:
 
 
 def _workerd() -> str:
-    """The workerd binary that ships with Wynd's pinned Wrangler."""
+    """The workerd binary that ships with Wynd's pinned Wrangler, or the one
+    WORKERD_PATH names, as in the stock runner."""
+    if "WORKERD_PATH" in os.environ:
+        return os.environ["WORKERD_PATH"]
     pin = re.search(
         r'VERSION = "([^"]+)"', (WYND / "src" / "wynd" / "wrangler.py").read_text()
     )

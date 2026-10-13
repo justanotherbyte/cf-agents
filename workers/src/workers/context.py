@@ -33,6 +33,12 @@ class DurableObjectAbort(BaseException):
 
 
 class _RawContext(Binding):
+    @property
+    def _ctx(self) -> Any:
+        # The stock SDK's private name for the JS context, which its tests and
+        # the agents port read.
+        return self.js_object
+
     def _pass_through(self, name: str, value: Any) -> Any:
         if not callable(value):
             return value

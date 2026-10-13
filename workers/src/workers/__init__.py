@@ -1,4 +1,21 @@
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import distribution as _distribution
 from typing import Any as _Any
+
+# Both SDKs install the `workers` package, so with both installed one
+# overwrote the other's files. This check survives only if crosswind's did.
+try:
+    _distribution("workers-runtime-sdk")
+except _PackageNotFoundError:
+    pass
+else:
+    raise ImportError(
+        "workers-runtime-sdk is installed beside crosswind-workers, and both "
+        "provide the `workers` package, so one has overwritten the other. "
+        "Remove workers-runtime-sdk. pywrangler always adds it, so build "
+        "crosswind-workers projects with Wynd, which installs only the SDK the "
+        "project declares."
+    )
 
 from .bindings import _EnvWrapper
 from .blob import Blob, BlobEnding, BlobValue, File

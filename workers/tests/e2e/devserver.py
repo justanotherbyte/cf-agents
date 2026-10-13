@@ -1,5 +1,6 @@
 """Run a fixture Worker under `wynd dev` and talk to it over HTTP."""
 
+import gzip
 import json
 import os
 import shutil
@@ -10,7 +11,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,9 +57,9 @@ class DevServer:
     process: subprocess.Popen[bytes]
     log: Path
 
-    def get(self, path: str) -> tuple[int, str]:
+    def get(self, path: str, timeout: float = 30) -> tuple[int, str]:
         """GET `path`, waiting up to 3 minutes for the server to come up."""
-        return self.request("GET", path)
+        return self.request("GET", path, timeout=timeout)
 
     def request(
         self,
@@ -66,8 +67,13 @@ class DevServer:
         path: str,
         body: bytes | None = None,
         headers: dict[str, str] | None = None,
+        timeout: float = 30,
+        check: bool = True,
     ) -> tuple[int, str]:
-        """Send a request, waiting up to 3 minutes for the server to come up."""
+        """Send a request, waiting up to 3 minutes for the server to come up.
+
+        With `check`, an error status fails the test.
+        """
         request = urllib.request.Request(
             self.url + path, body, headers or {}, method=method
         )
@@ -76,25 +82,44 @@ class DevServer:
             if self.process.poll() is not None:
                 pytest.fail(f"wynd dev exited:\n{self.log.read_text()}")
             try:
-                with urllib.request.urlopen(request, timeout=30) as response:
-                    return response.status, response.read().decode()
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    return response.status, _text(response)
             except urllib.error.HTTPError as error:
-                answer = error.read().decode()
+                answer = _text(error)
+                if not check:
+                    return error.code, answer
                 pytest.fail(f"HTTP {error.code}: {answer}\n{self.log.read_text()}")
             except OSError:
                 time.sleep(1)
         pytest.fail(f"wynd dev never answered:\n{self.log.read_text()}")
 
 
+def _text(response: Any) -> str:
+    # An app may compress its answer, as FastAPI's GZipMiddleware does.
+    data = response.read()
+    if response.headers.get("Content-Encoding") == "gzip":
+        data = gzip.decompress(data)
+    return data.decode()
+
+
 @contextmanager
 def wynd_dev(project: Path) -> Generator[DevServer]:
+    with dev_server(
+        project, ["uv", "run", "--project", str(WYND), "wynd", "dev"]
+    ) as server:
+        yield server
+
+
+@contextmanager
+def dev_server(project: Path, command: list[str]) -> Generator[DevServer]:
+    """Run a dev server `command` in `project`, with --port appended."""
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     log = project / "dev.log"
     with log.open("w") as out:
         process = subprocess.Popen(
-            ["uv", "run", "--project", WYND, "wynd", "dev", "--port", str(port)],
+            [*command, "--port", str(port)],
             cwd=project,
             stdin=subprocess.DEVNULL,
             stdout=out,
@@ -105,5 +130,7 @@ def wynd_dev(project: Path) -> Generator[DevServer]:
     try:
         yield DevServer(f"http://127.0.0.1:{port}", process, log)
     finally:
-        os.killpg(process.pid, signal.SIGTERM)
+        # The group is gone already when the server exited on its own.
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
         process.wait()

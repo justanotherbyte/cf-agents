@@ -50,6 +50,11 @@ class Binding:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({js_name(self.js_object)})"
 
+    @property
+    def _binding(self) -> Any:
+        # The stock SDK's private name for the JS object, which its tests read.
+        return self.js_object
+
     def __getattr__(self, name: str) -> Any:
         if name.startswith("__") or name == "js_object":
             raise AttributeError(name)
@@ -177,7 +182,7 @@ class KVNamespace(Binding):
         *,
         cache_ttl: int | None = None,
         **options: Any,
-    ) -> bytes | None: ...
+    ) -> memoryview | None: ...
     @overload
     async def get(
         self,
@@ -198,10 +203,8 @@ class KVNamespace(Binding):
         **options: Any,
     ) -> Any:
         js_options = _kv_get_options(type, options, cache_ttl)
-        value = python_from_rpc(
-            await self.js_object.get(python_to_rpc(key), js_options)
-        )
-        return bytes(value) if isinstance(value, memoryview) else value
+        # An arrayBuffer arrives as a memoryview, as in the stock SDK.
+        return python_from_rpc(await self.js_object.get(python_to_rpc(key), js_options))
 
     async def get_with_metadata(
         self,
@@ -584,6 +587,11 @@ _CLASS_FOR_JS: dict[str, Callable[[Any], Any]] = {
 
 class _EnvWrapper(Binding):
     """The env an entrypoint sees: each binding wrapped by its JS class."""
+
+    @property
+    def _env(self) -> Any:
+        # The stock SDK's private name for the JS env, which its tests read.
+        return self.js_object
 
     def _pass_through(self, name: str, value: Any) -> Any:
         js_class = js_name(value)

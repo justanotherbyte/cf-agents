@@ -1,11 +1,13 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 import asgi
 from workers import WorkerEntrypoint
 
 app = FastAPI()
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 class Item(BaseModel):
@@ -34,6 +36,11 @@ async def stream():
             yield f"{i}\n"
 
     return StreamingResponse(chunks(), media_type="text/plain")
+
+
+@app.get("/large")
+async def large():
+    return PlainTextResponse("x" * 5000)
 
 
 @app.get("/sync")
