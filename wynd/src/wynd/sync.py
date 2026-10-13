@@ -10,13 +10,15 @@ from pathlib import Path
 from .project import Project, WyndError
 from .targets import Target
 
+__all__ = ["select_sdk", "sync"]
+
 SDKS = ("crosswind-workers", "workers-runtime-sdk")
 MIN_UV = (0, 12, 3)
 
 
 def sync(project: Project, target: Target) -> None:
     """Install the project's packages for `target` into python_modules/."""
-    token_path = project.root / ".wynd" / "synced"
+    token_path = project.wynd_dir / "synced"
     if project.python_modules.is_dir() and _text(token_path) == _token(project, target):
         return
     sdk = select_sdk(project.dependencies)
@@ -24,7 +26,7 @@ def sync(project: Project, target: Target) -> None:
     _compile(project, target, sdk)
     # Install beside python_modules/ and swap it in only once uv succeeds, so a
     # failed install never leaves a half-built tree for Wrangler.
-    staging = project.root / ".wynd" / "site-packages"
+    staging = project.wynd_dir / "site-packages"
     shutil.rmtree(staging, ignore_errors=True)
     _install(project, target, staging)
     # --target also writes console scripts, whose shebangs name the host's
@@ -93,7 +95,7 @@ def _check_uv(project: Project) -> None:
 
 def _compile(project: Project, target: Target, sdk: str) -> None:
     # A library may depend on the other SDK. Both ship the `workers` package.
-    excludes = project.root / ".wynd" / "excludes.txt"
+    excludes = project.wynd_dir / "excludes.txt"
     excludes.parent.mkdir(exist_ok=True)
     excludes.write_text("".join(f"{name}\n" for name in SDKS if name != sdk))
     args = ["pip", "compile", "pyproject.toml", "--python", target.interpreter]

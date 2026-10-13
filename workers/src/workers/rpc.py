@@ -11,6 +11,8 @@ from .formdata import FormData
 from .request import Request
 from .response import Response
 
+__all__ = ["JsDict", "python_from_rpc", "python_to_rpc"]
+
 
 def python_from_rpc(obj: Any) -> Any:
     """Convert a value workerd received over RPC to Python, as the stock SDK does."""

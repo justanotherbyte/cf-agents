@@ -12,6 +12,8 @@ from .response import Response
 if TYPE_CHECKING:
     from .types import FetchKwargs
 
+__all__ = ["fetch"]
+
 
 async def _pyfetch_0_26(request: Any, **kwargs: Any) -> Response:
     # Pyodide 0.26.0a2's pyfetch lacks `fetcher`. Copied from Pyodide d3f99e1d.

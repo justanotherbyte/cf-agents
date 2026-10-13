@@ -9,6 +9,15 @@ if TYPE_CHECKING:
     from .blob import Blob
     from .formdata import FormData
 
+__all__ = [
+    "Body",
+    "Context",
+    "FetchKwargs",
+    "Headers",
+    "JSBody",
+    "RequestInitCfProperties",
+]
+
 
 class Context(Protocol):
     def waitUntil(self, other: Awaitable[Any]) -> None: ...  # noqa: N802

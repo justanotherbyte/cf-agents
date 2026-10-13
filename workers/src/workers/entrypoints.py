@@ -88,8 +88,10 @@ def _init_with_wrapped_args(init: Callable[..., None]) -> Callable[..., None]:
     return wrapped
 
 
-# Handlers already converting their arguments, so a subclass doesn't rewrap.
+# Handlers already converting their arguments, and on_<name> aliases, so a
+# subclass doesn't rewrap them.
 _CONVERTING: set[Callable[..., Any]] = set()
+_ALIASES: set[Callable[..., Any]] = set()
 
 
 def _converting(handler: Callable[..., Any]) -> Callable[..., Any]:
@@ -112,9 +114,6 @@ def _alias(name: str) -> Callable[..., Any]:
 
     _ALIASES.add(alias)
     return alias
-
-
-_ALIASES: set[Callable[..., Any]] = set()
 
 
 class WorkerEntrypoint(_Typed[EnvT], _Entrypoint):

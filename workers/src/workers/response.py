@@ -5,21 +5,17 @@ from typing import TYPE_CHECKING, Any, overload
 
 import js
 import pyodide.http
-from pyodide.ffi import JsException, JsProxy
+from pyodide.ffi import JsProxy
 
-from ._js import (
-    headers_to_message,
-    js_body,
-    js_name,
-    none_if_null,
-    to_js_headers,
-    to_python_exception,
-)
+from ._body import BodyMixin
+from ._js import js_body, js_name, none_if_null, python_errors, to_js_headers
 from .blob import Blob
 from .formdata import FormData
 
 if TYPE_CHECKING:
     from .types import Body, Headers
+
+__all__ = ["RESPONSE_ACCEPTED_TYPES", "FetchResponse", "Response"]
 
 # The JS body types js.Response accepts.
 RESPONSE_ACCEPTED_TYPES = {
@@ -72,7 +68,7 @@ def _stock_json(data: Any, *args: Any, **kwargs: Any) -> Any:
     return FetchResponse.from_json(data, *args, **kwargs)
 
 
-class FetchResponse(pyodide.http.FetchResponse):
+class FetchResponse(BodyMixin, pyodide.http.FetchResponse):
     @property
     def body(self) -> "js.ReadableStream | None":
         return none_if_null(self.js_object.body)
@@ -81,36 +77,19 @@ class FetchResponse(pyodide.http.FetchResponse):
     def js_object(self) -> "js.Response":
         return self.js_response
 
-    @property
-    def headers(self) -> Any:
-        return headers_to_message(self.js_object.headers)
-
     async def formData(self) -> FormData:  # noqa: N802 (the stock SDK's alias)
         return await self.form_data()
-
-    async def form_data(self) -> FormData:
-        self._raise_if_failed()
-        try:
-            return FormData(await self.js_object.formData())
-        except JsException as error:
-            raise to_python_exception(error) from error
 
     def replace_body(self, body: "Body") -> "Response":
         """A new Response with this one's status and headers and a new body."""
         with js_body(body) as converted:
             return Response(js.Response.new(converted, self.js_response))
 
-    async def blob(self) -> Blob:
-        self._raise_if_failed()
-        return Blob(await self.js_object.blob())
-
     @staticmethod
     def redirect(url: str, status: HTTPStatus | int = HTTPStatus.FOUND) -> "Response":
         # The stock SDK returns the raw JS Response here.
-        try:
+        with python_errors():
             return Response(js.Response.redirect(url, int(status)))
-        except JsException as error:
-            raise to_python_exception(error) from error
 
     @staticmethod
     def from_json(
@@ -120,20 +99,14 @@ class FetchResponse(pyodide.http.FetchResponse):
         headers: "Headers | None" = None,
     ) -> "Response":
         options = Response._create_options(status, status_text, headers)
-        try:
+        with python_errors():
             if isinstance(data, JsProxy):
-                js_response = js.Response.json(data, **options)
-            else:
-                if "headers" not in options:
-                    options["headers"] = to_js_headers(
-                        {"content-type": "application/json"}
-                    )
-                elif not options["headers"].has("content-type"):
-                    options["headers"].set("content-type", "application/json")
-                js_response = js.Response.new(json.dumps(data), **options)
-        except JsException as error:
-            raise to_python_exception(error) from error
-        return Response(js_response)
+                return Response(js.Response.json(data, **options))
+            if "headers" not in options:
+                options["headers"] = to_js_headers({"content-type": "application/json"})
+            elif not options["headers"].has("content-type"):
+                options["headers"].set("content-type", "application/json")
+            return Response(js.Response.new(json.dumps(data), **options))
 
     # A descriptor where Pyodide has a method, so ty reports the override.
     json = _Json()  # ty: ignore[invalid-attribute-override]

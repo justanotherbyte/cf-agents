@@ -8,6 +8,8 @@ from pyodide.ffi import to_js
 
 from ._js import js_name, lend_buffer, managed_pyproxies
 
+__all__ = ["Blob", "BlobEnding", "BlobValue", "File"]
+
 type BlobValue = (
     str | bytes | js.ArrayBuffer | js.TypedArray | js.DataView | js.Blob | Blob | File
 )

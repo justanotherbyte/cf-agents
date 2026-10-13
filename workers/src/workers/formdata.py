@@ -6,6 +6,8 @@ import js
 from ._js import js_name
 from .blob import Blob, File
 
+__all__ = ["FormData", "FormDataValue"]
+
 type FormDataValue = str | js.Blob | Blob
 
 

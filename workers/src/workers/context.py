@@ -18,6 +18,14 @@ from ._js import js_name
 from .bindings import Binding, _js_options
 from .rpc import python_from_rpc, python_to_rpc
 
+__all__ = [
+    "DurableObjectAbort",
+    "DurableObjectContext",
+    "DurableObjectStorage",
+    "ExecutionContext",
+    "js_promise",
+]
+
 
 class DurableObjectAbort(BaseException):
     """Raised by `ctx.abort()`. A BaseException, so `except Exception` lets it
@@ -25,10 +33,7 @@ class DurableObjectAbort(BaseException):
 
 
 class _RawContext(Binding):
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("__") or name == "js_object":
-            raise AttributeError(name)
-        value = getattr(self.js_object, name)
+    def _pass_through(self, name: str, value: Any) -> Any:
         if not callable(value):
             return value
         return lambda *args, **kwargs: value(

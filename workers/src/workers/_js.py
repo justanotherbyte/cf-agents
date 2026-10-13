@@ -67,12 +67,20 @@ def managed_pyproxies() -> Generator[Any]:
         destroy_proxies(proxies)
 
 
-def to_python_exception(error: JsException) -> Exception:
-    if error.name == "RangeError":
-        return ValueError(error.message)
-    if error.name == "TypeError":
-        return TypeError(error.message)
-    return error
+# JS errors with a Python twin, by JS name.
+_PYTHON_ERRORS = {"RangeError": ValueError, "TypeError": TypeError}
+
+
+@contextmanager
+def python_errors() -> Generator[None]:
+    """Raise a JS RangeError or TypeError from the block as its Python twin."""
+    try:
+        yield
+    except JsException as error:
+        python_error = _PYTHON_ERRORS.get(error.name)
+        if python_error is None:
+            raise
+        raise python_error(error.message) from error
 
 
 def to_js_headers(headers: Any) -> Any:

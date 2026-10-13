@@ -5,6 +5,8 @@ from typing import Any, NoReturn
 import _pyodide_entrypoint_helper
 from pyodide.ffi import JsException
 
+__all__ = ["import_from_javascript", "patch_env"]
+
 
 def import_from_javascript(module_name: str) -> Any:
     """Import a JS module, such as "cloudflare:sockets", from Python.

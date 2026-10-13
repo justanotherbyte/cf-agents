@@ -3,24 +3,17 @@ from http import HTTPMethod
 from typing import TYPE_CHECKING, Any, Unpack
 
 import js
-from pyodide.ffi import JsException
 
-from ._js import (
-    headers_to_message,
-    js_body,
-    js_name,
-    none_if_null,
-    to_js_headers,
-    to_python_exception,
-)
-from .blob import Blob
-from .formdata import FormData
+from ._body import BodyMixin
+from ._js import js_body, js_name, none_if_null, to_js_headers
 
 if TYPE_CHECKING:
     from .types import FetchKwargs
 
+__all__ = ["Request"]
 
-class Request:
+
+class Request(BodyMixin):
     def __init__(
         self, input: "Request | str | js.Request", **options: "Unpack[FetchKwargs]"
     ) -> None:
@@ -80,10 +73,6 @@ class Request:
         return self.js_object.destination
 
     @property
-    def headers(self) -> Any:
-        return headers_to_message(self.js_object.headers)
-
-    @property
     def integrity(self) -> str:
         return self.js_object.integrity
 
@@ -129,17 +118,6 @@ class Request:
     async def buffer(self) -> "js.ArrayBuffer":
         self._raise_if_failed()
         return await self.js_object.arrayBuffer()
-
-    async def form_data(self) -> FormData:
-        self._raise_if_failed()
-        try:
-            return FormData(await self.js_object.formData())
-        except JsException as error:
-            raise to_python_exception(error) from error
-
-    async def blob(self) -> Blob:
-        self._raise_if_failed()
-        return Blob(await self.js_object.blob())
 
     async def bytes(self) -> bytes:
         self._raise_if_failed()

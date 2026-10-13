@@ -4,6 +4,8 @@ import sys
 from .project import Project
 from .targets import Target
 
+__all__ = ["warn_on_venv_mismatch"]
+
 
 def warn_on_venv_mismatch(project: Project, target: Target) -> None:
     """Warn when the editor's .venv runs another Python minor than the target."""

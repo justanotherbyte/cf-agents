@@ -20,6 +20,21 @@ from .rpc import python_from_rpc, python_to_rpc
 # SDK: they are meant for Response() and friends, or have Python twins.
 _RAW_JS_TYPES = RESPONSE_ACCEPTED_TYPES | {"Headers"}
 
+__all__ = [
+    "Binding",
+    "D1Database",
+    "D1PreparedStatement",
+    "DurableObjectNamespace",
+    "Fetcher",
+    "KVNamespace",
+    "Queue",
+    "R2Bucket",
+    "R2Object",
+    "R2ObjectBody",
+    "Workflow",
+    "WorkflowInstance",
+]
+
 
 class Binding:
     """A binding with no typed class. Every name passes through to JS."""
@@ -38,7 +53,11 @@ class Binding:
     def __getattr__(self, name: str) -> Any:
         if name.startswith("__") or name == "js_object":
             raise AttributeError(name)
-        value = getattr(self.js_object, name)
+        return self._pass_through(name, getattr(self.js_object, name))
+
+    def _pass_through(self, name: str, value: Any) -> Any:
+        """A JS attribute's value as Python sees it, for a name the class
+        doesn't define. Subclasses override this to convert differently."""
         if not callable(value):
             # Read on every access. The stock SDK caches the first value.
             return _convert(value)
@@ -178,9 +197,7 @@ class KVNamespace(Binding):
         cache_ttl: int | None = None,
         **options: Any,
     ) -> Any:
-        # The second argument is a type name or, as in JS, an options object.
-        given, kv_type = (None, type) if isinstance(type, str) else (type, None)
-        js_options = _js_options(given, options, type=kv_type, cache_ttl=cache_ttl)
+        js_options = _kv_get_options(type, options, cache_ttl)
         value = python_from_rpc(
             await self.js_object.get(python_to_rpc(key), js_options)
         )
@@ -195,8 +212,7 @@ class KVNamespace(Binding):
         cache_ttl: int | None = None,
         **options: Any,
     ) -> dict[str, Any]:
-        given, kv_type = (None, type) if isinstance(type, str) else (type, None)
-        js_options = _js_options(given, options, type=kv_type, cache_ttl=cache_ttl)
+        js_options = _kv_get_options(type, options, cache_ttl)
         result = await self.js_object.getWithMetadata(python_to_rpc(key), js_options)
         return python_from_rpc(result)
 
@@ -238,6 +254,12 @@ class KVNamespace(Binding):
             options, extra, prefix=prefix, limit=limit, cursor=cursor
         )
         return python_from_rpc(await self.js_object.list(js_options))
+
+
+def _kv_get_options(type: Any, extra: dict[str, Any], cache_ttl: int | None) -> Any:
+    # The second argument is a type name or, as in JS, an options object.
+    given, kv_type = (None, type) if isinstance(type, str) else (type, None)
+    return _js_options(given, extra, type=kv_type, cache_ttl=cache_ttl)
 
 
 # D1
@@ -463,10 +485,8 @@ class DurableObjectNamespace[T](Binding):
     """Names this class doesn't define come back raw, as in the stock SDK, so
     a Durable Object id from `idFromName` stays a JS id."""
 
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("__") or name == "js_object":
-            raise AttributeError(name)
-        return getattr(self.js_object, name)
+    def _pass_through(self, name: str, value: Any) -> Any:
+        return value
 
     def id_from_name(self, name: str) -> Any:
         return self.js_object.idFromName(name)
@@ -565,10 +585,7 @@ _CLASS_FOR_JS: dict[str, Callable[[Any], Any]] = {
 class _EnvWrapper(Binding):
     """The env an entrypoint sees: each binding wrapped by its JS class."""
 
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("__") or name == "js_object":
-            raise AttributeError(name)
-        value = getattr(self.js_object, name)
+    def _pass_through(self, name: str, value: Any) -> Any:
         js_class = js_name(value)
         if js_class is None:
             binding = value  # a text var or secret

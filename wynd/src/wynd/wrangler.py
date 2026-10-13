@@ -3,6 +3,8 @@ import signal
 import subprocess
 import sys
 
+__all__ = ("VERSION", "run")
+
 # Bumping the pin requires the dry-run module check (decisions.md#wrangler-version).
 VERSION = "4.129.0"
 

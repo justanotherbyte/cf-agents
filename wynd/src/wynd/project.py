@@ -5,6 +5,8 @@ from typing import Any
 
 import jsonc
 
+__all__ = ["Project", "WyndError", "load_project"]
+
 # Wrangler walks every parent for one name before it tries the next.
 CONFIG_NAMES = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")
 
@@ -32,6 +34,11 @@ class Project:
     def python_modules(self) -> Path:
         # Wrangler collects python_modules/ beside the config file.
         return self.config_path.parent / "python_modules"
+
+    @property
+    def wynd_dir(self) -> Path:
+        # Wynd's builds and state.
+        return self.root / ".wynd"
 
 
 def load_project(cwd: Path, config: str | None, env: str | None) -> Project:

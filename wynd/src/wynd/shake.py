@@ -1,9 +1,12 @@
 import ast
 import csv
+import shutil
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+__all__ = ["Kind", "ShakePlan", "shake"]
 
 WASM = b"\x00asm"
 
@@ -31,85 +34,165 @@ class Kind(Enum):
 
 @dataclass(frozen=True)
 class ShakePlan:
-    """Kept and dropped files by POSIX path, unresolved names, and build errors."""
+    """Kept and dropped files of `site` by POSIX path, unresolved names, and
+    build errors."""
 
+    site: Path
     kept: dict[str, str] = field(default_factory=dict)
     dropped: dict[str, str] = field(default_factory=dict)
     # Imported names with no vendored file, and who imported them.
     unresolved: dict[str, str] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
+    def size_report(self) -> str:
+        """Bytes in the full tree and its kept files, without Wrangler's wrapping."""
+        before = sum(self._size(name) for name in [*self.kept, *self.dropped])
+        after = sum(self._size(name) for name in self.kept)
+        return (
+            f"python_modules is {before:,} bytes, {after:,} after pruning "
+            f"({before - after:,} fewer). Each file's decision is in .wynd/shake.txt."
+        )
+
+    def log(self) -> str:
+        """Every decision, one "decision<TAB>name<TAB>reason" line each."""
+        decisions = {
+            "kept": self.kept,
+            "dropped": self.dropped,
+            "unresolved": self.unresolved,
+        }
+        return "".join(
+            f"{decision}\t{name}\t{reason}\n"
+            for decision, names in decisions.items()
+            for name, reason in names.items()
+        )
+
+    def copy_kept(self, target: Path) -> None:
+        """Copy the kept files into `target` at the same relative paths."""
+        for name in self.kept:
+            (target / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.site / name, target / name)
+
+    def _size(self, name: str) -> int:
+        return (self.site / name).stat().st_size
+
 
 def shake(site: Path, source: Path, entry: Path, keep: tuple[str, ...]) -> ShakePlan:
     """Decide which files of `site` the Worker in `source` can import."""
-    plan = ShakePlan()
-    roots = (source, site)
     entry_name = ".".join(entry.relative_to(source).with_suffix("").parts)
-    queue = deque([(entry_name, "entry module", Kind.MODULE)])
-    queue += [(name, "keep list", Kind.MODULE) for name in keep]
-    queue += _pth_roots(site, plan)
-    seen: set[tuple[str, Kind]] = set()
-    missing: set[str] = set()
-    while queue:
-        name, reason, kind = queue.popleft()
-        if (name, kind) in seen:
-            continue
+    return _Shaker(site, source).run(entry_name, keep)
+
+
+class _Shaker:
+    """One breadth-first walk of the imports, filling in a ShakePlan."""
+
+    def __init__(self, site: Path, source: Path) -> None:
+        self.site = site
+        self.roots = (source, site)
+        self.plan = ShakePlan(site)
+        self.queue: deque[tuple[str, str, Kind]] = deque()
+        self.seen: set[tuple[str, Kind]] = set()
+        self.missing: set[str] = set()
+
+    def run(self, entry_name: str, keep: tuple[str, ...]) -> ShakePlan:
+        self.queue.append((entry_name, "entry module", Kind.MODULE))
+        self.queue += [(name, "keep list", Kind.MODULE) for name in keep]
+        self.queue += self._pth_roots()
+        while self.queue:
+            self._visit(*self.queue.popleft())
+        self._decide_files()
+        self._check_binaries()
+        return self.plan
+
+    def _visit(self, name: str, reason: str, kind: Kind) -> None:
+        if (name, kind) in self.seen:
+            return
         if kind is Kind.PREFIX:
-            seen.add((name, kind))
-            queue += [(m, reason, Kind.MODULE) for m in _prefixed(name, roots)]
-            continue
+            self.seen.add((name, kind))
+            modules = _prefixed(name, self.roots)
+            self.queue += [(module, reason, Kind.MODULE) for module in modules]
+            return
         parent = name if kind is Kind.STAR else name.rpartition(".")[0]
         # Python imports a module's packages first.
-        if parent and (parent, Kind.MODULE) not in seen:
-            queue.appendleft((name, reason, kind))
-            queue.appendleft((parent, f"package of {name}", Kind.MODULE))
-            continue
-        seen.add((name, kind))
+        if parent and (parent, Kind.MODULE) not in self.seen:
+            self.queue.appendleft((name, reason, kind))
+            self.queue.appendleft((parent, f"package of {name}", Kind.MODULE))
+            return
+        self.seen.add((name, kind))
         if kind is Kind.STAR:
-            path = None if name in missing else _find(name, roots)
-            for member in _all(_parse(path)) if path else []:
-                queue.append((f"{name}.{member}", reason, Kind.MEMBER))
-            continue
-        path = None if parent in missing else _find(name, roots)
+            self._visit_star(name, reason)
+        else:
+            self._visit_module(name, parent, reason, kind)
+
+    def _visit_star(self, name: str, reason: str) -> None:
+        path = None if name in self.missing else _find(name, self.roots)
+        for member in _all(_parse(path)) if path else []:
+            self.queue.append((f"{name}.{member}", reason, Kind.MEMBER))
+
+    def _visit_module(self, name: str, parent: str, reason: str, kind: Kind) -> None:
+        path = None if parent in self.missing else _find(name, self.roots)
         if path is None:
-            missing.add(name)
-            if kind is Kind.MODULE and parent not in missing:
-                plan.unresolved.setdefault(name, reason)
-            continue
-        if path.is_file() and path.is_relative_to(site):
-            plan.kept.setdefault(path.relative_to(site).as_posix(), reason)
+            self.missing.add(name)
+            if kind is Kind.MODULE and parent not in self.missing:
+                self.plan.unresolved.setdefault(name, reason)
+            return
+        if path.is_file() and path.is_relative_to(self.site):
+            self.plan.kept.setdefault(path.relative_to(self.site).as_posix(), reason)
         package = name if path.name == "__init__.py" or path.is_dir() else parent
         for imported, why, imported_kind in _imports(_parse(path), package):
-            queue.append((imported, f"imported by {name}{why}", imported_kind))
-    _decide_files(site, plan)
-    _check_binaries(site, plan)
-    return plan
+            self.queue.append((imported, f"imported by {name}{why}", imported_kind))
 
+    def _pth_roots(self) -> list[tuple[str, str, Kind]]:
+        """The modules .pth files import. Other .pth lines are build errors."""
+        roots = []
+        for pth in sorted(self.site.glob("*.pth")):
+            self.plan.kept[pth.name] = "startup hook"
+            for number, line in enumerate(pth.read_text().splitlines(), 1):
+                imported = _pth_imports(line)
+                if imported is None:
+                    self.plan.errors.append(
+                        f"{pth.name} line {number} is not a plain import: {line}"
+                    )
+                for name in imported or []:
+                    roots.append((name, f"imported by {pth.name}", Kind.MODULE))
+        return roots
 
-def size_report(site: Path, plan: ShakePlan) -> str:
-    """Bytes in the full tree and its kept files, without Wrangler's wrapping."""
-    before = sum((site / name).stat().st_size for name in [*plan.kept, *plan.dropped])
-    after = sum((site / name).stat().st_size for name in plan.kept)
-    return (
-        f"python_modules is {before:,} bytes, {after:,} after pruning "
-        f"({before - after:,} fewer). Each file's decision is in .wynd/shake.txt."
-    )
+    def _decide_files(self) -> None:
+        """Decide every file that isn't an imported module."""
+        site, plan = self.site, self.plan
+        files = sorted(p.relative_to(site) for p in site.rglob("*") if p.is_file())
+        kept_packages = {Path(name).parts[0] for name in plan.kept}
+        metadata = [f for f in files if f.parts[0].endswith(".dist-info")]
+        decisions = [
+            (file, *_decide(file, kept_packages))
+            for file in files
+            if file.as_posix() not in plan.kept and file not in metadata
+        ]
+        for file, kept, reason in decisions:
+            (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
+        # Metadata goes last, once every other file has its decision.
+        dists = {
+            d: _metadata(site / d, plan.kept) for d in {f.parts[0] for f in metadata}
+        }
+        for file in metadata:
+            kept, reason = dists[file.parts[0]]
+            (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
 
-
-def _pth_roots(site: Path, plan: ShakePlan) -> list[tuple[str, str, Kind]]:
-    """The modules .pth files import. Other .pth lines are build errors."""
-    roots = []
-    for pth in sorted(site.glob("*.pth")):
-        plan.kept[pth.name] = "startup hook"
-        for number, line in enumerate(pth.read_text().splitlines(), 1):
-            imported = _pth_imports(line)
-            if imported is None:
-                plan.errors.append(
-                    f"{pth.name} line {number} is not a plain import: {line}"
-                )
-            for name in imported or []:
-                roots.append((name, f"imported by {pth.name}", Kind.MODULE))
-    return roots
+    def _check_binaries(self) -> None:
+        """Fail the build for every kept .so that isn't WebAssembly."""
+        for name in self.plan.kept:
+            if not name.endswith(".so"):
+                continue
+            with (self.site / name).open("rb") as file:
+                head = file.read(4)
+            if head.startswith(WASM):
+                continue
+            kind = next(
+                (k for m, k in HOST_BINARIES.items() if head.startswith(m)), None
+            )
+            self.plan.errors.append(
+                f"{name} is in {kind or 'an unknown'} format, not WebAssembly built "
+                "for Pyodide, so it can't load in a Worker."
+            )
 
 
 def _pth_imports(line: str) -> list[str] | None:
@@ -123,25 +206,6 @@ def _pth_imports(line: str) -> list[str] | None:
     if not isinstance(statement, ast.Import):
         return None
     return [alias.name for alias in statement.names]
-
-
-def _decide_files(site: Path, plan: ShakePlan) -> None:
-    """Decide every file that isn't an imported module."""
-    files = sorted(p.relative_to(site) for p in site.rglob("*") if p.is_file())
-    kept_packages = {Path(name).parts[0] for name in plan.kept}
-    metadata = [f for f in files if f.parts[0].endswith(".dist-info")]
-    decisions = [
-        (file, *_decide(file, kept_packages))
-        for file in files
-        if file.as_posix() not in plan.kept and file not in metadata
-    ]
-    for file, kept, reason in decisions:
-        (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
-    # Metadata goes last, once every other file has its decision.
-    dists = {d: _metadata(site / d, plan.kept) for d in {f.parts[0] for f in metadata}}
-    for file in metadata:
-        kept, reason = dists[file.parts[0]]
-        (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
 
 
 def _decide(file: Path, kept_packages: set[str]) -> tuple[bool, str]:
@@ -179,22 +243,6 @@ def _metadata(dist_info: Path, kept: dict[str, str]) -> tuple[bool, str]:
         if any(row and row[0] in kept for row in csv.reader(file)):
             return True, f"metadata of {dist}, which keeps a file"
     return False, f"metadata of {dist}, which keeps no file"
-
-
-def _check_binaries(site: Path, plan: ShakePlan) -> None:
-    """Fail the build for every kept .so that isn't WebAssembly."""
-    for name in plan.kept:
-        if not name.endswith(".so"):
-            continue
-        with (site / name).open("rb") as file:
-            head = file.read(4)
-        if head.startswith(WASM):
-            continue
-        kind = next((k for m, k in HOST_BINARIES.items() if head.startswith(m)), None)
-        plan.errors.append(
-            f"{name} is in {kind or 'an unknown'} format, not WebAssembly built "
-            "for Pyodide, so it can't load in a Worker."
-        )
 
 
 def _parse(path: Path) -> ast.Module:

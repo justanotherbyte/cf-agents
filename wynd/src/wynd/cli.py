@@ -6,10 +6,11 @@ from pathlib import Path
 from . import wrangler
 from .host import warn_on_venv_mismatch
 from .project import WyndError, load_project
-from .shake import size_report
 from .stage import stage
 from .sync import sync
 from .targets import select_target
+
+__all__ = ["main"]
 
 # Reads the flags that choose the target and leaves everything else to Wrangler.
 # --env-file and --profile are Wrangler's other global value flags, read only so
@@ -56,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         path, plan = staged
         if "--dry-run" in rest:
             # Flushed, so it comes before Wrangler's output in a pipe.
-            print(f"wynd: {size_report(project.python_modules, plan)}", flush=True)
+            print(f"wynd: {plan.size_report()}", flush=True)
         _, rest = _config_parser.parse_known_args(args)
         return wrangler.run([*rest, "--config", str(path)])
     warn_on_venv_mismatch(project, target)

@@ -8,6 +8,8 @@ from typing import Any
 from .project import Project, WyndError
 from .shake import ShakePlan, shake
 
+__all__ = ["stage"]
+
 # Fields Wrangler resolves from the config directory, by table. A list value
 # holds one table per item.
 PATH_FIELDS = {
@@ -26,9 +28,28 @@ LEFT_ALONE = {"$schema", "main", "base_dir", "build", "rules", "vars", "define"}
 
 def stage(project: Project) -> tuple[Path, ShakePlan]:
     """Shake and copy the Worker into .wynd/build/. Return the staged config."""
+    config = _staged_config(project)
     config_dir = project.config_path.parent
+    source = _source_dir(project)
+    entry = config_dir / (project.main or "")
+    plan = shake(project.python_modules, config_dir / source, entry, project.keep)
+    if plan.errors:
+        raise WyndError("\n".join(plan.errors))
+    build = project.wynd_dir / "build"
+    shutil.rmtree(build, ignore_errors=True)
+    shutil.copytree(config_dir / source, build / source)
+    plan.copy_kept(build / "python_modules")
+    (project.wynd_dir / "shake.txt").write_text(plan.log())
+    staged = build / "wrangler.json"
+    # default=str writes TOML dates the way Wrangler reads them.
+    staged.write_text(json.dumps(config, indent=2, default=str))
+    return staged, plan
+
+
+def _staged_config(project: Project) -> dict[str, Any]:
+    """The project's config with its paths pointed back at the project."""
     config = copy.deepcopy(project.config)
-    _rewrite(config, config_dir)
+    _rewrite(config, project.config_path.parent)
     # shortcut: only "./" and "../" values count as relative paths, so a bare
     # "public" under an unknown key slips through. Upgrade if Wrangler adds one.
     unknown = list(_relative_paths(config, ""))
@@ -38,33 +59,7 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
             f"{', '.join(unknown)}, which Wynd can't point back at the project "
             "from .wynd/build/. Use an absolute path."
         )
-    source = _source_dir(project)
-    entry = config_dir / (project.main or "")
-    plan = shake(project.python_modules, config_dir / source, entry, project.keep)
-    if plan.errors:
-        raise WyndError("\n".join(plan.errors))
-    build = project.root / ".wynd" / "build"
-    shutil.rmtree(build, ignore_errors=True)
-    shutil.copytree(config_dir / source, build / source)
-    for name in plan.kept:
-        target = build / "python_modules" / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(project.python_modules / name, target)
-    decisions = {
-        "kept": plan.kept,
-        "dropped": plan.dropped,
-        "unresolved": plan.unresolved,
-    }
-    lines = [
-        f"{decision}\t{name}\t{reason}\n"
-        for decision, names in decisions.items()
-        for name, reason in names.items()
-    ]
-    (build.parent / "shake.txt").write_text("".join(lines))
-    staged = build / "wrangler.json"
-    # default=str writes TOML dates the way Wrangler reads them.
-    staged.write_text(json.dumps(config, indent=2, default=str))
-    return staged, plan
+    return config
 
 
 def _source_dir(project: Project) -> Path:
