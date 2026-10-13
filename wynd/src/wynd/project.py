@@ -87,6 +87,7 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
     keep = wynd.get("keep", [])
     if not isinstance(keep, list) or not all(isinstance(k, str) for k in keep):
         raise WyndError("[tool.wynd] keep must be a list of module names")
+    date = settings.get("compatibility_date")
     return Project(
         root=root,
         config_path=config_path,
@@ -94,7 +95,8 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         settings=settings,
         main=settings.get("main"),
         base_dir=settings.get("base_dir"),
-        compatibility_date=settings.get("compatibility_date"),
+        # TOML parses a bare date as datetime.date. Wrangler reads it as text.
+        compatibility_date=None if date is None else str(date),
         compatibility_flags=tuple(settings.get("compatibility_flags", ())),
         dependencies=tuple(pyproject.get("project", {}).get("dependencies", ())),
         allow_build=bool(wynd.get("allow-build")),

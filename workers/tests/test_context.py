@@ -216,3 +216,20 @@ def test_a_user_defined_legacy_handler_also_receives_python_values() -> None:
     asyncio.run(Room(js_state(), js_env()).on_alarm(JsValue("Object", {"n": 1})))
 
     assert received == [{"n": 1}]
+
+
+def test_a_binary_web_socket_message_stays_an_array_buffer() -> None:
+    received = []
+
+    class Room(DurableObject):
+        async def webSocketMessage(self, ws: Any, message: Any) -> None:  # noqa: N802
+            received.append(message)
+
+    message = JsValue("ArrayBuffer", b"hi")
+
+    asyncio.run(
+        Room(js_state(), js_env()).webSocketMessage(JsValue("WebSocket"), message)
+    )
+
+    # As in the stock SDK, so stock code can call message.to_bytes().
+    assert received == [message]

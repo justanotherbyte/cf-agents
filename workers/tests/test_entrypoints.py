@@ -3,7 +3,7 @@ from inspect import isawaitable
 from typing import Any
 
 import pytest
-from fake_js import JsValue, js_request
+from fake_js import JsValue, Promise, js_request
 from pyodide.code import relaxed_call
 
 from workers import (
@@ -124,3 +124,13 @@ def test_the_alias_follows_a_subclass_override() -> None:
     js_response = call(Child(None, None), "on_fetch", js_request("/"))
 
     assert js_response.body == "child"
+
+
+def test_a_js_promise_on_a_handler_argument_stays_awaitable() -> None:
+    class Default(WorkerEntrypoint):
+        async def connect(self, socket: Any) -> Any:
+            return await socket.opened
+
+    socket = JsValue("Socket", opened=Promise("open"))
+
+    assert asyncio.run(Default(None, None).connect(socket)) == "open"

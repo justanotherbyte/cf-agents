@@ -10,7 +10,7 @@ that name, and the engine adopts the rejection.
 import functools
 import inspect
 from asyncio import Task, create_task, gather
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 import js
@@ -24,7 +24,7 @@ __all__ = ["NonRetryableError", "WorkflowStep"]
 
 NON_RETRYABLE = "NonRetryableError"
 
-type Step = Callable[[], Awaitable[Any]]
+type Step = Callable[[], Coroutine[Any, Any, Any]]
 
 
 class NonRetryableError(Exception):
@@ -130,9 +130,10 @@ class WorkflowStep(Binding):
     async def _resolve(self, dependency: Step) -> Any:
         if dependency in self._results:
             return self._results[dependency]
-        if dependency in self._in_flight:
-            return await self._in_flight[dependency]
-        return await dependency()
+        # Registered before awaiting, so a concurrent branch reuses this run.
+        if dependency not in self._in_flight:
+            self._in_flight[dependency] = create_task(dependency())
+        return await self._in_flight[dependency]
 
     async def _run(
         self,

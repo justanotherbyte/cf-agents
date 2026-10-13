@@ -138,3 +138,41 @@ def test_a_legacy_parameter_without_depends_is_refused() -> None:
 
     with pytest.raises(TypeError, match="no 'depends' list"):
         run_workflow(Flow, Engine())
+
+
+@pytest.mark.usefixtures("implicit")
+def test_concurrent_branches_run_a_shared_step_once() -> None:
+    class YieldingEngine(Engine):
+        async def do(self, name: str, *rest: Any) -> Any:
+            # Hand control back, as the real engine's RPC does.
+            await asyncio.sleep(0)
+            return await super().do(name, *rest)
+
+    engine = YieldingEngine()
+
+    class Flow(WorkflowEntrypoint):
+        async def run(self, event: Any, step: WorkflowStep) -> Any:
+            @step.do()
+            async def a() -> int:
+                return 1
+
+            @step.do()
+            async def x(a: int) -> int:
+                return a
+
+            @step.do()
+            async def b(x: int) -> int:
+                return x
+
+            @step.do()
+            async def c(x: int) -> int:
+                return x
+
+            @step.do(concurrent=True)
+            async def d(b: int, c: int) -> int:
+                return b + c
+
+            return await d()
+
+    assert run_workflow(Flow, engine) == 2
+    assert engine.steps == ["a", "x", "b", "c", "d"]

@@ -31,8 +31,10 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
     config = _staged_config(project)
     config_dir = project.config_path.parent
     source = _source_dir(project)
-    entry = config_dir / (project.main or "")
-    plan = shake(project.python_modules, config_dir / source, entry, project.keep)
+    # Resolved, so "src/sub/../entry.py" names the module entry.
+    root = config_dir.resolve()
+    entry = (root / (project.main or "")).resolve()
+    plan = shake(project.python_modules, root / source, entry, project.keep)
     if plan.errors:
         raise WyndError("\n".join(plan.errors))
     build = project.wynd_dir / "build"

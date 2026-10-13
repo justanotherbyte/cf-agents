@@ -17,8 +17,9 @@ from .response import RESPONSE_ACCEPTED_TYPES, Response
 from .rpc import python_from_rpc, python_to_rpc
 
 # JS values that stay raw when they come back from a binding, as in the stock
-# SDK: they are meant for Response() and friends, or have Python twins.
-_RAW_JS_TYPES = RESPONSE_ACCEPTED_TYPES | {"Headers"}
+# SDK: they are meant for Response() and friends, have Python twins, or are
+# promises Python awaits.
+_RAW_JS_TYPES = RESPONSE_ACCEPTED_TYPES | {"Headers", "Promise"}
 
 __all__ = [
     "Binding",

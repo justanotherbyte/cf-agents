@@ -95,12 +95,19 @@ _CONVERTING: set[Callable[..., Any]] = set()
 _ALIASES: set[Callable[..., Any]] = set()
 
 
+def _handler_arg(value: Any) -> Any:
+    # A binary WebSocket message stays an ArrayBuffer, as in the stock SDK.
+    return value if js_name(value) == "ArrayBuffer" else _convert(value)
+
+
 def _converting(handler: Callable[..., Any]) -> Callable[..., Any]:
     # wraps() keeps the handler's signature visible to workerd's relaxed_call.
     @functools.wraps(handler)
     def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
         return handler(
-            self, *map(_convert, args), **{k: _convert(v) for k, v in kwargs.items()}
+            self,
+            *map(_handler_arg, args),
+            **{k: _handler_arg(v) for k, v in kwargs.items()},
         )
 
     _CONVERTING.add(wrapped)

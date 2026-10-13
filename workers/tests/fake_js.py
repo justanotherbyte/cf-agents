@@ -38,6 +38,9 @@ class JsValue:
                 return {key: convert(item) for key, item in value.contents.items()}
             if name == "Set":
                 return {convert(item) for item in value.contents}
+            if name == "ArrayBuffer":
+                # Pyodide copies a buffer into a memoryview.
+                return memoryview(value.contents)
             if default_converter is None:
                 return value
             return default_converter(value, convert, {})
@@ -124,10 +127,11 @@ PATCHED_CONTEXTS: list[Any] = []
 MICROTASKS: list[Any] = []
 
 
-class Promise:
+class Promise(JsValue):
     """A settled JS promise: awaitable, and thenable like the real one."""
 
     def __init__(self, value: Any) -> None:
+        super().__init__("Promise")
         self.value = value
 
     def then(self, *callbacks: Any) -> None:

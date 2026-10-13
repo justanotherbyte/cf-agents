@@ -292,3 +292,11 @@ async def test_fix_redirect_returns_a_response():
     assert isinstance(response, Response)
     assert response.status == 301
     assert response.headers.get("location") == "https://example.com/"
+
+
+async def test_fix_fetch_sends_a_form_data_body():
+    response = await fetch(
+        f"{ORIGIN}/echo", method="POST", body=FormData({"field": "value"})
+    )
+    assert response.headers["Content-Type"].startswith("multipart/form-data")
+    assert 'name="field"' in await response.text()

@@ -1,5 +1,6 @@
 """Runs http_tests.py inside workerd and serves the routes its fetches hit."""
 
+import inspect
 import json
 import traceback
 from urllib.parse import urlparse
@@ -36,7 +37,15 @@ def form_data_blob(request):
     return Response(data)
 
 
+async def echo(request):
+    return Response(
+        await request.text(),
+        headers={"Content-Type": request.headers.get("Content-Type") or ""},
+    )
+
+
 ROUTES = {
+    "/echo": echo,
     "/sub": sub,
     "/redirect": redirect,
     "/formdata": form_data,
@@ -48,7 +57,8 @@ class Default(WorkerEntrypoint):
     async def fetch(self, request):
         url = urlparse(request.url)
         if url.path in ROUTES:
-            return ROUTES[url.path](request)
+            result = ROUTES[url.path](request)
+            return await result if inspect.isawaitable(result) else result
         http_tests.ORIGIN = f"{url.scheme}://{url.netloc}"
         names = [name for name in dir(http_tests) if name.startswith("test_")]
         failures = {}

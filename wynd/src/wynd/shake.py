@@ -79,7 +79,12 @@ class ShakePlan:
 def shake(site: Path, source: Path, entry: Path, keep: tuple[str, ...]) -> ShakePlan:
     """Decide which files of `site` the Worker in `source` can import."""
     entry_name = ".".join(entry.relative_to(source).with_suffix("").parts)
-    return _Shaker(site, source).run(entry_name, keep)
+    plan = _Shaker(site, source).run(entry_name, keep)
+    # Without it nothing the Worker imports is kept, and the upload would fail
+    # at import.
+    if entry_name in plan.unresolved:
+        plan.errors.append(f"entry module {entry_name} has no file in {source}")
+    return plan
 
 
 class _Shaker:

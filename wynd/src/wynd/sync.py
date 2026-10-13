@@ -6,6 +6,7 @@ import subprocess
 import tomllib
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
 from .project import Project, WyndError
 from .targets import Target
@@ -19,7 +20,12 @@ MIN_UV = (0, 12, 3)
 def sync(project: Project, target: Target) -> None:
     """Install the project's packages for `target` into python_modules/."""
     token_path = project.wynd_dir / "synced"
-    if project.python_modules.is_dir() and _text(token_path) == _token(project, target):
+    if (
+        project.python_modules.is_dir()
+        and _text(token_path) == _token(project, target)
+        # The token can't see edits inside a local source, so reinstall it.
+        and not any(map(_local_paths, _locked_packages(project)))
+    ):
         return
     sdk = select_sdk(project.dependencies)
     _check_uv(project)
@@ -108,18 +114,13 @@ def _compile(project: Project, target: Target, sdk: str) -> None:
 
 
 def _install(project: Project, target: Target, staging: Path) -> None:
-    lock = tomllib.loads(_text(project.root / "pylock.toml"))
     # --target, not a venv: uv ignores a Pyodide venv's interpreter, and with
     # --python <venv> it installs into "/", the prefix Pyodide reports.
     args = ["pip", "install", "--target", str(staging), "--python", target.interpreter]
     if not project.allow_build:
         args += ["--only-binary", ":all:"]
-    for package in lock.get("packages", []):
-        paths = [
-            source["path"]
-            for key in ("directory", "sdist", "archive")
-            if isinstance(source := package.get(key), dict) and "path" in source
-        ]
+    for package in _locked_packages(project):
+        paths = _local_paths(package)
         if not paths:
             continue
         # A local source has no wheel to fetch unless it is one, and uv caches
@@ -129,6 +130,19 @@ def _install(project: Project, target: Target, staging: Path) -> None:
         args += ["--refresh-package", package["name"]]
     args += ["-r", "pylock.toml", "--preview-features", "pylock"]
     _uv(project, *args)
+
+
+def _locked_packages(project: Project) -> list[dict[str, Any]]:
+    return tomllib.loads(_text(project.root / "pylock.toml")).get("packages", [])
+
+
+def _local_paths(package: dict[str, Any]) -> list[str]:
+    """The paths of a locked package that comes from the local filesystem."""
+    return [
+        source["path"]
+        for key in ("directory", "sdist", "archive")
+        if isinstance(source := package.get(key), dict) and "path" in source
+    ]
 
 
 def _uv(project: Project, *args: str) -> str:

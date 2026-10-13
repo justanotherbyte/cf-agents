@@ -267,3 +267,30 @@ def test_commands_that_upload_no_code_pass_through(
     assert tools.wrangler() == [command]
     assert tools.uv() == []
     assert not (project / ".wynd" / "build").exists()
+
+
+def test_a_main_path_with_dot_dot_still_names_the_entry_module(
+    tools: Tools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = worker(tmp_path / "w", {"main": "src/sub/../entry.py"})
+    (root / "src" / "sub").mkdir()
+    monkeypatch.chdir(root)
+
+    assert main(["deploy", "--dry-run"]) == 0
+
+    build = root / ".wynd" / "build"
+    assert (build / "python_modules" / "workers" / "__init__.py").is_file()
+
+
+def test_an_entry_module_the_shaker_cant_find_stops_the_build(
+    tools: Tools,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(worker(tmp_path / "w", {"main": "src/missing.py"}))
+
+    assert main(["deploy", "--dry-run"]) == 1
+
+    assert "entry module missing" in capsys.readouterr().err
+    assert tools.wrangler() == []

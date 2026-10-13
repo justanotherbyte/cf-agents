@@ -22,6 +22,11 @@ _parser.add_argument("-e", "--env")
 _parser.add_argument("--cwd")
 _parser.add_argument("--env-file", action="append")
 _parser.add_argument("--profile")
+# Wrangler flags that change the target after Wynd has installed for the
+# config's. Wynd refuses them.
+_parser.add_argument("--compatibility-date")
+_parser.add_argument("--compatibility-flags", "--compatibility-flag", action="append")
+_parser.add_argument("--latest", action="store_true")
 
 # Wrangler 4.129.0's subcommands. Of these, only `versions upload` uploads code,
 # and `preview` uploads code when it has none of them.
@@ -42,6 +47,16 @@ def main(argv: list[str] | None = None) -> int:
     flow = _flow(rest)
     if flow == "passthrough":
         return wrangler.run(args)
+    if flow in ("dev", "upload") and (
+        options.compatibility_date or options.compatibility_flags or options.latest
+    ):
+        print(
+            "wynd: error: --compatibility-date, --compatibility-flags and --latest "
+            "change the Python version after Wynd installs packages. Set "
+            "compatibility_date and compatibility_flags in the Wrangler config.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
         env = options.env or os.environ.get("CLOUDFLARE_ENV")

@@ -6,6 +6,7 @@ from pyodide import __version__ as pyodide_version
 from pyodide.ffi import JsException, to_js
 from pyodide.http import pyfetch
 
+from ._js import js_body
 from .request import Request
 from .response import Response
 
@@ -37,5 +38,11 @@ async def fetch(
     if isinstance(kwargs.get("method"), HTTPMethod):
         kwargs["method"] = kwargs["method"].value
     send = _pyfetch_0_26 if pyodide_version == "0.26.0a2" else pyfetch
-    response = await send(resource, **kwargs)
+    # The body conversion Request() does: FormData and Blob as their JS
+    # objects, and bytes lent as a buffer while the request is sent.
+    body = kwargs.pop("body", None)
+    with js_body(body) as converted:
+        if body is not None:
+            kwargs["body"] = converted
+        response = await send(resource, **kwargs)
     return Response(response.js_response)

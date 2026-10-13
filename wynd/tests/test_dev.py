@@ -447,3 +447,50 @@ def test_resolution_excludes_the_sdk_the_project_did_not_choose(
     (compile_args,) = tools.uv("pip", "compile")
     excludes = root / compile_args[compile_args.index("--excludes") + 1]
     assert excludes.read_text().split() == [excluded]
+
+
+def test_a_bare_toml_date_chooses_the_target(
+    tools: Tools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_project(tmp_path / "toml")
+    (root / "wrangler.toml").write_text(
+        'main = "src/entry.py"\n'
+        "compatibility_date = 2025-10-01\n"
+        'compatibility_flags = ["python_workers"]\n'
+    )
+    monkeypatch.chdir(root)
+
+    assert main(["sync"]) == 0
+
+    assert interpreter(tools) == "cpython-3.13.2-emscripten-wasm32-musl"
+
+
+def test_a_local_source_is_reinstalled_on_every_sync(
+    tools: Tools, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WYND_TEST_PYLOCK", PYLOCK_WITH_LOCAL_PACKAGE)
+
+    main(["sync"])
+    main(["sync"])
+
+    # Edits inside ../mylib change no input the sync token hashes.
+    assert len(tools.uv("pip", "install")) == 2
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [["--compatibility-date", "2026-09-08"], ["--compatibility-flags=x"], ["--latest"]],
+)
+@pytest.mark.parametrize("command", ["dev", "deploy"])
+def test_flags_that_change_the_target_are_refused(
+    tools: Tools,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    flags: list[str],
+) -> None:
+    assert main([command, *flags]) == 1
+
+    assert "compatibility_date" in capsys.readouterr().err
+    assert tools.uv() == []
+    assert tools.wrangler() == []
