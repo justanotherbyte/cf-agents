@@ -15,6 +15,30 @@ to check its decisions, and how to keep a module it can't see.
   that Wrangler uploaded.
 - `[tool.wynd] keep` adds modules Wynd can't find by reading imports.
 
+> **Warning**
+>
+> The pruner is in early alpha. Its rules will change often between releases,
+> and an upgrade can change which files your Worker uploads. Run
+> `uvx wynd deploy --dry-run` after you upgrade Wynd, and test the deployed
+> Worker before you rely on it.
+>
+> It works best today for Workers whose dependencies are mostly pure Python
+> and ship tests, docs, type stubs or submodules you don't import. A minimal
+> crosswind-workers Worker uploads 27% fewer bytes. It saves little when
+> compiled extensions make up most of the bytes, because it keeps each
+> extension whole. A FastAPI Worker, where `pydantic_core` is most of the
+> upload, saves about 2%.
+>
+> These improvements are planned:
+>
+> - Dropping unused functions and classes from the modules it keeps. Today it
+>   removes only whole files.
+> - Minifying the Python files it keeps.
+> - Tracing which imports run, to find modules imported by names built at
+>   runtime that it now drops unless you list them in `keep`.
+> - Running the pruned tree under `wynd dev`, so you can test it before you
+>   deploy.
+
 ## See what pruning removes
 
 ```sh

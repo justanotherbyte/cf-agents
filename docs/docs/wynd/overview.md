@@ -47,6 +47,12 @@ Every other command, such as `wynd login`, `wynd tail` or
 
 ## What pruning saves
 
+> **Warning**
+>
+> The pruner is in early alpha, and its rules will change often between
+> releases. [Prune the upload](pruning.md) says what it handles well today
+> and what's planned.
+
 Pruning drops Python files that nothing imports, plus tests, docs and type
 stubs. It copies every file it keeps byte for byte, and keeps compiled
 extensions and data files whole. How much it saves depends on your packages:
