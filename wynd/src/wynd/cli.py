@@ -6,6 +6,7 @@ from pathlib import Path
 from . import wrangler
 from .host import warn_on_venv_mismatch
 from .project import WyndError, load_project
+from .shake import ShakePlan
 from .stage import stage
 from .sync import select_sdk, sync
 from .targets import select_target
@@ -47,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     flow = _flow(rest)
     if flow == "passthrough":
         return wrangler.run(args)
+
     if flow in ("dev", "upload") and (
         options.compatibility_date or options.compatibility_flags or options.latest
     ):
@@ -57,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+
     try:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
         env = options.env or os.environ.get("CLOUDFLARE_ENV")
@@ -72,15 +75,12 @@ def main(argv: list[str] | None = None) -> int:
     except WyndError as error:
         print(f"wynd: error: {error}", file=sys.stderr)
         return 1
+
     if flow == "sync":
         return 0
     if staged is not None:
-        path, plan = staged
-        if "--dry-run" in rest:
-            # Flushed, so it comes before Wrangler's output in a pipe.
-            print(f"wynd: {plan.size_report()}", flush=True)
-        _, rest = _config_parser.parse_known_args(args)
-        return wrangler.run([*rest, "--config", str(path)])
+        return _upload(args, rest, *staged)
+
     warn_on_venv_mismatch(project, target)
     return wrangler.run(args)
 
@@ -92,6 +92,7 @@ def _flow(rest: list[str]) -> str:
     # A known name, not the second word, because a flag's value can come first.
     known = SUBCOMMANDS.get(command, set())
     subcommand = next((word for word in words[1:] if word in known), "")
+
     if (
         command == "deploy"
         or (command == "versions" and subcommand == "upload")
@@ -99,3 +100,13 @@ def _flow(rest: list[str]) -> str:
     ):
         return "upload"
     return command if command in ("dev", "sync", "types") else "passthrough"
+
+
+def _upload(args: list[str], rest: list[str], path: Path, plan: ShakePlan) -> int:
+    """Run Wrangler on the staged config in place of the project's."""
+    if "--dry-run" in rest:
+        # Flushed, so it comes before Wrangler's output in a pipe.
+        print(f"wynd: {plan.size_report()}", flush=True)
+
+    _, rest = _config_parser.parse_known_args(args)
+    return wrangler.run([*rest, "--config", str(path)])

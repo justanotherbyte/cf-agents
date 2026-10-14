@@ -19,6 +19,7 @@ def run(args: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+
     process = subprocess.Popen([npx, "--yes", f"wrangler@{VERSION}", *args])
     # Ignore Ctrl-C after spawning, so Wrangler gets it from the terminal and
     # shuts down in its own time instead of being killed by subprocess.
@@ -27,5 +28,6 @@ def run(args: list[str]) -> int:
         code = process.wait()
     finally:
         signal.signal(signal.SIGINT, previous)
+
     # Popen reports death by signal N as -N. A shell reports 128 + N.
     return 128 - code if code < 0 else code

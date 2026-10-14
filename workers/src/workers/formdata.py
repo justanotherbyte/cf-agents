@@ -83,10 +83,10 @@ def _to_js(value: Any) -> Any:
     return value.js_object if isinstance(value, Blob) else value
 
 
+# The Python wrapper for each JS value FormData can hold besides a string.
+_WRAPPERS: dict[str | None, type[Blob]] = {"File": File, "Blob": Blob}
+
+
 def _to_python(value: Any) -> Any:
-    name = js_name(value)
-    if name == "File":
-        return File(value)
-    if name == "Blob":
-        return Blob(value)
-    return value
+    wrapper = _WRAPPERS.get(js_name(value))
+    return value if wrapper is None else wrapper(value)

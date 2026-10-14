@@ -58,11 +58,13 @@ class _Entrypoint:
         if "__init__" in cls.__dict__:
             init = _init_with_wrapped_args(cls.__dict__["__init__"])
             setattr(cls, "__init__", init)  # noqa: B010 (ty rejects the plain assignment)
+
         # A handler the user names on_<name> for old dates converts too.
         for name in (*cls._raw_handlers, *(f"on_{n}" for n in cls._raw_handlers)):
             handler = getattr(cls, name, None)
             if handler is not None and handler not in _CONVERTING | _ALIASES:
                 setattr(cls, name, _converting(handler))
+
         # The alias looks the handler up on each call, so it follows subclass
         # overrides and is set once. An on_<name> the user defines wins.
         for name in cls._legacy_names:
@@ -77,6 +79,7 @@ def _wrap_ctx_and_env(cls: type[_Entrypoint], ctx: Any, env: Any) -> tuple[Any, 
         _pyodide_entrypoint_helper.patchWaitUntil(ctx)
         if cls._context_class is not None:
             ctx = cls._context_class(ctx)
+
     return ctx, _EnvWrapper(env)
 
 
@@ -174,6 +177,7 @@ def handler(func: Callable[..., Any]) -> Callable[..., Any]:
             args = (Request(args[0]), *args[1:])
         if len(args) > 1:
             args = (args[0], _EnvWrapper(args[1]), *args[2:])
+
         return func(*args, **kwargs)
 
     return wrapper

@@ -18,11 +18,13 @@ def python_from_rpc(obj: Any) -> Any:
     """Convert a value workerd received over RPC to Python, as the stock SDK does."""
     if obj is jsnull:
         return None
+
     name = js_name(obj)
     if name is None:
         return obj
     if name == "TestController":
         return None
+
     return _null_to_none(obj.to_py(default_converter=_default_from_js))
 
 
@@ -31,6 +33,7 @@ def python_to_rpc(value: Any) -> Any:
     value = _none_to_null(value)
     if value is jsnull:
         return value
+
     # to_js converts some containers without asking the default converter.
     _refuse_unsendable(value)
     return to_js(
@@ -94,6 +97,7 @@ def _refuse_unsendable(value: Any) -> None:
     # A wrapper is sent as its JS object, and callables as proxies.
     if hasattr(value, "js_object") or (callable(value) and not isinstance(value, type)):
         return
+
     if js_name(value) == "RegExp":
         raise TypeError(f"{value.constructor.name} cannot be sent over RPC.")
     if isinstance(value, (tuple, bytearray)):
@@ -102,10 +106,12 @@ def _refuse_unsendable(value: Any) -> None:
         raise TypeError(f"Awaitable {type(value)} cannot be sent over RPC.")
     if isinstance(value, (str, bytes)):
         return
+
     try:
         items = iter(value.values() if isinstance(value, dict) else value)
     except TypeError:
         return
+
     # Iterating an iterator such as a generator would empty it before it is
     # sent, which the stock SDK does. A container gives a fresh iterator.
     if items is value:
@@ -124,6 +130,7 @@ def _default_to_js(value: Any, converter: Any, cache: Any) -> Any:
     if callable(value) and not isinstance(value, type):
         # A persistent proxy, so the receiver can call it after this returns.
         return create_proxy(value)
+
     _refuse_unsendable(value)
     return value
 

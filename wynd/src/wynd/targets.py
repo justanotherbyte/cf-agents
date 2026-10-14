@@ -14,6 +14,10 @@ class Target:
     interpreter: str
     index: str
 
+    def matches(self, flags: tuple[str, ...], day: date) -> bool:
+        """Whether a config with these flags and date runs this Python."""
+        return self.flag in flags or (self.since is not None and day >= self.since)
+
 
 # Copied from pywrangler at cb2db3c (metadata.py and utils.py), newest first.
 TARGETS = (
@@ -47,6 +51,7 @@ def select_target(project: Project) -> Target:
         f"{project.config_path.name} has compatibility_date "
         f"{project.compatibility_date!r} and compatibility_flags {list(flags)}"
     )
+
     if project.compatibility_date is None:
         raise WyndError(f"{found}. Set a compatibility_date.")
     if "python_workers" not in flags:
@@ -55,7 +60,8 @@ def select_target(project: Project) -> Target:
         day = datetime.strptime(project.compatibility_date, "%Y-%m-%d").date()
     except ValueError:
         raise WyndError(f"{found}. Write the date as YYYY-MM-DD.") from None
+
     for target in TARGETS:
-        if target.flag in flags or (target.since is not None and day >= target.since):
+        if target.matches(flags, day):
             return target
     raise AssertionError("the 3.12 row matches every python_workers config")

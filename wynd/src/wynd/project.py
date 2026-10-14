@@ -72,21 +72,17 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
     root = _find_up(cwd, "pyproject.toml")
     if root is None:
         raise WyndError(f"no pyproject.toml in {cwd} or any parent directory")
+
     config_path = cwd / config if config else _find_config(cwd)
-    raw = settings = _read(config_path)
-    envs = settings.get("env") or {}
-    # Without any env table, Wrangler warns and uses the top level, as Wynd does.
-    if env is not None and envs:
-        if env not in envs:
-            raise WyndError(f"{config_path.name} has no environment named {env!r}")
-        # An environment's value replaces the top-level one; nothing merges.
-        inherited = {key: settings[key] for key in INHERITED if key in settings}
-        settings = {**inherited, **envs[env]}
+    raw = _read(config_path)
+    settings = _environment(raw, env, config_path.name)
+
     pyproject = _read(root / "pyproject.toml")
     wynd = pyproject.get("tool", {}).get("wynd", {})
     keep = wynd.get("keep", [])
     if not isinstance(keep, list) or not all(isinstance(k, str) for k in keep):
         raise WyndError("[tool.wynd] keep must be a list of module names")
+
     date = settings.get("compatibility_date")
     return Project(
         root=root,
@@ -102,6 +98,20 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         allow_build=bool(wynd.get("allow-build")),
         keep=tuple(keep),
     )
+
+
+def _environment(config: dict[str, Any], env: str | None, name: str) -> dict[str, Any]:
+    """The chosen environment's table over the top-level keys it inherits."""
+    envs = config.get("env") or {}
+    # Without any env table, Wrangler warns and uses the top level, as Wynd does.
+    if env is None or not envs:
+        return config
+    if env not in envs:
+        raise WyndError(f"{name} has no environment named {env!r}")
+
+    # An environment's value replaces the top-level one; nothing merges.
+    inherited = {key: config[key] for key in INHERITED if key in config}
+    return {**inherited, **envs[env]}
 
 
 def _find_up(start: Path, name: str) -> Path | None:

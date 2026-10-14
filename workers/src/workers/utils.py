@@ -7,6 +7,12 @@ from pyodide.ffi import JsException
 
 __all__ = ["import_from_javascript", "patch_env"]
 
+# JS modules workerd imports ahead of time, by the helper attribute holding each.
+_PRELOADED = {
+    "cloudflare:workers": "cloudflareWorkersModule",
+    "cloudflare:sockets": "cloudflareSocketsModule",
+}
+
 
 def import_from_javascript(module_name: str) -> Any:
     """Import a JS module, such as "cloudflare:sockets", from Python.
@@ -15,10 +21,9 @@ def import_from_javascript(module_name: str) -> Any:
     so they work everywhere. Any other module goes through run_sync, which
     Python 3.12 Workers lack. On 3.13 and 3.14 it works at top level too.
     """
-    if module_name == "cloudflare:workers":
-        return _pyodide_entrypoint_helper.cloudflareWorkersModule
-    if module_name == "cloudflare:sockets":
-        return _pyodide_entrypoint_helper.cloudflareSocketsModule
+    if module_name in _PRELOADED:
+        return getattr(_pyodide_entrypoint_helper, _PRELOADED[module_name])
+
     failed = f"Failed to import '{module_name}'"
     try:
         from pyodide.ffi import run_sync
@@ -27,6 +32,7 @@ def import_from_javascript(module_name: str) -> Any:
             f"{failed}: Only 'cloudflare:workers' and 'cloudflare:sockets' are "
             "available until the next python runtime version."
         ) from error
+
     try:
         return run_sync(_pyodide_entrypoint_helper.doAnImport(module_name))
     except JsException as error:

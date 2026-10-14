@@ -114,6 +114,7 @@ class DurableObjectStorage(Binding):
             "allow_unconfirmed": allow_unconfirmed,
             "no_cache": no_cache,
         }
+
         if isinstance(key_or_entries, str):
             if not 1 <= len(args) <= 2:
                 raise TypeError("put(key, value[, options]) needs a value")
@@ -223,8 +224,7 @@ class DurableObjectContext(_RawContext):
         Python has unwound. DurableObjectAbort stops the caller's code first.
         """
         ctx = self.js_object
-        if reason is None:
-            js.queueMicrotask(create_once_callable(lambda: ctx.abort()))
-        else:
-            js.queueMicrotask(create_once_callable(lambda: ctx.abort(reason)))
+        args = () if reason is None else (reason,)
+        js.queueMicrotask(create_once_callable(lambda: ctx.abort(*args)))
+
         raise DurableObjectAbort(reason or "Durable Object abort requested")

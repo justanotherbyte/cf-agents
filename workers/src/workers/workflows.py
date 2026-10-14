@@ -103,33 +103,45 @@ class WorkflowStep(Binding):
     ) -> list[Step]:
         """The steps whose results fill the parameters other than ctx."""
         others = [p for p in parameters if p != "ctx"]
-        if implicit:
-            for parameter in others:
-                if parameter not in self._steps:
-                    raise TypeError(f"Received unexpected parameter {parameter}")
-            return [self._steps[p] for p in others]
+        if not implicit:
+            return self._listed_dependencies(others, depends)
+
+        for parameter in others:
+            if parameter not in self._steps:
+                raise TypeError(f"Received unexpected parameter {parameter}")
+
+        return [self._steps[p] for p in others]
+
+    def _listed_dependencies(
+        self, others: list[str], depends: list[Step] | None
+    ) -> list[Step]:
+        """The steps `depends` lists, checked against the parameters they fill."""
         if depends is None and others:
             raise TypeError(
                 f"Step has {len(others)} non-ctx parameter(s) but no 'depends' "
                 "list provided"
             )
         depends = list(depends or [])
+
         if len(depends) != len(others):
             raise TypeError(
                 f"Step declares {len(others)} non-ctx parameter(s) but 'depends' "
                 f"has {len(depends)} item(s)"
             )
+
         for parameter, dependency in zip(others, depends, strict=True):
             if dependency not in self._steps.values():
                 raise TypeError(
                     f"'depends' entry for parameter {parameter!r} is not a "
                     "function decorated with step.do"
                 )
+
         return depends
 
     async def _resolve(self, dependency: Step) -> Any:
         if dependency in self._results:
             return self._results[dependency]
+
         # Registered before awaiting, so a concurrent branch reuses this run.
         if dependency not in self._in_flight:
             self._in_flight[dependency] = create_task(dependency())
@@ -149,17 +161,20 @@ class WorkflowStep(Binding):
             args = [
                 python_from_rpc(ctx) if p == "ctx" else next(given) for p in parameters
             ]
+
             try:
                 result = func(*args)
                 if inspect.isawaitable(result):
                     result = await result
             except NonRetryableError as error:
                 return _rejecting_thenable(error)
+
             # The result crosses RPC back to the Workflows engine.
             return python_to_rpc(result)
 
         async def call() -> Any:
             args = [name] if config is None else [name, _js_object(config)]
+
             try:
                 return python_from_rpc(await self.js_object.do(*args, callback))
             except JsException as error:
@@ -174,6 +189,7 @@ class WorkflowStep(Binding):
             self._results[key] = result = await task
         finally:
             self._in_flight.pop(key, None)
+
         return result
 
 
@@ -188,9 +204,11 @@ def wrap_run(run: Callable[..., Any]) -> Callable[..., Any]:
             event = python_from_rpc(event)
         if step is not None:
             step = WorkflowStep(step)
+
         result = run(self, event, step, *args, **kwargs)
         if inspect.isawaitable(result):
             result = await result
+
         return None if result is None else python_to_rpc(result)
 
     return wrapped
@@ -209,29 +227,39 @@ def _rejecting_thenable(error: NonRetryableError) -> Any:
     )
 
 
+# The Python exception for a traceback's last line, by the line's prefix.
+_TRACEBACK_ERRORS: dict[str, type[Exception]] = {
+    "TypeError": TypeError,
+    "ValueError": ValueError,
+    "workers.workflows.NonRetryableError": NonRetryableError,
+}
+
+# The Python exception for a JS error, by the error's name.
+_JS_ERRORS: dict[str | None, type[Exception]] = {
+    "RangeError": ValueError,
+    "TypeError": TypeError,
+}
+
+
 def _python_error(error: JsException) -> Exception:
     """The Python exception for a step error the engine rethrew."""
     message = error.message or ""
+
     # The name survives the engine, or is folded into the message.
     if error.name == NON_RETRYABLE:
         return NonRetryableError(message)
     if message == NON_RETRYABLE or message.startswith(f"{NON_RETRYABLE}: "):
         return NonRetryableError(message[len(NON_RETRYABLE) + 2 :])
+
     # A Python exception that escaped a step comes back as a PythonError whose
     # message is the traceback, ending with the exception's own line.
     lines = message.rstrip().split("\n")
     if len(lines) > 1 and (
         error.name == "PythonError" or message.startswith("PythonError")
     ):
-        last = lines[-1]
-        if last.startswith("TypeError"):
-            return TypeError(last)
-        if last.startswith("ValueError"):
-            return ValueError(last)
-        if last.startswith("workers.workflows.NonRetryableError"):
-            return NonRetryableError(last)
-    if error.name == "RangeError":
-        return ValueError(message)
-    if error.name == "TypeError":
-        return TypeError(message)
-    return error
+        for prefix, error_type in _TRACEBACK_ERRORS.items():
+            if lines[-1].startswith(prefix):
+                return error_type(lines[-1])
+
+    error_type = _JS_ERRORS.get(error.name)
+    return error if error_type is None else error_type(message)

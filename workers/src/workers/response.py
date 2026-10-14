@@ -99,13 +99,16 @@ class FetchResponse(BodyMixin, pyodide.http.FetchResponse):
         headers: "Headers | None" = None,
     ) -> "Response":
         options = Response._create_options(status, status_text, headers)
+
         with python_errors():
             if isinstance(data, JsProxy):
                 return Response(js.Response.json(data, **options))
+
             if "headers" not in options:
                 options["headers"] = to_js_headers({"content-type": "application/json"})
             elif not options["headers"].has("content-type"):
                 options["headers"].set("content-type", "application/json")
+
             return Response(js.Response.new(json.dumps(data), **options))
 
     # A descriptor where Pyodide has a method, so ty reports the override.
@@ -130,6 +133,7 @@ class Response(FetchResponse):
         elif not isinstance(body, (str, bytes, FormData, Blob)) and body is not None:
             # The stock SDK also rejects a Blob.
             raise TypeError(f"Unsupported type in Response: {type(body).__name__}")
+
         if name == "Response":
             if status is not None or status_text or headers is not None:
                 raise ValueError(
@@ -138,6 +142,7 @@ class Response(FetchResponse):
             js_response: Any = body
             super().__init__(js_response.url, js_response)
             return
+
         options = self._create_options(status, status_text, headers, web_socket)
         with js_body(body) as converted:
             js_response = js.Response.new(converted, **options)
@@ -153,6 +158,7 @@ class Response(FetchResponse):
             parts.append(f"url={self.js_object.url!r}")
         if self.js_object.type != "default":
             parts.append(f"type={self.js_object.type!r}")
+
         return f"Response({', '.join(parts)})"
 
     @staticmethod
@@ -171,4 +177,5 @@ class Response(FetchResponse):
             options["headers"] = to_js_headers(headers)
         if web_socket:
             options["webSocket"] = web_socket
+
         return options

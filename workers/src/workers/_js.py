@@ -51,6 +51,7 @@ def lend_buffer(value: Any) -> Generator[Any]:
     """A JS view of a Python buffer, without a copy, valid inside the block."""
     proxy = create_proxy(value)
     buffer = proxy.getBuffer()
+
     try:
         yield buffer.data
     finally:
@@ -103,15 +104,18 @@ def headers_to_message(js_headers: Any) -> HTTPMessageMapping:
     # Newer Pyodide versions already expose headers as an HTTPMessage.
     if isinstance(js_headers, HTTPMessageMapping):
         return js_headers
+
     result = HTTPMessageMapping()
     if not compat_flag("python_request_headers_preserve_commas"):
         for key, value in js_headers:
             result[key] = value.strip()
         return result
+
     # JS joins duplicate headers with commas, except Set-Cookie.
     for value in js_headers.getSetCookie() or ():
         result.add_header("Set-Cookie", value.strip())
     for key, value in js_headers:
         if key.lower() != "set-cookie":
             result.add_header(key, value.strip())
+
     return result

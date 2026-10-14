@@ -24,11 +24,13 @@ class Request(BodyMixin):
                 )
             self._js_request: Any = input
             return
+
         js_options: dict[str, Any] = dict(options)
         if isinstance(js_options.get("method"), HTTPMethod):
             js_options["method"] = js_options["method"].value
         if "headers" in js_options:
             js_options["headers"] = to_js_headers(js_options["headers"])
+
         body = js_options.pop("body", None)
         with js_body(body) as converted:
             if body is not None:

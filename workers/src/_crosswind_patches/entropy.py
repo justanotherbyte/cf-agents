@@ -68,6 +68,7 @@ def rust_package_context(module):
     if STATE.imported_rust_package:
         yield
         return
+
     STATE.imported_rust_package = True
     with allow_bad_entropy_calls(1):
         yield

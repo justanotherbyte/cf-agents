@@ -66,6 +66,10 @@ class ShakePlan:
             for name, reason in names.items()
         )
 
+    def record(self, name: str, kept: bool, reason: str) -> None:
+        """Keep or drop a file of `site`, with the reason."""
+        (self.kept if kept else self.dropped)[name] = reason
+
     def copy_kept(self, target: Path) -> None:
         """Copy the kept files into `target` at the same relative paths."""
         for name in self.kept:
@@ -80,10 +84,12 @@ def shake(site: Path, source: Path, entry: Path, keep: tuple[str, ...]) -> Shake
     """Decide which files of `site` the Worker in `source` can import."""
     entry_name = ".".join(entry.relative_to(source).with_suffix("").parts)
     plan = _Shaker(site, source).run(entry_name, keep)
+
     # Without it nothing the Worker imports is kept, and the upload would fail
     # at import.
     if entry_name in plan.unresolved:
         plan.errors.append(f"entry module {entry_name} has no file in {source}")
+
     return plan
 
 
@@ -102,8 +108,10 @@ class _Shaker:
         self.queue.append((entry_name, "entry module", Kind.MODULE))
         self.queue += [(name, "keep list", Kind.MODULE) for name in keep]
         self.queue += self._pth_roots()
+
         while self.queue:
             self._visit(*self.queue.popleft())
+
         self._decide_files()
         self._check_binaries()
         return self.plan
@@ -111,17 +119,20 @@ class _Shaker:
     def _visit(self, name: str, reason: str, kind: Kind) -> None:
         if (name, kind) in self.seen:
             return
+
         if kind is Kind.PREFIX:
             self.seen.add((name, kind))
             modules = _prefixed(name, self.roots)
             self.queue += [(module, reason, Kind.MODULE) for module in modules]
             return
+
         parent = name if kind is Kind.STAR else name.rpartition(".")[0]
         # Python imports a module's packages first.
         if parent and (parent, Kind.MODULE) not in self.seen:
             self.queue.appendleft((name, reason, kind))
             self.queue.appendleft((parent, f"package of {name}", Kind.MODULE))
             return
+
         self.seen.add((name, kind))
         if kind is Kind.STAR:
             self._visit_star(name, reason)
@@ -135,13 +146,16 @@ class _Shaker:
 
     def _visit_module(self, name: str, parent: str, reason: str, kind: Kind) -> None:
         path = None if parent in self.missing else _find(name, self.roots)
+
         if path is None:
             self.missing.add(name)
             if kind is Kind.MODULE and parent not in self.missing:
                 self.plan.unresolved.setdefault(name, reason)
             return
+
         if path.is_file() and path.is_relative_to(self.site):
             self.plan.kept.setdefault(path.relative_to(self.site).as_posix(), reason)
+
         package = name if path.name == "__init__.py" or path.is_dir() else parent
         for imported, why, imported_kind in _imports(_parse(path), package):
             self.queue.append((imported, f"imported by {name}{why}", imported_kind))
@@ -159,6 +173,7 @@ class _Shaker:
                     )
                 for name in imported or []:
                     roots.append((name, f"imported by {pth.name}", Kind.MODULE))
+
         return roots
 
     def _decide_files(self) -> None:
@@ -167,20 +182,21 @@ class _Shaker:
         files = sorted(p.relative_to(site) for p in site.rglob("*") if p.is_file())
         kept_packages = {Path(name).parts[0] for name in plan.kept}
         metadata = [f for f in files if f.parts[0].endswith(".dist-info")]
+
         decisions = [
             (file, *_decide(file, kept_packages))
             for file in files
             if file.as_posix() not in plan.kept and file not in metadata
         ]
         for file, kept, reason in decisions:
-            (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
+            plan.record(file.as_posix(), kept, reason)
+
         # Metadata goes last, once every other file has its decision.
         dists = {
             d: _metadata(site / d, plan.kept) for d in {f.parts[0] for f in metadata}
         }
         for file in metadata:
-            kept, reason = dists[file.parts[0]]
-            (plan.kept if kept else plan.dropped)[file.as_posix()] = reason
+            plan.record(file.as_posix(), *dists[file.parts[0]])
 
     def _check_binaries(self) -> None:
         """Fail the build for every kept .so that isn't WebAssembly."""
@@ -191,6 +207,7 @@ class _Shaker:
                 head = file.read(4)
             if head.startswith(WASM):
                 continue
+
             kind = next(
                 (k for m, k in HOST_BINARIES.items() if head.startswith(m)), None
             )
@@ -204,10 +221,12 @@ def _pth_imports(line: str) -> list[str] | None:
     """The modules a .pth line imports, or None if it does anything else."""
     if not line.strip() or line.startswith("#"):
         return []
+
     try:
         (statement,) = ast.parse(line).body
     except (SyntaxError, ValueError):
         return None
+
     if not isinstance(statement, ast.Import):
         return None
     return [alias.name for alias in statement.names]
@@ -221,15 +240,18 @@ def _decide(file: Path, kept_packages: set[str]) -> tuple[bool, str]:
         return False, "type stub"
     if file.name == "py.typed":
         return False, "typing marker"
+
     for part in file.parts[:-1]:
         if part in ("tests", "test"):
             return False, "tests"
         if part in ("docs", "doc"):
             return False, "docs"
+
     if file.suffix == ".py":
         return False, "not imported"
     if len(file.parts) == 1:
         return False, "outside any package"
+
     # Packages load data by computed paths, such as tzdata's zone files, so a
     # kept package keeps the data files anywhere in its tree.
     package = file.parts[0]
@@ -244,9 +266,11 @@ def _metadata(dist_info: Path, kept: dict[str, str]) -> tuple[bool, str]:
     record = dist_info / "RECORD"
     if not record.is_file():
         return True, f"metadata of {dist}, which has no RECORD"
+
     with record.open(newline="") as file:
         if any(row and row[0] in kept for row in csv.reader(file)):
             return True, f"metadata of {dist}, which keeps a file"
+
     return False, f"metadata of {dist}, which keeps no file"
 
 
@@ -254,6 +278,7 @@ def _parse(path: Path) -> ast.Module:
     """A module's syntax tree, empty for an extension or code that won't compile."""
     if path.suffix != ".py":
         return ast.Module(body=[], type_ignores=[])
+
     try:
         return ast.parse(path.read_bytes())
     except (SyntaxError, ValueError):
@@ -273,6 +298,7 @@ def _find(name: str, roots: tuple[Path, ...]) -> Path | None:
         for candidate in [*extensions, directory / f"{last}.py"]:
             if candidate.is_file():
                 return candidate
+
     # A directory without __init__.py is a namespace package, the last resort.
     return next((d for r in roots if (d := r.joinpath(*parents, last)).is_dir()), None)
 
@@ -283,6 +309,7 @@ def _prefixed(name: str, roots: tuple[Path, ...]) -> list[str]:
     path = _find(package, roots)
     if path is None or (path.is_file() and path.name != "__init__.py"):
         return []
+
     directory = path if path.is_dir() else path.parent
     modules = []
     for file in sorted(directory.rglob("*")):
@@ -294,6 +321,7 @@ def _prefixed(name: str, roots: tuple[Path, ...]) -> list[str]:
             parts.pop()
         if parts and parts[0].startswith(start):
             modules.append(".".join([package, *parts]))
+
     return modules
 
 
@@ -310,17 +338,26 @@ def _imports(tree: ast.Module, package: str) -> list[tuple[str, str, Kind]]:
         if isinstance(node, ast.Import):
             names += [(alias.name, "", Kind.MODULE) for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
-            base = _resolve_relative(node.module or "", node.level, package)
-            if not base:
-                continue
-            names.append((base, "", Kind.MODULE))
-            for alias in node.names:
-                if alias.name == "*":
-                    names.append((base, "", Kind.STAR))
-                else:
-                    names.append((f"{base}.{alias.name}", "", Kind.MEMBER))
+            names += _from_import(node, package)
         elif isinstance(node, ast.Call) and _is_import_call(node.func) and node.args:
             names += _computed_import(node.args[0], package)
+
+    return names
+
+
+def _from_import(node: ast.ImportFrom, package: str) -> list[tuple[str, str, Kind]]:
+    """The package a `from` import names, and each of its members or its star."""
+    base = _resolve_relative(node.module or "", node.level, package)
+    if not base:
+        return []
+
+    names = [(base, "", Kind.MODULE)]
+    for alias in node.names:
+        if alias.name == "*":
+            names.append((base, "", Kind.STAR))
+        else:
+            names.append((f"{base}.{alias.name}", "", Kind.MEMBER))
+
     return names
 
 
@@ -330,6 +367,7 @@ def _computed_import(argument: ast.expr, package: str) -> list[tuple[str, str, K
         level = len(argument.value) - len(argument.value.lstrip("."))
         base = _resolve_relative(argument.value[level:], level, package)
         return [(base, "", Kind.MODULE)] if base else []
+
     # f"pkg._backends._{name}" or "pkg." + name can name any module that the
     # literal start allows, as pydantic's lazy f".{name}" imports do.
     start = _literal_start(argument)
@@ -338,6 +376,7 @@ def _computed_import(argument: ast.expr, package: str) -> list[tuple[str, str, K
     base = _resolve_relative(head, level, package)
     if not base:
         return []
+
     return [(f"{base}:{rest}", " by a computed name", Kind.PREFIX)]
 
 
@@ -347,11 +386,13 @@ def _literal_start(argument: ast.expr) -> str:
         first = argument.values[0]
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             return first.value
+
     if isinstance(argument, ast.BinOp) and isinstance(argument.op, ast.Add):
         left = argument.left
         if isinstance(left, ast.Constant) and isinstance(left.value, str):
             return left.value
         return _literal_start(left)
+
     return ""
 
 
@@ -389,6 +430,7 @@ def _resolve_relative(module: str, level: int, package: str) -> str | None:
     """The absolute name of a relative import, or None above the top package."""
     if not level:
         return module
+
     parts = package.split(".") if package else []
     if level - 1 >= len(parts):
         return None

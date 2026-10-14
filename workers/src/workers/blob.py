@@ -32,6 +32,7 @@ class Blob:
             if not content_type:
                 content_type = _blob_type(blob_parts)
             blob_parts = [blob_parts]
+
         with _js_parts(blob_parts) as parts:
             self._js_blob = js.Blob.new(
                 parts, type=content_type, endings=str(endings) if endings else None
@@ -85,8 +86,10 @@ class File(Blob):
                 filename = source.name if filename is None else filename
                 last_modified = last_modified or source.lastModified
             blob_parts = [blob_parts]
+
         if filename is None:
             raise TypeError("File() needs a filename unless it wraps a single File")
+
         with _js_parts(blob_parts) as parts:
             self._js_blob = js.File.new(
                 parts,
@@ -109,10 +112,12 @@ def _is_part_list(parts: Any) -> bool:
     # bytes-like values are one part, even though Python can iterate them.
     if isinstance(parts, (str, bytes, bytearray, memoryview)):
         return False
+
     try:
         iter(parts)
     except TypeError:
         return False
+
     return True
 
 

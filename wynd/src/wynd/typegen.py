@@ -58,20 +58,17 @@ def write_env(project: Project, check: bool = False) -> None:
             f"wynd types needs crosswind-workers, because {sdk} has no "
             "workers.bindings."
         )
-    source = project.source_dir
-    config_dir = project.config_path.parent
-    try:
-        entry_path = (config_dir / (project.main or "")).resolve().relative_to(source)
-    except ValueError:
-        raise WyndError(f"main {project.main} is outside {source}") from None
-    entry_module = ".".join(entry_path.with_suffix("").parts)
-    dev_vars = config_dir / ".dev.vars"
+
+    main = _entry_module(project)
+    dev_vars = project.config_path.parent / ".dev.vars"
     secrets = DEV_VARS_KEY.findall(dev_vars.read_text()) if dev_vars.is_file() else []
-    text = render_env(project.settings, secrets, entry_module)
-    path = source / "env.py"
+    text = render_env(project.settings, secrets, main)
+
+    path = project.source_dir / "env.py"
     current = path.read_text() if path.is_file() else None
     if current == text:
         return
+
     name = path.relative_to(project.root.resolve())
     if check:
         raise WyndError(f"{name} is out of date. Run `wynd types` and commit it.")
@@ -80,6 +77,7 @@ def write_env(project: Project, check: bool = False) -> None:
             f"{name} exists and wynd types didn't write it. Rename it, so Wynd "
             "can write the generated Env there."
         )
+
     path.write_text(text)
     print(f"wynd: wrote {name}", flush=True)
 
@@ -90,6 +88,40 @@ def render_env(settings: dict[str, Any], secrets: Iterable[str], main: str) -> s
     `secrets` are the names in .dev.vars and `main` is the entry module's
     dotted name, which defines the project's Durable Object classes.
     """
+    attributes, durable_classes = _attributes(settings, secrets)
+    used = {
+        word
+        for annotation in attributes.values()
+        for word in re.findall(r"\w+", annotation)
+    }
+    durable_classes &= used
+
+    lines = [HEADER, "from __future__ import annotations", ""]
+    lines += _import_lines(used, durable_classes, main)
+    lines += ["", "class Env(Protocol):"]
+    lines += [f"    {name}: {annotation}" for name, annotation in attributes.items()]
+    if not attributes:
+        lines.append("    pass")
+
+    return "\n".join(lines) + "\n"
+
+
+def _entry_module(project: Project) -> str:
+    """The entry module's dotted name below the source directory."""
+    source = project.source_dir
+    main = (project.config_path.parent / (project.main or "")).resolve()
+    try:
+        entry_path = main.relative_to(source)
+    except ValueError:
+        raise WyndError(f"main {project.main} is outside {source}") from None
+
+    return ".".join(entry_path.with_suffix("").parts)
+
+
+def _attributes(
+    settings: dict[str, Any], secrets: Iterable[str]
+) -> tuple[dict[str, str], set[str]]:
+    """Each Env attribute's annotation, and the Durable Object classes named."""
     attributes: dict[str, str] = {}
     durable_classes: set[str] = set()
     for section, name, entry in _bindings(settings):
@@ -107,29 +139,30 @@ def render_env(settings: dict[str, Any], secrets: Iterable[str], main: str) -> s
             annotation = f"{annotation}[{class_name}]"
             durable_classes.add(class_name)
         attributes[name] = annotation
+
     variables = settings.get("vars")
     for name, value in variables.items() if isinstance(variables, dict) else ():
         attributes[name] = _json_type(value)
+
     # A secret replaces a var of the same name, in dev and in production.
     for name in secrets:
         attributes[name] = "str"
-    attributes = {
+
+    valid = {
         name: annotation
         for name, annotation in attributes.items()
         if name.isidentifier() and not keyword.iskeyword(name)
     }
+    return valid, durable_classes
 
-    used = {
-        word
-        for annotation in attributes.values()
-        for word in re.findall(r"\w+", annotation)
-    }
-    durable_classes &= used
+
+def _import_lines(used: set[str], durable_classes: set[str], main: str) -> list[str]:
+    """The import block for the names the annotations use, as ruff writes it."""
     typing_names = {"Protocol", *used & {"Any"}}
     if durable_classes:
         typing_names.add("TYPE_CHECKING")
-    lines = [HEADER, "from __future__ import annotations", ""]
-    lines += [_import("typing", typing_names), ""]
+    lines = [_import("typing", typing_names), ""]
+
     workers_imports = [
         _import(module, names)
         for module, names in [
@@ -140,13 +173,11 @@ def render_env(settings: dict[str, Any], secrets: Iterable[str], main: str) -> s
     ]
     if workers_imports:
         lines += [*workers_imports, ""]
+
     if durable_classes:
         lines += ["if TYPE_CHECKING:", _import(main, durable_classes, "    "), ""]
-    lines += ["", "class Env(Protocol):"]
-    lines += [f"    {name}: {annotation}" for name, annotation in attributes.items()]
-    if not attributes:
-        lines.append("    pass")
-    return "\n".join(lines) + "\n"
+
+    return lines
 
 
 def _bindings(settings: dict[str, Any]) -> Iterator[tuple[str, str, dict[str, Any]]]:
@@ -154,10 +185,12 @@ def _bindings(settings: dict[str, Any]) -> Iterator[tuple[str, str, dict[str, An
     for key, value in settings.items():
         if key in NOT_BINDINGS:
             continue
+
         section = key
         if key in NESTED and isinstance(value, dict):
             section = f"{key}.{NESTED[key]}"
             value = value.get(NESTED[key])
+
         field = "name" if section in NAMED else "binding"
         for entry in value if isinstance(value, list) else [value]:
             if isinstance(entry, dict) and isinstance(entry.get(field), str):
@@ -172,6 +205,7 @@ def _json_type(value: Any) -> str:
         return f"list[{_common_type(value)}]"
     if isinstance(value, dict):
         return f"dict[str, {_common_type(value.values())}]"
+
     return {bool: "bool", int: "int", float: "float", str: "str"}.get(
         type(value), "Any"
     )
@@ -189,8 +223,10 @@ def _import(module: str, names: Iterable[str], indent: str = "") -> str:
         names,
         key=lambda n: (0 if n.isupper() else 1 if n[0].isupper() else 2, n.lower()),
     )
+
     line = f"{indent}from {module} import {', '.join(names)}"
     if len(line) <= 88:
         return line
+
     body = "".join(f"{indent}    {name},\n" for name in names)
     return f"{indent}from {module} import (\n{body}{indent})"

@@ -15,6 +15,7 @@ __all__ = ["select_sdk", "sync"]
 
 SDKS = ("crosswind-workers", "workers-runtime-sdk")
 MIN_UV = (0, 12, 3)
+MIN_UV_TEXT = ".".join(map(str, MIN_UV))
 
 
 def sync(project: Project, target: Target) -> None:
@@ -27,18 +28,22 @@ def sync(project: Project, target: Target) -> None:
         and not any(map(_local_paths, _locked_packages(project)))
     ):
         return
+
     sdk = select_sdk(project.dependencies)
     _check_uv(project)
     _compile(project, target, sdk)
+
     # Install beside python_modules/ and swap it in only once uv succeeds, so a
     # failed install never leaves a half-built tree for Wrangler.
     staging = project.wynd_dir / "site-packages"
     shutil.rmtree(staging, ignore_errors=True)
     _install(project, target, staging)
+
     # --target also writes console scripts, whose shebangs name the host's
     # Pyodide interpreter, and uv's own lock file. Neither belongs in a Worker.
     shutil.rmtree(staging / "bin", ignore_errors=True)
     (staging / ".lock").unlink(missing_ok=True)
+
     shutil.rmtree(project.python_modules, ignore_errors=True)
     shutil.move(staging, project.python_modules)
     token_path.write_text(_token(project, target))
@@ -53,11 +58,13 @@ def select_sdk(dependencies: tuple[str, ...]) -> str:
             "pyproject.toml declares neither crosswind-workers nor "
             "workers-runtime-sdk. Add one to [project] dependencies."
         )
+
     if len(declared) > 1:
         raise WyndError(
             "pyproject.toml declares both crosswind-workers and "
             "workers-runtime-sdk. Keep one."
         )
+
     return declared[0]
 
 
@@ -78,6 +85,7 @@ def _token(project: Project, target: Target) -> str:
         project.compatibility_flags,
         version("wynd"),
     ]
+
     return hashlib.sha256(json.dumps(inputs).encode()).hexdigest()
 
 
@@ -93,7 +101,7 @@ def _check_uv(project: Project) -> None:
     match = re.match(r"uv (\d+)\.(\d+)\.(\d+)", output)
     if match is None or tuple(map(int, match.groups())) < MIN_UV:
         raise WyndError(
-            f"Wynd needs uv {'.'.join(map(str, MIN_UV))} or later, "
+            f"Wynd needs uv {MIN_UV_TEXT} or later, "
             f"found {output.strip()!r}. "
             "Update with `uv self update`."
         )
@@ -104,12 +112,14 @@ def _compile(project: Project, target: Target, sdk: str) -> None:
     excludes = project.wynd_dir / "excludes.txt"
     excludes.parent.mkdir(exist_ok=True)
     excludes.write_text("".join(f"{name}\n" for name in SDKS if name != sdk))
+
     args = ["pip", "compile", "pyproject.toml", "--python", target.interpreter]
     args += ["--excludes", str(excludes.relative_to(project.root))]
     args += ["--extra-index-url", target.index, "--index-strategy", "unsafe-best-match"]
     args += ["--no-header", "-o", "pylock.toml"]
     if not project.allow_build:
         args.append("--no-build")
+
     _uv(project, *args)
 
 
@@ -119,6 +129,7 @@ def _install(project: Project, target: Target, staging: Path) -> None:
     args = ["pip", "install", "--target", str(staging), "--python", target.interpreter]
     if not project.allow_build:
         args += ["--only-binary", ":all:"]
+
     for package in _locked_packages(project):
         paths = _local_paths(package)
         if not paths:
@@ -128,6 +139,7 @@ def _install(project: Project, target: Target, staging: Path) -> None:
         if not project.allow_build and not all(p.endswith(".whl") for p in paths):
             args += ["--no-binary", package["name"]]
         args += ["--refresh-package", package["name"]]
+
     args += ["-r", "pylock.toml", "--preview-features", "pylock"]
     _uv(project, *args)
 
@@ -148,9 +160,8 @@ def _local_paths(package: dict[str, Any]) -> list[str]:
 def _uv(project: Project, *args: str) -> str:
     uv = shutil.which("uv")
     if uv is None:
-        raise WyndError(
-            f"uv not found on PATH. Install uv {'.'.join(map(str, MIN_UV))} or later."
-        )
+        raise WyndError(f"uv not found on PATH. Install uv {MIN_UV_TEXT} or later.")
+
     result = subprocess.run(
         [uv, *args],
         check=False,
@@ -162,4 +173,5 @@ def _uv(project: Project, *args: str) -> str:
         raise WyndError(
             f"uv {' '.join(args[:2])} failed:\n{result.stderr}{result.stdout}"
         )
+
     return result.stdout

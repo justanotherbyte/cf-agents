@@ -31,20 +31,24 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
     config = _staged_config(project)
     config_dir = project.config_path.parent
     source = _source_dir(project)
+
     # Resolved, so "src/sub/../entry.py" names the module entry.
     root = config_dir.resolve()
     entry = (root / (project.main or "")).resolve()
     plan = shake(project.python_modules, root / source, entry, project.keep)
     if plan.errors:
         raise WyndError("\n".join(plan.errors))
+
     build = project.wynd_dir / "build"
     shutil.rmtree(build, ignore_errors=True)
     shutil.copytree(config_dir / source, build / source)
     plan.copy_kept(build / "python_modules")
     (project.wynd_dir / "shake.txt").write_text(plan.log())
+
     staged = build / "wrangler.json"
     # default=str writes TOML dates the way Wrangler reads them.
     staged.write_text(json.dumps(config, indent=2, default=str))
+
     return staged, plan
 
 
@@ -52,6 +56,7 @@ def _staged_config(project: Project) -> dict[str, Any]:
     """The project's config with its paths pointed back at the project."""
     config = copy.deepcopy(project.config)
     _rewrite(config, project.config_path.parent)
+
     # shortcut: only "./" and "../" values count as relative paths, so a bare
     # "public" under an unknown key slips through. Upgrade if Wrangler adds one.
     unknown = list(_relative_paths(config, ""))
@@ -61,6 +66,7 @@ def _staged_config(project: Project) -> dict[str, Any]:
             f"{', '.join(unknown)}, which Wynd can't point back at the project "
             "from .wynd/build/. Use an absolute path."
         )
+
     return config
 
 
@@ -68,6 +74,7 @@ def _source_dir(project: Project) -> Path:
     """The module root, relative to the config directory."""
     source = project.source_dir
     config_dir = project.config_path.parent.resolve()
+
     # A source holding .wynd/ would be copied into itself.
     if (
         source == config_dir
@@ -80,6 +87,7 @@ def _source_dir(project: Project) -> Path:
             f"{project.config_path.name}, such as src/, so Wynd can stage the "
             "source without the rest of the project."
         )
+
     return source.relative_to(config_dir)
 
 
@@ -90,6 +98,7 @@ def _rewrite(section: dict[str, Any], base: Path) -> None:
             for field in fields:
                 if field in table:
                     table[field] = _absolute(table[field], base)
+
     for container in _tables(section.get("containers")):
         image = container.get("image")
         # Wrangler builds an image that names a file and pulls anything else. A
@@ -98,19 +107,21 @@ def _rewrite(section: dict[str, Any], base: Path) -> None:
             image.startswith(".") or (base / image).is_file()
         ):
             container["image"] = str(base / image)
+
     if "tsconfig" in section:
         section["tsconfig"] = _absolute(section["tsconfig"], base)
+
     aliases = section.get("alias")
     if isinstance(aliases, dict):
         for name, target in aliases.items():
             # A target that isn't a relative path names a package.
             if isinstance(target, str) and target.startswith("."):
                 aliases[name] = str(base / target)
+
     envs = section.get("env")
-    for env in _tables(list(envs.values()) if isinstance(envs, dict) else None):
-        _rewrite(env, base)
-    for previews in _tables(section.get("previews")):
-        _rewrite(previews, base)
+    nested = list(envs.values()) if isinstance(envs, dict) else []
+    for table in _tables(nested) + _tables(section.get("previews")):
+        _rewrite(table, base)
 
 
 def _tables(value: Any) -> list[dict[str, Any]]:
