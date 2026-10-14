@@ -62,3 +62,25 @@ nav:
     - Reference:
       - Container class: containers/container-class.md
       - Troubleshooting: containers/troubleshooting.md
+  - Workers:
+    - Overview: workers/overview.md
+    - Getting started: workers/getting-started.md
+    - Guides:
+      - Use bindings: workers/bindings.md
+      - Build a Durable Object: workers/durable-objects.md
+      - Serve FastAPI or Flask: workers/web-frameworks.md
+      - Write a Workflow: workers/workflows.md
+      - Call JavaScript APIs: workers/javascript.md
+      - Migrate from workers-runtime-sdk: workers/migrate.md
+    - Reference:
+      - API reference: workers/api.md
+      - Troubleshooting: workers/troubleshooting.md
+  - Wynd:
+    - Overview: wynd/overview.md
+    - Switch from pywrangler: wynd/getting-started.md
+    - Guides:
+      - Prune the upload: wynd/pruning.md
+      - Generate typed bindings: wynd/types.md
+    - Reference:
+      - Commands and configuration: wynd/commands.md
+      - Troubleshooting: wynd/troubleshooting.md
