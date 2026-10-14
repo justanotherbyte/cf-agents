@@ -4,3 +4,6 @@ dist/
 .env
 
 PRODUCT.md
+.venv/
+site/
+__pycache__/

@@ -1,0 +1,38 @@
+{% extends "main.html" %}
+
+{#- The landing page uses its own fonts; docs pages keep Material's defaults #}
+{% block fonts %}
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400&display=swap">
+  <style>:root{--md-text-font:"JetBrains Mono";--md-code-font:"IBM Plex Mono"}</style>
+{% endblock %}
+
+{% block hero %}
+  <section class="cw-hero">
+    <div class="md-grid md-typeset">
+      <div class="cw-hero__text">
+        <h1 aria-label="Crosswind Agents, Containers, Workers and Wynd">
+          Crosswind
+          {#- The last word repeats the first so the loop restarts without a jump #}
+          <span class="cw-rotator" aria-hidden="true"><span>Agents</span><span>Containers</span><span>Workers</span><span>Wynd</span><span>Agents</span></span>
+        </h1>
+        <p>Crosswind is a set of typed, async Python packages and tools for Python Workers. It ports the Agents and Containers SDKs, replaces the <code>workers</code> package with typed APIs, and replaces pywrangler with <code>wynd</code>.</p>
+        <div class="cw-hero__actions">
+          <div class="cw-hero__buttons">
+            <a href="{{ 'agents/getting-started/' | url }}" class="md-button md-button--primary">Build an agent</a>
+            <a href="{{ 'containers/getting-started/' | url }}" class="md-button">Run a container</a>
+          </div>
+          <div class="cw-or">or</div>
+          {#- The comment and prompt can't be selected, so copying gives just the command #}
+          <pre class="cw-command"><code><span class="cw-command__prompt" aria-hidden="true">$ </span>uvx wynd init</code></pre>
+        </div>
+      </div>
+      <img class="cw-hero__mascot" src="{{ 'assets/hero-img.png' | url }}" alt="" width="720" height="360">
+    </div>
+  </section>
+{% endblock %}
+
+{# The hero has the page heading, so skip the h1 Material adds from the title #}
+{% block content %}
+  <div class="cw-home">{{ page.content }}</div>
+{% endblock %}

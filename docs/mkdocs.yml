@@ -1,0 +1,64 @@
+site_name: Crosswind
+site_url: https://mydomain.org/
+theme:
+  name: material
+  custom_dir: overrides
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+extra_css:
+  - stylesheets/theme.css
+  - stylesheets/home.css
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+nav:
+  - Home: index.md
+  - Agents:
+    - Overview: agents/overview.md
+    - Getting started: agents/getting-started.md
+    - Guides:
+      - Store and sync state: agents/state.md
+      - Connect clients: agents/clients.md
+      - Handle connections: agents/connections.md
+      - Route requests: agents/routing.md
+      - Schedule and queue work: agents/schedules-and-queue.md
+      - Run durable tasks: agents/tasks.md
+      - Build a chat agent: agents/chat.md
+      - Long-running work: agents/long-running-work.md
+      - Use sub-agents: agents/sub-agents.md
+      - Migrate from TypeScript: agents/coming-from-typescript.md
+    - Reference:
+      - Agent class: agents/agent-class.md
+      - AIChatAgent class: agents/chat-agent-class.md
+      - Troubleshooting: agents/troubleshooting.md
+  - Containers:
+    - Overview: containers/overview.md
+    - Getting started: containers/getting-started.md
+    - Guides:
+      - Manage the lifecycle: containers/lifecycle.md
+      - Route requests: containers/routing.md
+      - Control outbound traffic: containers/outbound-traffic.md
+      - Common patterns: containers/examples.md
+      - Migrate from TypeScript: containers/coming-from-typescript.md
+    - Reference:
+      - Container class: containers/container-class.md
+      - Troubleshooting: containers/troubleshooting.md

@@ -1,0 +1,141 @@
+.cw-hero {
+  padding: 2rem 0 0.5rem;
+}
+
+.cw-hero .md-grid {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 0 0.8rem;
+}
+
+.cw-hero h1 {
+  margin-bottom: 0.5rem;
+  color: var(--md-default-fg-color);
+  font-weight: 600;
+}
+
+.cw-hero p {
+  max-width: 40rem;
+  color: var(--cw-text-2);
+  font-size: 0.8rem;
+}
+
+/* Buttons, "or" divider and command share one column as wide as the buttons */
+.cw-hero__actions {
+  display: inline-grid;
+  gap: 0.6rem;
+  max-width: 100%;
+  margin-top: 0.8rem;
+}
+
+.cw-hero__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cw-hero .md-button {
+  margin: 0;
+}
+
+.cw-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--cw-meta);
+  font-size: 0.7rem;
+}
+
+.cw-or::before,
+.cw-or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--cw-border);
+}
+
+.cw-hero .cw-command {
+  margin: 0;
+}
+
+.cw-hero .cw-command code {
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+}
+
+.cw-command__comment,
+.cw-command__prompt {
+  color: var(--cw-meta);
+  user-select: none;
+}
+
+.cw-hero__mascot {
+  flex-shrink: 0;
+  width: 20rem;
+  height: auto;
+}
+
+/* Phones: stack the image under the text */
+@media screen and (max-width: 44.984375em) {
+  .cw-hero .md-grid {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cw-hero__mascot {
+    width: 100%;
+    max-width: 20rem;
+  }
+}
+
+/* Rotating package name: a one-line window over a column of words that steps
+   up every 2.5s. */
+.cw-rotator {
+  display: inline-block;
+  overflow: hidden;
+  height: 1.3em;
+  line-height: 1.3em;
+  vertical-align: bottom;
+  color: #3b82f6; /* blue-500 in both themes; 3.7:1 on white, fine at heading size */
+}
+
+.cw-rotator > span {
+  display: block;
+  animation: cw-rotate 10s var(--cw-ease-out) infinite;
+}
+
+.cw-hero h1:hover .cw-rotator > span {
+  animation-play-state: paused;
+}
+
+@keyframes cw-rotate {
+  0%, 20% { transform: translateY(0); }
+  25%, 45% { transform: translateY(-100%); }
+  50%, 70% { transform: translateY(-200%); }
+  75%, 95% { transform: translateY(-300%); }
+  100% { transform: translateY(-400%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-rotator > span {
+    animation: none;
+  }
+}
+
+/* "Why Crosswind" cards: 1 column on phones, 2 on tablets, 4 on desktop */
+.cw-home .grid.cards {
+  grid-template-columns: 1fr;
+}
+
+@media screen and (min-width: 48em) {
+  .cw-home .grid.cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media screen and (min-width: 64em) {
+  .cw-home .grid.cards {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
