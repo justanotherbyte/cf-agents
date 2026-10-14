@@ -7,3 +7,5 @@ PRODUCT.md
 .venv/
 site/
 __pycache__/
+
+.claude/
