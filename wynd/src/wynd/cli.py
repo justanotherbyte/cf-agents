@@ -6,6 +6,7 @@ from pathlib import Path
 from . import wrangler
 from .host import warn_on_venv_mismatch
 from .project import WyndError, load_project
+from .scaffold import scaffold
 from .shake import ShakePlan
 from .stage import stage
 from .sync import select_sdk, sync
@@ -62,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
+        if flow == "init":
+            words = [arg for arg in rest if not arg.startswith("-")]
+            scaffold(cwd / words[1] if len(words) > 1 else cwd)
+            return 0
         env = options.env or os.environ.get("CLOUDFLARE_ENV")
         project = load_project(cwd, options.config, env)
         if flow == "types":
@@ -86,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _flow(rest: list[str]) -> str:
-    """Sort a command line into the upload, dev, sync, types or passthrough flow."""
+    """Sort a command line into its flow, or passthrough."""
     words = [arg for arg in rest if not arg.startswith("-")]
     command = words[0] if words else ""
     # A known name, not the second word, because a flag's value can come first.
@@ -99,7 +104,7 @@ def _flow(rest: list[str]) -> str:
         or (command == "preview" and not subcommand)
     ):
         return "upload"
-    return command if command in ("dev", "sync", "types") else "passthrough"
+    return command if command in ("dev", "sync", "types", "init") else "passthrough"
 
 
 def _upload(args: list[str], rest: list[str], path: Path, plan: ShakePlan) -> int:
