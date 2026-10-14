@@ -37,7 +37,9 @@ class Binding:
         return self.js_object
 
     def __getattr__(self, name: str) -> Any:
-        if name.startswith("__") or name == "js_object":
+        # Python's protocol lookups stay off JS. A JS name such as
+        # `__unsafe_ensureInitialized` has no trailing `__` and passes through.
+        if (name.startswith("__") and name.endswith("__")) or name == "js_object":
             raise AttributeError(name)
         return self._pass_through(name, getattr(self.js_object, name))
 

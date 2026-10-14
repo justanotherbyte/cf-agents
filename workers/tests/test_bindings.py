@@ -162,6 +162,20 @@ def test_names_without_a_typed_method_pass_through_under_their_js_name() -> None
     assert js_kv.calls == [("getWithMetadata", ("k", jsnull))]
 
 
+def test_js_names_with_a_leading_double_underscore_pass_through() -> None:
+    # cf-agents' get_agent_by_name calls this RPC method on a Durable Object stub.
+    calls = []
+    stub = Binding(
+        JsValue("DurableObject", __unsafe_ensureInitialized=lambda: calls.append(1))
+    )
+
+    getattr(stub, "__unsafe_ensureInitialized")()
+
+    assert calls == [1]
+    with pytest.raises(AttributeError):
+        stub.__deepcopy__  # noqa: B018
+
+
 def test_plain_attributes_are_read_on_every_access() -> None:
     # The stock SDK caches the first value, so a D1 cursor's counters freeze.
     cursor = JsValue("Cursor", rowsRead=1)
