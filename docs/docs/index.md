@@ -49,6 +49,13 @@ hide:
             return await container.fetch(request)
     ```
 
+> **Warning**
+>
+> Every Crosswind package is in alpha. APIs change between releases, some
+> features are unfinished, and things will break. Pin exact versions, test
+> each upgrade before you deploy it, and expect to change your code when you
+> upgrade. See [Status](#status).
+
 ## What Crosswind is
 
 [Python Workers](https://developers.cloudflare.com/workers/languages/python/)
@@ -114,8 +121,8 @@ written with `cf-agents`.
 
 ## Status
 
-The published packages are pre-1.0, and their APIs may change between minor
-releases.
+The published packages are alpha and pre-1.0. Expect breaking changes in
+minor releases, and pin exact versions, such as `crosswind-workers==0.1.0`.
 Each SDK's overview lists the features it doesn't port yet. Crosswind is an
 independent community project. It isn't affiliated with or endorsed by
 Cloudflare.
