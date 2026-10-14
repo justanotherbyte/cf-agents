@@ -1,7 +1,7 @@
 [project]
 name = "wynd"
 version = "0.2.0"
-description = "Add your description here"
+description = "Alternative to pywrangler for Crosswind"
 readme = "README.md"
 authors = [
     { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }

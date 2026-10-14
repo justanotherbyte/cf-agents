@@ -1,7 +1,7 @@
 [project]
 name = "crosswind-workers"
 version = "0.1.0"
-description = "Add your description here"
+description = "Typed, Pythonic drop-in replacement for Cloudflare's workers-runtime-sdk"
 readme = "README.md"
 authors = [
     { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }
