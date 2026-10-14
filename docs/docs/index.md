@@ -66,8 +66,8 @@ makes the JavaScript calls.
 | ------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | [Agents](agents/overview.md)          | `cf-agents`         | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat.         | ![cf-agents on PyPI](https://img.shields.io/pypi/v/cf-agents)         |
 | [Containers](containers/overview.md)  | `containers-py`     | Start, stop and route requests to Cloudflare Containers, and filter their outbound traffic.  | ![containers-py on PyPI](https://img.shields.io/pypi/v/containers-py) |
-| Workers                               | `crosswind-workers` | Drop-in replacement for the official `workers` package, with typed, idiomatic APIs.          | Not published yet                                                     |
-| Wynd                                  | `wynd`              | Replaces pywrangler. It tree-shakes your code and its dependencies, removing what's unused.  | Not published yet                                                     |
+| Workers                               | `crosswind-workers` | Drop-in replacement for the official `workers` package, with typed, idiomatic APIs.          | ![crosswind-workers on PyPI](https://img.shields.io/pypi/v/crosswind-workers) |
+| Wynd                                  | `wynd`              | Replaces pywrangler. It tree-shakes your code and its dependencies, removing what's unused.  | ![wynd on PyPI](https://img.shields.io/pypi/v/wynd)                   |
 
 ## Why Crosswind
 
