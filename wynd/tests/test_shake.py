@@ -467,7 +467,8 @@ STRIPPED = (
     "# -*- coding: latin-1 -*-\n"
     '"""Module docstring."""\n'
     "from __future__ import annotations\n"
-    "\n"
+    # A form feed doesn't end a line, though str.splitlines splits at it.
+    "\x0c\n"
     "# A comment.\n"
     "NAME = 'caf\xe9'  # trailing\n"
     "\n"
@@ -602,7 +603,10 @@ def test_a_module_whose_top_level_import_is_missing_is_dropped(
 LAZY: dict[str, str | bytes] = {
     "lazy/__init__.py": (
         "from importlib import import_module\n"
-        "_dynamic_imports = {'A': (__spec__.parent, '.a')}\n"
+        "_dynamic_imports = {\n"
+        "    'A': (__spec__.parent, '.a'),\n"
+        "    'C': ('other', '.c'),\n"
+        "}\n"
         "def __getattr__(name):\n"
         "    package, module = _dynamic_imports[name]\n"
         "    if module == '__module__':\n"
@@ -611,6 +615,8 @@ LAZY: dict[str, str | bytes] = {
     ),
     "lazy/a.py": "A = 1\n",
     "lazy/b.py": "B = 2\n",
+    "other/__init__.py": "",
+    "other/c.py": "C = 3\n",
 }
 
 
@@ -618,11 +624,16 @@ def test_a_lazy_attribute_keeps_only_the_module_it_loads(
     tools: Tools, project: Path
 ) -> None:
     install(tools, LAZY)
-    entry(project, "from lazy import A\n")
+    entry(project, "from lazy import A, C\n")
 
     assert main(["deploy"]) == 0
 
-    assert staged_modules(project) == ["lazy/__init__.py", "lazy/a.py"]
+    assert staged_modules(project) == [
+        "lazy/__init__.py",
+        "lazy/a.py",
+        "other/__init__.py",
+        "other/c.py",
+    ]
     assert listing(project)["lazy/a.py"] == (
         "kept",
         "imported by entry by a lazy import",
@@ -637,4 +648,10 @@ def test_importing_a_lazy_package_keeps_every_module_it_can_load(
 
     assert main(["deploy"]) == 0
 
-    assert staged_modules(project) == ["lazy/__init__.py", "lazy/a.py", "lazy/b.py"]
+    assert staged_modules(project) == [
+        "lazy/__init__.py",
+        "lazy/a.py",
+        "lazy/b.py",
+        "other/__init__.py",
+        "other/c.py",
+    ]

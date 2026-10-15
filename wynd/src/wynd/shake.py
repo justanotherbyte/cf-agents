@@ -191,6 +191,9 @@ class _Shaker:
         elif kind is Kind.WHOLE:
             self.whole.add(name)
             self.queue += self.deferred.pop(name, [])
+            # The computed import only reaches this package's own modules.
+            lazy = self.tables.get(name, {}).values()
+            self.queue += [(m, f"{reason} by a lazy import", Kind.MODULE) for m in lazy]
         else:
             self._visit_module(name, parent, reason, kind)
 
@@ -360,13 +363,15 @@ def _strip(source: bytes, docstrings: bool) -> bytes:
     without moving any line. Source that won't parse comes back unchanged."""
     try:
         encoding, _ = tokenize.detect_encoding(io.BytesIO(source).readline)
-        text = source.decode(encoding)
+        # Lines as Python counts them. str.splitlines also splits at form feeds
+        # and other characters that don't end a line, which shifts every cut.
+        lines = io.StringIO(source.decode(encoding), newline=None).readlines()
+        text = "".join(lines)
         tree = ast.parse(text)
         tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
     except (SyntaxError, ValueError, UnicodeDecodeError, tokenize.TokenError):
         return source
 
-    lines = text.splitlines(keepends=True)
     # (start row, start column, end row, end column, replacement), columns in
     # characters.
     cuts = [
@@ -473,11 +478,16 @@ def _lazy_table(tree: ast.Module, package: str) -> dict[str, str]:
                 and isinstance(module.value, str)
             ):
                 continue
+            # A literal package, as in ('pydantic_core', '.core_schema'), is
+            # another one. Anything else, like __spec__.parent, is this one.
+            first = pair[0]
+            literal = isinstance(first, ast.Constant) and isinstance(first.value, str)
+            owner = first.value if literal else package
             if module.value == "__module__":
-                table[key.value] = f"{package}.{key.value}"
+                table[key.value] = f"{owner}.{key.value}"
                 continue
             level = len(module.value) - len(module.value.lstrip("."))
-            base = _resolve_relative(module.value[level:], level, package)
+            base = _resolve_relative(module.value[level:], level, owner)
             if base:
                 table[key.value] = base
 
