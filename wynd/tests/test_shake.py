@@ -1,4 +1,6 @@
+import runpy
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import Tools
@@ -195,6 +197,8 @@ def test_used_packages_keep_their_data_files_but_not_tests_docs_or_stubs(
             "jinja/tests/__init__.py": "",
             "jinja/tests/data.json": "{}",
             "jinja/docs/index.md": "# docs",
+            "jinja/include/jinja.h": "int x;",
+            "jinja/_speedups.pxd": "",
             "jinja/ext/__init__.py": "",
             # Loaded by a computed name, as zoneinfo loads tzdata's zone files.
             "jinja/ext/ext.css": "",
@@ -225,6 +229,8 @@ def test_used_packages_keep_their_data_files_but_not_tests_docs_or_stubs(
     )
     assert shake["jinja/tests/data.json"] == ("dropped", "tests")
     assert shake["jinja/docs/index.md"] == ("dropped", "docs")
+    assert shake["jinja/include/jinja.h"] == ("dropped", "build-time file")
+    assert shake["jinja/_speedups.pxd"] == ("dropped", "build-time file")
     assert shake["jinja/ext/ext.css"] == ("kept", "data file of jinja")
     assert shake["other/data.json"] == ("dropped", "no kept module in other")
     assert shake["README.txt"] == ("dropped", "outside any package")
@@ -241,7 +247,10 @@ def test_metadata_ships_only_with_a_distribution_that_keeps_a_file(
         tools,
         {
             "used/__init__.py": "",
-            "used-1.0.dist-info/METADATA": "Name: used",
+            "used-1.0.dist-info/METADATA": (
+                "Metadata-Version: 2.4\nName: used\nVersion: 1.0\n\n"
+                "# used\n\nA README.\n"
+            ),
             "used-1.0.dist-info/licenses/LICENSE": "MIT",
             "used-1.0.dist-info/RECORD": record(
                 "used/__init__.py",
@@ -278,6 +287,12 @@ def test_metadata_ships_only_with_a_distribution_that_keeps_a_file(
         "dropped",
         "metadata of unused-2.0, which keeps no file",
     )
+    # The description is the README, which nothing reads at runtime.
+    staged = project / ".wynd" / "build" / "python_modules"
+    assert (staged / "used-1.0.dist-info/METADATA").read_text() == (
+        "Metadata-Version: 2.4\nName: used\nVersion: 1.0\n"
+    )
+    assert (staged / "bare-3.0.dist-info/METADATA").read_text() == "Name: bare"
 
 
 def test_pth_imports_are_roots(tools: Tools, project: Path) -> None:
@@ -413,7 +428,7 @@ def test_keep_must_be_a_list_of_module_names(
 def test_a_dry_run_reports_bytes_before_and_after_pruning(
     tools: Tools, project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    install(tools, {"used.py": "#" * 100, "unused.py": "#" * 2400})
+    install(tools, {"used.py": "x=1\n" * 25, "unused.py": "x=1\n" * 600})
     entry(project, "import used\n")
 
     assert main(["deploy", "--dry-run"]) == 0
@@ -446,3 +461,180 @@ def test_namespace_packages_resolve(tools: Tools, project: Path) -> None:
         "ns/version.txt",
     ]
     assert "ns" not in listing(project)
+
+
+STRIPPED = (
+    "# -*- coding: latin-1 -*-\n"
+    '"""Module docstring."""\n'
+    "from __future__ import annotations\n"
+    "\n"
+    "# A comment.\n"
+    "NAME = 'caf\xe9'  # trailing\n"
+    "\n"
+    "\n"
+    "def only_doc():\n"
+    '    """Nothing but a\n'
+    '    docstring."""\n'
+    "\n"
+    "\n"
+    "class Thing:\n"
+    '    """A class."""\n'
+    "\n"
+    "    def method(self):\n"
+    "        return '# not a comment'\n"
+).encode("latin-1")
+
+
+def staged_module(root: Path, name: str) -> tuple[bytes, dict[str, Any]]:
+    """A staged module's bytes and the globals it defines."""
+    path = root / ".wynd" / "build" / "python_modules" / name
+    return path.read_bytes(), runpy.run_path(str(path))
+
+
+def test_vendored_modules_ship_without_comments_or_docstrings(
+    tools: Tools, project: Path
+) -> None:
+    install(tools, {"strip.py": STRIPPED})
+    entry(project, "import strip\n")
+
+    assert main(["deploy"]) == 0
+
+    source, namespace = staged_module(project, "strip.py")
+    text = source.decode("latin-1")
+    # Tracebacks keep pointing at the vendored source's lines.
+    assert text.count("\n") == STRIPPED.count(b"\n")
+    assert text.startswith("# -*- coding: latin-1 -*-\n")
+    for gone in ("docstring", "A comment", "trailing", "A class"):
+        assert gone not in text
+    assert "'# not a comment'" in text
+    assert namespace["NAME"] == "caf\xe9"
+    assert namespace.get("__doc__") is None
+    assert namespace["only_doc"].__doc__ is None
+    assert namespace["only_doc"].__code__.co_firstlineno == 9
+    assert namespace["Thing"].__doc__ is None
+    # The Worker's own source ships as written.
+    staged_entry = project / ".wynd" / "build" / "src" / "entry.py"
+    assert staged_entry.read_text() == "import strip\n"
+
+
+def test_keep_docstrings_ships_vendored_docstrings(tools: Tools, project: Path) -> None:
+    install(tools, {"strip.py": STRIPPED})
+    entry(project, "import strip\n")
+    with (project / "pyproject.toml").open("a") as pyproject:
+        pyproject.write("[tool.wynd]\nkeep-docstrings = true\n")
+
+    assert main(["deploy"]) == 0
+
+    source, namespace = staged_module(project, "strip.py")
+    assert b"A comment" not in source
+    assert namespace["__doc__"] == "Module docstring."
+    assert namespace["Thing"].__doc__ == "A class."
+
+
+def test_keep_docstrings_must_be_a_boolean(
+    tools: Tools, project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with (project / "pyproject.toml").open("a") as pyproject:
+        pyproject.write("[tool.wynd]\nkeep-docstrings = 'yes'\n")
+
+    assert main(["deploy"]) == 1
+    assert "[tool.wynd] keep-docstrings must be true or false" in (
+        capsys.readouterr().err
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def broken(:\n    # a comment\n",
+        # Blanking the docstring would leave a statement starting with ";".
+        'def f():\n    """doc"""; return 1\n',
+    ],
+)
+def test_source_that_wont_strip_ships_unchanged(
+    tools: Tools, project: Path, source: str
+) -> None:
+    install(tools, {"odd.py": source})
+    entry(project, "import odd\n")
+
+    assert main(["deploy"]) == 0
+
+    staged = project / ".wynd" / "build" / "python_modules" / "odd.py"
+    assert staged.read_text() == source
+
+
+def test_a_module_whose_top_level_import_is_missing_is_dropped(
+    tools: Tools, project: Path
+) -> None:
+    install(
+        tools,
+        {
+            "pkg/__init__.py": "",
+            "pkg/plugin.py": "import os\nimport notinstalled.sub\nimport pkg.helper\n",
+            "pkg/helper.py": "",
+            "pkg/guarded.py": (
+                "try:\n    import notinstalled\nexcept ImportError:\n"
+                "    notinstalled = None\n"
+            ),
+            "pkg/provided.py": (
+                "import js\nimport json\nimport annotationlib\n"
+                "from pyodide.ffi import to_js\n"
+            ),
+        },
+    )
+    entry(project, "import pkg.plugin\nimport pkg.guarded\nimport pkg.provided\n")
+
+    assert main(["deploy"]) == 0
+
+    assert staged_modules(project) == [
+        "pkg/__init__.py",
+        "pkg/guarded.py",
+        "pkg/provided.py",
+    ]
+    shake = listing(project)
+    assert shake["pkg/plugin.py"] == (
+        "dropped",
+        "imports notinstalled, which isn't installed",
+    )
+    assert shake["pkg/helper.py"] == ("dropped", "not imported")
+
+
+LAZY: dict[str, str | bytes] = {
+    "lazy/__init__.py": (
+        "from importlib import import_module\n"
+        "_dynamic_imports = {'A': (__spec__.parent, '.a')}\n"
+        "def __getattr__(name):\n"
+        "    package, module = _dynamic_imports[name]\n"
+        "    if module == '__module__':\n"
+        "        return import_module(f'.{name}', package=package)\n"
+        "    return getattr(import_module(module, package=package), name)\n"
+    ),
+    "lazy/a.py": "A = 1\n",
+    "lazy/b.py": "B = 2\n",
+}
+
+
+def test_a_lazy_attribute_keeps_only_the_module_it_loads(
+    tools: Tools, project: Path
+) -> None:
+    install(tools, LAZY)
+    entry(project, "from lazy import A\n")
+
+    assert main(["deploy"]) == 0
+
+    assert staged_modules(project) == ["lazy/__init__.py", "lazy/a.py"]
+    assert listing(project)["lazy/a.py"] == (
+        "kept",
+        "imported by entry by a lazy import",
+    )
+
+
+def test_importing_a_lazy_package_keeps_every_module_it_can_load(
+    tools: Tools, project: Path
+) -> None:
+    install(tools, LAZY)
+    entry(project, "import lazy\n")
+
+    assert main(["deploy"]) == 0
+
+    assert staged_modules(project) == ["lazy/__init__.py", "lazy/a.py", "lazy/b.py"]

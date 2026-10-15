@@ -42,7 +42,7 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
     build = project.wynd_dir / "build"
     shutil.rmtree(build, ignore_errors=True)
     shutil.copytree(config_dir / source, build / source)
-    plan.copy_kept(build / "python_modules")
+    plan.copy_kept(build / "python_modules", docstrings=not project.keep_docstrings)
     (project.wynd_dir / "shake.txt").write_text(plan.log())
 
     staged = build / "wrangler.json"

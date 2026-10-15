@@ -1,6 +1,10 @@
 import ast
 import csv
+import io
+import re
 import shutil
+import sys
+import tokenize
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
@@ -21,6 +25,36 @@ HOST_BINARIES = {
     b"MZ": "PE",
 }
 
+# Files packages need only to build against them, never at runtime.
+BUILD_TIME = {".h", ".c", ".cpp", ".pxd", ".pyx", ".pxi", ".a", ".pc"}
+
+# shortcut: hand-listed stdlib additions up to 3.14, extend when targets.py adds
+# a Python version. Wynd may run on an older Python than the Worker targets.
+STDLIB = sys.stdlib_module_names | {
+    "annotationlib",
+    "compression",
+    "_colorize",
+    "_pyrepl",
+    "_interpreters",
+    "_interpqueues",
+    "_interpchannels",
+    "_zstd",
+}
+
+# Modules the Workers runtime provides without a vendored file.
+RUNTIME = {
+    "js",
+    "pyodide",
+    "pyodide_js",
+    "_pyodide",
+    "_pyodide_entrypoint_helper",
+    "_cloudflare",
+    "_cloudflare_compat_flags",
+}
+
+# PEP 263's encoding declaration, which must survive comment stripping.
+CODING = re.compile(r"^[ \t\f]*#.*?coding[:=]")
+
 
 class Kind(Enum):
     MODULE = "module"
@@ -30,6 +64,8 @@ class Kind(Enum):
     STAR = "star"
     # A computed name with a literal start, named "package:start".
     PREFIX = "prefix"
+    # `import pkg`, which can read any attribute of pkg, lazy ones included.
+    WHOLE = "whole"
 
 
 @dataclass(frozen=True)
@@ -44,10 +80,11 @@ class ShakePlan:
     unresolved: dict[str, str] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
-    def size_report(self) -> str:
-        """Bytes in the full tree and its kept files, without Wrangler's wrapping."""
+    def size_report(self, target: Path) -> str:
+        """Bytes in the full tree and in the copies in `target`, without
+        Wrangler's wrapping."""
         before = sum(self._size(name) for name in [*self.kept, *self.dropped])
-        after = sum(self._size(name) for name in self.kept)
+        after = sum((target / name).stat().st_size for name in self.kept)
         return (
             f"python_modules is {before:,} bytes, {after:,} after pruning "
             f"({before - after:,} fewer). Each file's decision is in .wynd/shake.txt."
@@ -70,11 +107,19 @@ class ShakePlan:
         """Keep or drop a file of `site`, with the reason."""
         (self.kept if kept else self.dropped)[name] = reason
 
-    def copy_kept(self, target: Path) -> None:
-        """Copy the kept files into `target` at the same relative paths."""
+    def copy_kept(self, target: Path, docstrings: bool) -> None:
+        """Copy the kept files into `target` at the same relative paths, with
+        comments, and docstrings if asked, stripped from modules and the
+        description stripped from metadata."""
         for name in self.kept:
-            (target / name).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self.site / name, target / name)
+            source, copy = self.site / name, target / name
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            if name.endswith(".py"):
+                copy.write_bytes(_strip(source.read_bytes(), docstrings))
+            elif name.endswith(".dist-info/METADATA"):
+                copy.write_bytes(_headers(source.read_bytes()))
+            else:
+                shutil.copy2(source, copy)
 
     def _size(self, name: str) -> int:
         return (self.site / name).stat().st_size
@@ -103,6 +148,12 @@ class _Shaker:
         self.queue: deque[tuple[str, str, Kind]] = deque()
         self.seen: set[tuple[str, Kind]] = set()
         self.missing: set[str] = set()
+        # Packages that load attributes through a table, by name, with the table.
+        self.tables: dict[str, dict[str, str]] = {}
+        # Each table package's computed imports, followed only once some module
+        # does `import pkg` and can read any attribute.
+        self.deferred: dict[str, list[tuple[str, str, Kind]]] = {}
+        self.whole: set[str] = set()
 
     def run(self, entry_name: str, keep: tuple[str, ...]) -> ShakePlan:
         self.queue.append((entry_name, "entry module", Kind.MODULE))
@@ -126,7 +177,8 @@ class _Shaker:
             self.queue += [(module, reason, Kind.MODULE) for module in modules]
             return
 
-        parent = name if kind is Kind.STAR else name.rpartition(".")[0]
+        whole = kind in (Kind.STAR, Kind.WHOLE)
+        parent = name if whole else name.rpartition(".")[0]
         # Python imports a module's packages first.
         if parent and (parent, Kind.MODULE) not in self.seen:
             self.queue.appendleft((name, reason, kind))
@@ -136,6 +188,9 @@ class _Shaker:
         self.seen.add((name, kind))
         if kind is Kind.STAR:
             self._visit_star(name, reason)
+        elif kind is Kind.WHOLE:
+            self.whole.add(name)
+            self.queue += self.deferred.pop(name, [])
         else:
             self._visit_module(name, parent, reason, kind)
 
@@ -151,14 +206,37 @@ class _Shaker:
             self.missing.add(name)
             if kind is Kind.MODULE and parent not in self.missing:
                 self.plan.unresolved.setdefault(name, reason)
+            lazy = self.tables.get(parent, {}).get(name.rpartition(".")[2])
+            if kind is Kind.MEMBER and lazy:
+                self.queue.append((lazy, f"{reason} by a lazy import", Kind.MODULE))
             return
 
-        if path.is_file() and path.is_relative_to(self.site):
+        tree = _parse(path)
+        in_site = path.is_relative_to(self.site)
+        absent = _absent_import(tree, self.roots) if in_site else None
+        if absent:
+            # Python would raise ImportError, as it does for a missing module.
+            self.missing.add(name)
+            if path.is_file():
+                self.plan.dropped[path.relative_to(self.site).as_posix()] = (
+                    f"imports {absent}, which isn't installed"
+                )
+            return
+
+        if path.is_file() and in_site:
             self.plan.kept.setdefault(path.relative_to(self.site).as_posix(), reason)
 
         package = name if path.name == "__init__.py" or path.is_dir() else parent
-        for imported, why, imported_kind in _imports(_parse(path), package):
-            self.queue.append((imported, f"imported by {name}{why}", imported_kind))
+        table = _lazy_table(tree, package)
+        if table:
+            self.tables[name] = table
+        for imported, why, imported_kind in _imports(tree, package):
+            edge = (imported, f"imported by {name}{why}", imported_kind)
+            own = imported_kind is Kind.PREFIX and imported.partition(":")[0] == name
+            if table and own and name not in self.whole:
+                self.deferred.setdefault(name, []).append(edge)
+            else:
+                self.queue.append(edge)
 
     def _pth_roots(self) -> list[tuple[str, str, Kind]]:
         """The modules .pth files import. Other .pth lines are build errors."""
@@ -183,10 +261,11 @@ class _Shaker:
         kept_packages = {Path(name).parts[0] for name in plan.kept}
         metadata = [f for f in files if f.parts[0].endswith(".dist-info")]
 
+        decided = plan.kept.keys() | plan.dropped.keys()
         decisions = [
             (file, *_decide(file, kept_packages))
             for file in files
-            if file.as_posix() not in plan.kept and file not in metadata
+            if file.as_posix() not in decided and file not in metadata
         ]
         for file, kept, reason in decisions:
             plan.record(file.as_posix(), kept, reason)
@@ -246,6 +325,8 @@ def _decide(file: Path, kept_packages: set[str]) -> tuple[bool, str]:
             return False, "tests"
         if part in ("docs", "doc"):
             return False, "docs"
+    if file.suffix in BUILD_TIME:
+        return False, "build-time file"
 
     if file.suffix == ".py":
         return False, "not imported"
@@ -272,6 +353,135 @@ def _metadata(dist_info: Path, kept: dict[str, str]) -> tuple[bool, str]:
             return True, f"metadata of {dist}, which keeps a file"
 
     return False, f"metadata of {dist}, which keeps no file"
+
+
+def _strip(source: bytes, docstrings: bool) -> bytes:
+    """A module's source with comments, and docstrings if asked, blanked out
+    without moving any line. Source that won't parse comes back unchanged."""
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(source).readline)
+        text = source.decode(encoding)
+        tree = ast.parse(text)
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (SyntaxError, ValueError, UnicodeDecodeError, tokenize.TokenError):
+        return source
+
+    lines = text.splitlines(keepends=True)
+    # (start row, start column, end row, end column, replacement), columns in
+    # characters.
+    cuts = [
+        (*token.start, *token.end, "")
+        for token in tokens
+        if token.type == tokenize.COMMENT
+        and not (token.start[0] <= 2 and CODING.match(token.line))
+    ]
+    for node in ast.walk(tree) if docstrings else []:
+        if not isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            continue
+        first = node.body[0] if node.body else None
+        if not (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            continue
+        assert first.end_lineno is not None and first.end_col_offset is not None
+        # ast counts columns in UTF-8 bytes.
+        start = len(lines[first.lineno - 1].encode()[: first.col_offset].decode())
+        end = len(lines[first.end_lineno - 1].encode()[: first.end_col_offset].decode())
+        # A body needs a statement. A module doesn't, and `pass` would come
+        # before its `from __future__` imports.
+        sole = len(node.body) == 1 and not isinstance(node, ast.Module)
+        replacement = "pass" if sole else ""
+        cuts.append((first.lineno, start, first.end_lineno, end, replacement))
+
+    # From the end, so each cut leaves the rows and columns before it in place.
+    for row, column, end_row, end_column, replacement in sorted(cuts, reverse=True):
+        head, tail = lines[row - 1][:column], lines[end_row - 1][end_column:]
+        lines[row - 1 : end_row] = [head + replacement + "\n" * (end_row - row) + tail]
+
+    stripped = "".join(lines)
+    try:
+        # A docstring followed by `;` on its line leaves a stray `;`.
+        ast.parse(stripped)
+    except SyntaxError:
+        return source
+    return stripped.encode(encoding)
+
+
+def _headers(metadata: bytes) -> bytes:
+    """A METADATA file without its description, the body after the headers."""
+    headers, blank, _ = metadata.partition(b"\n\n")
+    return headers + b"\n" if blank else metadata
+
+
+def _absent_import(tree: ast.Module, roots: tuple[Path, ...]) -> str | None:
+    """A package that an unconditional top-level import names and that no root,
+    the stdlib or the runtime has, so importing the module always fails."""
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            names = [node.module]
+        else:
+            continue
+        for name in names:
+            top = name.partition(".")[0]
+            if top not in STDLIB and top not in RUNTIME and _find(top, roots) is None:
+                return top
+    return None
+
+
+def _lazy_table(tree: ast.Module, package: str) -> dict[str, str]:
+    """The modules a module-level `__getattr__` loads attributes from, by
+    attribute, read from the literal dict of (package, ".module") pairs it uses."""
+    getattr_ = next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "__getattr__"
+        ),
+        None,
+    )
+    if getattr_ is None:
+        return {}
+    used = {node.id for node in ast.walk(getattr_) if isinstance(node, ast.Name)}
+
+    table = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+        else:
+            continue
+        if not (
+            isinstance(target, ast.Name)
+            and target.id in used
+            and isinstance(node.value, ast.Dict)
+        ):
+            continue
+        for key, value in zip(node.value.keys, node.value.values, strict=True):
+            pair = value.elts if isinstance(value, ast.Tuple) else []
+            module = pair[1] if len(pair) == 2 else None
+            if not (
+                isinstance(key, ast.Constant)
+                and isinstance(key.value, str)
+                and isinstance(module, ast.Constant)
+                and isinstance(module.value, str)
+            ):
+                continue
+            if module.value == "__module__":
+                table[key.value] = f"{package}.{key.value}"
+                continue
+            level = len(module.value) - len(module.value.lstrip("."))
+            base = _resolve_relative(module.value[level:], level, package)
+            if base:
+                table[key.value] = base
+
+    return table
 
 
 def _parse(path: Path) -> ast.Module:
@@ -337,6 +547,14 @@ def _imports(tree: ast.Module, package: str) -> list[tuple[str, str, Kind]]:
         stack += ast.iter_child_nodes(node)
         if isinstance(node, ast.Import):
             names += [(alias.name, "", Kind.MODULE) for alias in node.names]
+            # shortcut: `import pkg.sub` also binds pkg, but code then reads
+            # pkg.sub, so only a bare `import pkg` follows pkg's lazy imports.
+            # Upgrade to tracking attribute reads if a table package breaks.
+            names += [
+                (alias.name, "", Kind.WHOLE)
+                for alias in node.names
+                if "." not in alias.name
+            ]
         elif isinstance(node, ast.ImportFrom):
             names += _from_import(node, package)
         elif isinstance(node, ast.Call) and _is_import_call(node.func) and node.args:

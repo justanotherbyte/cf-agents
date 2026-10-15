@@ -111,7 +111,7 @@ def _upload(args: list[str], rest: list[str], path: Path, plan: ShakePlan) -> in
     """Run Wrangler on the staged config in place of the project's."""
     if "--dry-run" in rest:
         # Flushed, so it comes before Wrangler's output in a pipe.
-        print(f"wynd: {plan.size_report()}", flush=True)
+        print(f"wynd: {plan.size_report(path.parent / 'python_modules')}", flush=True)
 
     _, rest = _config_parser.parse_known_args(args)
     return wrangler.run([*rest, "--config", str(path)])

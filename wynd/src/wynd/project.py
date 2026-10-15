@@ -47,6 +47,8 @@ class Project:
     allow_build: bool
     # Modules the shaker keeps although nothing imports them by a literal name.
     keep: tuple[str, ...]
+    # Ship vendored docstrings, for a library that breaks when they're None.
+    keep_docstrings: bool
 
     @property
     def python_modules(self) -> Path:
@@ -82,6 +84,9 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
     keep = wynd.get("keep", [])
     if not isinstance(keep, list) or not all(isinstance(k, str) for k in keep):
         raise WyndError("[tool.wynd] keep must be a list of module names")
+    keep_docstrings = wynd.get("keep-docstrings", False)
+    if not isinstance(keep_docstrings, bool):
+        raise WyndError("[tool.wynd] keep-docstrings must be true or false")
 
     date = settings.get("compatibility_date")
     return Project(
@@ -97,6 +102,7 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
         dependencies=tuple(pyproject.get("project", {}).get("dependencies", ())),
         allow_build=bool(wynd.get("allow-build")),
         keep=tuple(keep),
+        keep_docstrings=keep_docstrings,
     )
 
 
