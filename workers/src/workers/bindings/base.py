@@ -9,7 +9,7 @@ from .._js import js_name
 from ..response import RESPONSE_ACCEPTED_TYPES
 from ..rpc import python_from_rpc, python_to_rpc
 
-__all__ = ["Binding"]
+__all__ = ("Binding",)
 
 # JS values that stay raw when they come back from a binding, as in the stock
 # SDK: they are meant for Response() and friends, have Python twins, or are

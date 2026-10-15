@@ -11,7 +11,7 @@ from typing import Any
 from .project import Project, WyndError
 from .targets import Target
 
-__all__ = ["select_sdk", "sync"]
+__all__ = ("select_sdk", "sync")
 
 SDKS = ("crosswind-workers", "workers-runtime-sdk")
 MIN_UV = (0, 12, 3)

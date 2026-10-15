@@ -10,7 +10,7 @@ from ._js import js_body, js_name, none_if_null, to_js_headers
 if TYPE_CHECKING:
     from .types import FetchKwargs
 
-__all__ = ["Request"]
+__all__ = ("Request",)
 
 
 class Request(BodyMixin):

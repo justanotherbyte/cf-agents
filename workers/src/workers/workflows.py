@@ -20,7 +20,7 @@ from ._js import compat_flag
 from .bindings import Binding
 from .rpc import python_from_rpc, python_to_rpc
 
-__all__ = ["NonRetryableError", "WorkflowStep"]
+__all__ = ("NonRetryableError", "WorkflowStep")
 
 NON_RETRYABLE = "NonRetryableError"
 

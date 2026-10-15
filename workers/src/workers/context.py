@@ -18,13 +18,13 @@ from ._js import js_name
 from .bindings import Binding, _js_options
 from .rpc import python_from_rpc, python_to_rpc
 
-__all__ = [
+__all__ = (
     "DurableObjectAbort",
     "DurableObjectContext",
     "DurableObjectStorage",
     "ExecutionContext",
     "js_promise",
-]
+)
 
 
 class DurableObjectAbort(BaseException):

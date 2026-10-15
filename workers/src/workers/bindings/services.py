@@ -6,7 +6,7 @@ from ..fetch import fetch
 from ..response import Response
 from .base import Binding, _js_options
 
-__all__ = ["DurableObjectNamespace", "Fetcher"]
+__all__ = ("DurableObjectNamespace", "Fetcher")
 
 
 class Fetcher(Binding):

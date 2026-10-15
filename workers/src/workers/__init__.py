@@ -36,7 +36,7 @@ from .types import (
 )
 from .utils import import_from_javascript, patch_env
 
-__all__ = [
+__all__ = (
     "Blob",
     "BlobEnding",
     "BlobValue",
@@ -64,7 +64,7 @@ __all__ = [
     "python_to_rpc",
     "waitUntil",
     "wait_until",
-]
+)
 
 
 def _wait_until(awaitable: _Any) -> None:

@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from .project import Project, WyndError
 
-__all__ = ["Target", "select_target"]
+__all__ = ("Target", "select_target")
 
 
 @dataclass(frozen=True)

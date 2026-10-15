@@ -15,7 +15,7 @@ from .formdata import FormData
 if TYPE_CHECKING:
     from .types import Body, Headers
 
-__all__ = ["RESPONSE_ACCEPTED_TYPES", "FetchResponse", "Response"]
+__all__ = ("RESPONSE_ACCEPTED_TYPES", "FetchResponse", "Response")
 
 # The JS body types js.Response accepts.
 RESPONSE_ACCEPTED_TYPES = {

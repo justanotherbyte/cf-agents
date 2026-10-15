@@ -4,7 +4,7 @@ from typing import Any
 from ..rpc import python_from_rpc, python_to_rpc
 from .base import Binding, _js_options
 
-__all__ = ["D1Database", "D1PreparedStatement"]
+__all__ = ("D1Database", "D1PreparedStatement")
 
 
 class D1PreparedStatement(Binding):

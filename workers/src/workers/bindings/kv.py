@@ -3,7 +3,7 @@ from typing import Any, Literal, overload
 from ..rpc import python_from_rpc, python_to_rpc
 from .base import Binding, _js_options
 
-__all__ = ["KVNamespace"]
+__all__ = ("KVNamespace",)
 
 type _KVType = Literal["text", "json", "arrayBuffer", "stream"]
 

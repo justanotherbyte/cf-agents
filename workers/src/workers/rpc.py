@@ -11,7 +11,7 @@ from .formdata import FormData
 from .request import Request
 from .response import Response
 
-__all__ = ["JsDict", "python_from_rpc", "python_to_rpc"]
+__all__ = ("JsDict", "python_from_rpc", "python_to_rpc")
 
 
 def python_from_rpc(obj: Any) -> Any:

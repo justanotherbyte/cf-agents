@@ -11,14 +11,14 @@ from .context import DurableObjectAbort, DurableObjectContext, ExecutionContext
 from .request import Request
 from .workflows import wrap_run
 
-__all__ = [
+__all__ = (
     "DurableObject",
     "DurableObjectAbort",
     "DurableObjectContext",
     "WorkerEntrypoint",
     "WorkflowEntrypoint",
     "handler",
-]
+)
 
 EnvT = TypeVar("EnvT")
 

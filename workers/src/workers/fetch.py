@@ -13,7 +13,7 @@ from .response import Response
 if TYPE_CHECKING:
     from .types import FetchKwargs
 
-__all__ = ["fetch"]
+__all__ = ("fetch",)
 
 
 async def _pyfetch_0_26(request: Any, **kwargs: Any) -> Response:

@@ -8,7 +8,7 @@ from typing import Any
 from .project import Project, WyndError
 from .shake import ShakePlan, shake
 
-__all__ = ["stage"]
+__all__ = ("stage",)
 
 # Fields Wrangler resolves from the config directory, by table. A list value
 # holds one table per item.

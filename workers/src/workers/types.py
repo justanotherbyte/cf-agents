@@ -9,14 +9,14 @@ if TYPE_CHECKING:
     from .blob import Blob
     from .formdata import FormData
 
-__all__ = [
+__all__ = (
     "Body",
     "Context",
     "FetchKwargs",
     "Headers",
     "JSBody",
     "RequestInitCfProperties",
-]
+)
 
 
 class Context(Protocol):
