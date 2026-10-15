@@ -6,7 +6,7 @@ from .project import CONFIG_NAMES, WyndError, load_project
 from .targets import TARGETS
 from .typegen import write_env
 
-__all__ = ["scaffold"]
+__all__ = ("scaffold",)
 
 PYPROJECT = """\
 [project]

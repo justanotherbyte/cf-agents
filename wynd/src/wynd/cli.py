@@ -13,7 +13,7 @@ from .sync import select_sdk, sync
 from .targets import select_target
 from .typegen import write_env
 
-__all__ = ["main"]
+__all__ = ("main",)
 
 # Reads the flags that choose the target and leaves everything else to Wrangler.
 # --env-file and --profile are Wrangler's other global value flags, read only so

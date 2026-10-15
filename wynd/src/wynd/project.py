@@ -5,7 +5,7 @@ from typing import Any
 
 import jsonc
 
-__all__ = ["Project", "WyndError", "load_project"]
+__all__ = ("Project", "WyndError", "load_project")
 
 # Wrangler walks every parent for one name before it tries the next.
 CONFIG_NAMES = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")

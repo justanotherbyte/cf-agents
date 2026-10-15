@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-__all__ = ["Kind", "ShakePlan", "shake"]
+__all__ = ()"Kind", "ShakePlan", "shake")
 
 WASM = b"\x00asm"
 

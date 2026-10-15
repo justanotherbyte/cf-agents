@@ -4,7 +4,7 @@ import sys
 from .project import Project
 from .targets import Target
 
-__all__ = ["warn_on_venv_mismatch"]
+__all__ = ("warn_on_venv_mismatch",)
 
 
 def warn_on_venv_mismatch(project: Project, target: Target) -> None:
