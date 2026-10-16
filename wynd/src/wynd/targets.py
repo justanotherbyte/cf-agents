@@ -19,7 +19,6 @@ class Target:
         return self.flag in flags or (self.since is not None and day >= self.since)
 
 
-# Copied from pywrangler at cb2db3c (metadata.py and utils.py), newest first.
 TARGETS = (
     Target(
         "3.14",

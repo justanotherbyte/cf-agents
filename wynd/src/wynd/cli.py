@@ -15,20 +15,20 @@ from .typegen import write_env
 
 __all__ = ("main",)
 
-# Reads the flags that choose the target and leaves everything else to Wrangler.
-# --env-file and --profile are Wrangler's other global value flags, read only so
-# their values aren't taken for the command.
 _parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-_parser.add_argument("-c", "--config")
-_parser.add_argument("-e", "--env")
-_parser.add_argument("--cwd")
-_parser.add_argument("--env-file", action="append")
-_parser.add_argument("--profile")
-# Wrangler flags that change the target after Wynd has installed for the
-# config's. Wynd refuses them.
-_parser.add_argument("--compatibility-date")
-_parser.add_argument("--compatibility-flags", "--compatibility-flag", action="append")
-_parser.add_argument("--latest", action="store_true")
+_target_flags = _parser.add_argument_group()
+_target_flags.add_argument("-c", "--config")
+_target_flags.add_argument("-e", "--env")
+_target_flags.add_argument("--cwd")
+_skipped_value_flags = _parser.add_argument_group()
+_skipped_value_flags.add_argument("--env-file", action="append")
+_skipped_value_flags.add_argument("--profile")
+_refused_flags = _parser.add_argument_group()
+_refused_flags.add_argument("--compatibility-date")
+_refused_flags.add_argument(
+    "--compatibility-flags", "--compatibility-flag", action="append"
+)
+_refused_flags.add_argument("--latest", action="store_true")
 
 # Wrangler 4.129.0's subcommands. Of these, only `versions upload` uploads code,
 # and `preview` uploads code when it has none of them.
@@ -37,7 +37,6 @@ SUBCOMMANDS = {
     "preview": {"delete", "settings", "secret", "base-config"},
 }
 
-# Takes only the config flag, so the remaining arguments keep their order.
 _config_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
 _config_parser.add_argument("-c", "--config")
 
@@ -94,7 +93,6 @@ def _flow(rest: list[str]) -> str:
     """Sort a command line into its flow, or passthrough."""
     words = [arg for arg in rest if not arg.startswith("-")]
     command = words[0] if words else ""
-    # A known name, not the second word, because a flag's value can come first.
     known = SUBCOMMANDS.get(command, set())
     subcommand = next((word for word in words[1:] if word in known), "")
 

@@ -40,8 +40,7 @@ class WorkflowStep(Binding):
         super().__init__(js_object)
         self._results: dict[Step, Any] = {}
         self._in_flight: dict[Step, Task[Any]] = {}
-        # Each step by its step name and by its function's name.
-        self._steps: dict[str, Step] = {}
+        self._steps_by_name: dict[str, Step] = {}
 
     def do(
         self,
@@ -78,8 +77,7 @@ class WorkflowStep(Binding):
                     step, step_name, config, func, parameters, results
                 )
 
-            # By function name too, so a step named "ctx-step" can be a dependency.
-            self._steps[step_name] = self._steps[func_name] = step
+            self._steps_by_name[step_name] = self._steps_by_name[func_name] = step
             return step
 
         return decorator
@@ -107,10 +105,10 @@ class WorkflowStep(Binding):
             return self._listed_dependencies(others, depends)
 
         for parameter in others:
-            if parameter not in self._steps:
+            if parameter not in self._steps_by_name:
                 raise TypeError(f"Received unexpected parameter {parameter}")
 
-        return [self._steps[p] for p in others]
+        return [self._steps_by_name[p] for p in others]
 
     def _listed_dependencies(
         self, others: list[str], depends: list[Step] | None
@@ -130,7 +128,7 @@ class WorkflowStep(Binding):
             )
 
         for parameter, dependency in zip(others, depends, strict=True):
-            if dependency not in self._steps.values():
+            if dependency not in self._steps_by_name.values():
                 raise TypeError(
                     f"'depends' entry for parameter {parameter!r} is not a "
                     "function decorated with step.do"
@@ -142,7 +140,6 @@ class WorkflowStep(Binding):
         if dependency in self._results:
             return self._results[dependency]
 
-        # Registered before awaiting, so a concurrent branch reuses this run.
         if dependency not in self._in_flight:
             self._in_flight[dependency] = create_task(dependency())
         return await self._in_flight[dependency]
@@ -169,7 +166,6 @@ class WorkflowStep(Binding):
             except NonRetryableError as error:
                 return _rejecting_thenable(error)
 
-            # The result crosses RPC back to the Workflows engine.
             return python_to_rpc(result)
 
         async def call() -> Any:
@@ -227,14 +223,12 @@ def _rejecting_thenable(error: NonRetryableError) -> Any:
     )
 
 
-# The Python exception for a traceback's last line, by the line's prefix.
 _TRACEBACK_ERRORS: dict[str, type[Exception]] = {
     "TypeError": TypeError,
     "ValueError": ValueError,
     "workers.workflows.NonRetryableError": NonRetryableError,
 }
 
-# The Python exception for a JS error, by the error's name.
 _JS_ERRORS: dict[str | None, type[Exception]] = {
     "RangeError": ValueError,
     "TypeError": TypeError,

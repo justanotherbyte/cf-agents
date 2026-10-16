@@ -98,7 +98,6 @@ def test_a_module_keeps_its_packages_and_what_they_import(
     shake = listing(project)
     assert shake["pkg/__init__.py"] == ("kept", "package of pkg.sub")
     assert shake["pkg/core.py"] == ("kept", "imported by pkg")
-    # A name that isn't a module doesn't show up as unresolved.
     assert "lib.VALUE" not in shake
     # .. above the top package resolves to nothing, as Python's ImportError.
     assert "other" not in shake
@@ -263,7 +262,6 @@ def test_metadata_ships_only_with_a_distribution_that_keeps_a_file(
             "unused-2.0.dist-info/RECORD": record(
                 "unused/__init__.py", "unused-2.0.dist-info/RECORD"
             ),
-            # Without a RECORD, Wynd can't tell whether the distribution is used.
             "bare-3.0.dist-info/METADATA": "Name: bare",
         },
     )
@@ -287,7 +285,6 @@ def test_metadata_ships_only_with_a_distribution_that_keeps_a_file(
         "dropped",
         "metadata of unused-2.0, which keeps no file",
     )
-    # The description is the README, which nothing reads at runtime.
     staged = project / ".wynd" / "build" / "python_modules"
     assert (staged / "used-1.0.dist-info/METADATA").read_text() == (
         "Metadata-Version: 2.4\nName: used\nVersion: 1.0\n"
@@ -344,7 +341,6 @@ def test_webassembly_extensions_ship(tools: Tools, project: Path) -> None:
             "core/_core.cpython-312-wasm32-emscripten.so": WASM,
             "core/libhelper.so": WASM,
             "native/__init__.py": "",
-            # A host binary in a package the Worker never imports is dropped.
             "native/_ext.cpython-312-x86_64-linux-gnu.so": b"\x7fELF\x02",
         },
     )
@@ -502,7 +498,6 @@ def test_vendored_modules_ship_without_comments_or_docstrings(
 
     source, namespace = staged_module(project, "strip.py")
     text = source.decode("latin-1")
-    # Tracebacks keep pointing at the vendored source's lines.
     assert text.count("\n") == STRIPPED.count(b"\n")
     assert text.startswith("# -*- coding: latin-1 -*-\n")
     for gone in ("docstring", "A comment", "trailing", "A class"):
@@ -513,7 +508,6 @@ def test_vendored_modules_ship_without_comments_or_docstrings(
     assert namespace["only_doc"].__doc__ is None
     assert namespace["only_doc"].__code__.co_firstlineno == 9
     assert namespace["Thing"].__doc__ is None
-    # The Worker's own source ships as written.
     staged_entry = project / ".wynd" / "build" / "src" / "entry.py"
     assert staged_entry.read_text() == "import strip\n"
 
@@ -548,7 +542,6 @@ def test_keep_docstrings_must_be_a_boolean(
     "source",
     [
         "def broken(:\n    # a comment\n",
-        # Blanking the docstring would leave a statement starting with ";".
         'def f():\n    """doc"""; return 1\n',
     ],
 )

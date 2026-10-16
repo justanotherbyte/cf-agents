@@ -20,8 +20,6 @@ class Fetcher(Binding):
 
 
 def _stub(js_stub: Any) -> Any:
-    # Callers type it as the Durable Object class, which no Python type can
-    # say of a stub (decisions.md#typed-bindings).
     return Fetcher(js_stub)
 
 

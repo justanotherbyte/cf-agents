@@ -144,7 +144,6 @@ def test_a_legacy_parameter_without_depends_is_refused() -> None:
 def test_concurrent_branches_run_a_shared_step_once() -> None:
     class YieldingEngine(Engine):
         async def do(self, name: str, *rest: Any) -> Any:
-            # Hand control back, as the real engine's RPC does.
             await asyncio.sleep(0)
             return await super().do(name, *rest)
 

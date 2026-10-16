@@ -13,7 +13,6 @@ pytestmark = pytest.mark.e2e
 def test_dev_serves_a_new_project(tmp_path: Path) -> None:
     subprocess.run([str(WYND), "init", "hello"], check=True, cwd=tmp_path)
     root = tmp_path / "hello"
-    # This checkout's crosswind, not the release on PyPI.
     with (root / "pyproject.toml").open("a") as pyproject:
         pyproject.write(
             f'[tool.uv.sources]\ncrosswind-workers = {{ path = "{CROSSWIND}" }}\n'

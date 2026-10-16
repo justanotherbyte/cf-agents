@@ -47,8 +47,6 @@ def test_stock_in_worker_suites(
         for suite in suites:
             if suite in OPT_IN:
                 continue
-            # As stock's client, requests, asks. FastAPI's suite answers
-            # through GZipMiddleware.
             _, body = server.request(
                 "GET",
                 f"/run-tests/{suite}",

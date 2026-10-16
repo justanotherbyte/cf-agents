@@ -88,8 +88,6 @@ class Request(BodyMixin):
 
     @property
     def method(self) -> HTTPMethod | str:
-        # HTTPMethod for a standard method. The stock SDK raises KeyError on
-        # any other; this returns the method string instead.
         method = self.js_object.method
         return HTTPMethod[method] if method in HTTPMethod.__members__ else method
 

@@ -22,9 +22,6 @@ def worker_env(**bindings: Any) -> Any:
     return WorkerEntrypoint(None, JsValue("Object", **bindings)).env
 
 
-# The env wrapper
-
-
 def test_env_wraps_each_binding_by_its_js_class() -> None:
     env = worker_env(
         KV=JsBinding("KvNamespace"),
@@ -71,9 +68,6 @@ def test_env_and_bindings_are_sent_over_rpc_as_their_js_objects() -> None:
 
     assert python_to_rpc(env.COUNTER) is js_counter
     assert python_to_rpc(env) is env.js_object
-
-
-# Typed methods
 
 
 def test_kv_typed_methods_send_camel_case_options() -> None:
@@ -150,9 +144,6 @@ def test_workflow_create_and_send_event() -> None:
     ]
 
 
-# Passthrough
-
-
 def test_names_without_a_typed_method_pass_through_under_their_js_name() -> None:
     js_kv = JsBinding("KvNamespace", returns=JsValue("Object", {"value": "v"}))
 
@@ -186,9 +177,6 @@ def test_plain_attributes_are_read_on_every_access() -> None:
     assert wrapped.rowsRead == 2
 
 
-# Generics
-
-
 def test_generic_mixes_in_before_or_after_an_entrypoint() -> None:
     S = TypeVar("S")
 
@@ -206,9 +194,6 @@ def test_generic_mixes_in_before_or_after_an_entrypoint() -> None:
     assert issubclass(Before, DurableObject)
     assert issubclass(After, DurableObject)
     assert issubclass(Parameterized, DurableObject)
-
-
-# Stock call forms: positional options as a dict or a JS object
 
 
 def test_typed_methods_accept_positional_options_as_the_stock_sdk_did() -> None:

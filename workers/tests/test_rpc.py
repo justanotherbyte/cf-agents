@@ -6,8 +6,6 @@ from fake_js import JsValue, js_date, js_error, js_request, js_response, jsnull
 
 from workers import Request, Response, python_from_rpc, python_to_rpc
 
-# python_from_rpc
-
 
 def test_null_and_python_values_arrive_as_is() -> None:
     assert python_from_rpc(jsnull) is None
@@ -62,9 +60,6 @@ def test_other_js_values_pass_through() -> None:
 
     assert python_from_rpc(JsValue("Array", [stream])) == [stream]
     assert python_from_rpc(JsValue("TestController")) is None
-
-
-# python_to_rpc
 
 
 def test_none_becomes_null_at_any_depth() -> None:

@@ -15,7 +15,6 @@ class Flow(WorkflowEntrypoint):
             ATTEMPTS["non_retryable"] += 1
             raise NonRetryableError("stop")
 
-        # The control: an ordinary exception, which the engine retries.
         @step.do("retryable", config=RETRIES)
         async def retryable():
             ATTEMPTS["retryable"] += 1

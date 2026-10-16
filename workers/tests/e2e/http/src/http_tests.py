@@ -31,9 +31,6 @@ def raises(error, message=None):
         raise AssertionError(f"expected {error.__name__}")
 
 
-# Stock: fetch
-
-
 async def test_fetch_returns_a_response():
     response = await fetch(f"{ORIGIN}/sub")
     assert isinstance(response, Response)
@@ -66,7 +63,6 @@ async def test_fetch_options():
 
 async def test_fetch_rejects_a_js_style_options_dict():
     with raises(TypeError):
-        # The JS calling convention, which Python rejects.
         await fetch(f"{ORIGIN}/sub", {"headers": {"X": "1"}})  # ty: ignore[too-many-positional-arguments]
 
 
@@ -90,9 +86,6 @@ async def test_fetched_form_data_with_blobs():
     assert await data["blob.py"].text() == "print(42)"
     assert data["blob.py"].content_type == "text/python"
     assert data["metadata"].name == "metadata.json"
-
-
-# Stock: Response
 
 
 async def test_inherited_response_methods():
@@ -168,9 +161,6 @@ async def test_response_buffer_sources():
     for body in cases:
         buffer = await Response(body).buffer()
         assert len(buffer.to_bytes()) == int(body.byteLength)
-
-
-# Stock: FormData, Blob, File, Request
 
 
 async def test_form_data():
@@ -252,9 +242,6 @@ async def test_request_cf():
     cf = Request(js.Request.new("https://test.com", options)).cf
     assert isinstance(cf, JsProxy)
     assert cf.colo == "DFW"
-
-
-# crosswind fixes for stock bugs
 
 
 async def test_fix_file_received_over_rpc():

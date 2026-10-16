@@ -9,12 +9,12 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import NamedTuple
 
 __all__ = ("Kind", "ShakePlan", "shake")
 
 WASM = b"\x00asm"
 
-# Leading bytes of binaries built for a host OS.
 HOST_BINARIES = {
     b"\x7fELF": "ELF",
     b"\xfe\xed\xfa\xce": "Mach-O",
@@ -25,7 +25,6 @@ HOST_BINARIES = {
     b"MZ": "PE",
 }
 
-# Files packages need only to build against them, never at runtime.
 BUILD_TIME = {".h", ".c", ".cpp", ".pxd", ".pyx", ".pxi", ".a", ".pc"}
 
 # shortcut: hand-listed stdlib additions up to 3.14, extend when targets.py adds
@@ -41,8 +40,7 @@ STDLIB = sys.stdlib_module_names | {
     "_zstd",
 }
 
-# Modules the Workers runtime provides without a vendored file.
-RUNTIME = {
+RUNTIME_MODULES = {
     "js",
     "pyodide",
     "pyodide_js",
@@ -58,14 +56,20 @@ CODING = re.compile(r"^[ \t\f]*#.*?coding[:=]")
 
 class Kind(Enum):
     MODULE = "module"
-    # A `from pkg import name` member, which may not be a module at all.
-    MEMBER = "member"
-    # `from pkg import *`, named by pkg.
-    STAR = "star"
-    # A computed name with a literal start, named "package:start".
-    PREFIX = "prefix"
-    # `import pkg`, which can read any attribute of pkg, lazy ones included.
-    WHOLE = "whole"
+    FROM_IMPORTED_NAME = "from imported name"
+    STAR_IMPORT = "star import"
+    COMPUTED_PREFIX = "computed prefix"
+    WHOLE_PACKAGE = "whole package"
+
+
+class _Cut(NamedTuple):
+    """A span of source to replace, with columns counted in characters."""
+
+    row: int
+    column: int
+    end_row: int
+    end_column: int
+    replacement: str
 
 
 @dataclass(frozen=True)
@@ -76,7 +80,6 @@ class ShakePlan:
     site: Path
     kept: dict[str, str] = field(default_factory=dict)
     dropped: dict[str, str] = field(default_factory=dict)
-    # Imported names with no vendored file, and who imported them.
     unresolved: dict[str, str] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
@@ -130,8 +133,6 @@ def shake(site: Path, source: Path, entry: Path, keep: tuple[str, ...]) -> Shake
     entry_name = ".".join(entry.relative_to(source).with_suffix("").parts)
     plan = _Shaker(site, source).run(entry_name, keep)
 
-    # Without it nothing the Worker imports is kept, and the upload would fail
-    # at import.
     if entry_name in plan.unresolved:
         plan.errors.append(f"entry module {entry_name} has no file in {source}")
 
@@ -148,11 +149,8 @@ class _Shaker:
         self.queue: deque[tuple[str, str, Kind]] = deque()
         self.seen: set[tuple[str, Kind]] = set()
         self.missing: set[str] = set()
-        # Packages that load attributes through a table, by name, with the table.
-        self.tables: dict[str, dict[str, str]] = {}
-        # Each table package's computed imports, followed only once some module
-        # does `import pkg` and can read any attribute.
-        self.deferred: dict[str, list[tuple[str, str, Kind]]] = {}
+        self.lazy_tables: dict[str, dict[str, str]] = {}
+        self.waiting_for_whole_package: dict[str, list[tuple[str, str, Kind]]] = {}
         self.whole: set[str] = set()
 
     def run(self, entry_name: str, keep: tuple[str, ...]) -> ShakePlan:
@@ -171,13 +169,13 @@ class _Shaker:
         if (name, kind) in self.seen:
             return
 
-        if kind is Kind.PREFIX:
+        if kind is Kind.COMPUTED_PREFIX:
             self.seen.add((name, kind))
             modules = _prefixed(name, self.roots)
             self.queue += [(module, reason, Kind.MODULE) for module in modules]
             return
 
-        whole = kind in (Kind.STAR, Kind.WHOLE)
+        whole = kind in (Kind.STAR_IMPORT, Kind.WHOLE_PACKAGE)
         parent = name if whole else name.rpartition(".")[0]
         # Python imports a module's packages first.
         if parent and (parent, Kind.MODULE) not in self.seen:
@@ -186,13 +184,12 @@ class _Shaker:
             return
 
         self.seen.add((name, kind))
-        if kind is Kind.STAR:
+        if kind is Kind.STAR_IMPORT:
             self._visit_star(name, reason)
-        elif kind is Kind.WHOLE:
+        elif kind is Kind.WHOLE_PACKAGE:
             self.whole.add(name)
-            self.queue += self.deferred.pop(name, [])
-            # The computed import only reaches this package's own modules.
-            lazy = self.tables.get(name, {}).values()
+            self.queue += self.waiting_for_whole_package.pop(name, [])
+            lazy = self.lazy_tables.get(name, {}).values()
             self.queue += [(m, f"{reason} by a lazy import", Kind.MODULE) for m in lazy]
         else:
             self._visit_module(name, parent, reason, kind)
@@ -200,7 +197,7 @@ class _Shaker:
     def _visit_star(self, name: str, reason: str) -> None:
         path = None if name in self.missing else _find(name, self.roots)
         for member in _all(_parse(path)) if path else []:
-            self.queue.append((f"{name}.{member}", reason, Kind.MEMBER))
+            self.queue.append((f"{name}.{member}", reason, Kind.FROM_IMPORTED_NAME))
 
     def _visit_module(self, name: str, parent: str, reason: str, kind: Kind) -> None:
         path = None if parent in self.missing else _find(name, self.roots)
@@ -209,8 +206,8 @@ class _Shaker:
             self.missing.add(name)
             if kind is Kind.MODULE and parent not in self.missing:
                 self.plan.unresolved.setdefault(name, reason)
-            lazy = self.tables.get(parent, {}).get(name.rpartition(".")[2])
-            if kind is Kind.MEMBER and lazy:
+            lazy = self.lazy_tables.get(parent, {}).get(name.rpartition(".")[2])
+            if kind is Kind.FROM_IMPORTED_NAME and lazy:
                 self.queue.append((lazy, f"{reason} by a lazy import", Kind.MODULE))
             return
 
@@ -232,12 +229,15 @@ class _Shaker:
         package = name if path.name == "__init__.py" or path.is_dir() else parent
         table = _lazy_table(tree, package)
         if table:
-            self.tables[name] = table
+            self.lazy_tables[name] = table
         for imported, why, imported_kind in _imports(tree, package):
             edge = (imported, f"imported by {name}{why}", imported_kind)
-            own = imported_kind is Kind.PREFIX and imported.partition(":")[0] == name
+            own = (
+                imported_kind is Kind.COMPUTED_PREFIX
+                and imported.partition(":")[0] == name
+            )
             if table and own and name not in self.whole:
-                self.deferred.setdefault(name, []).append(edge)
+                self.waiting_for_whole_package.setdefault(name, []).append(edge)
             else:
                 self.queue.append(edge)
 
@@ -273,7 +273,6 @@ class _Shaker:
         for file, kept, reason in decisions:
             plan.record(file.as_posix(), kept, reason)
 
-        # Metadata goes last, once every other file has its decision.
         dists = {
             d: _metadata(site / d, plan.kept) for d in {f.parts[0] for f in metadata}
         }
@@ -372,10 +371,8 @@ def _strip(source: bytes, docstrings: bool) -> bytes:
     except (SyntaxError, ValueError, UnicodeDecodeError, tokenize.TokenError):
         return source
 
-    # (start row, start column, end row, end column, replacement), columns in
-    # characters.
     cuts = [
-        (*token.start, *token.end, "")
+        _Cut(*token.start, *token.end, "")
         for token in tokens
         if token.type == tokenize.COMMENT
         and not (token.start[0] <= 2 and CODING.match(token.line))
@@ -400,16 +397,14 @@ def _strip(source: bytes, docstrings: bool) -> bytes:
         # before its `from __future__` imports.
         sole = len(node.body) == 1 and not isinstance(node, ast.Module)
         replacement = "pass" if sole else ""
-        cuts.append((first.lineno, start, first.end_lineno, end, replacement))
+        cuts.append(_Cut(first.lineno, start, first.end_lineno, end, replacement))
 
-    # From the end, so each cut leaves the rows and columns before it in place.
     for row, column, end_row, end_column, replacement in sorted(cuts, reverse=True):
         head, tail = lines[row - 1][:column], lines[end_row - 1][end_column:]
         lines[row - 1 : end_row] = [head + replacement + "\n" * (end_row - row) + tail]
 
     stripped = "".join(lines)
     try:
-        # A docstring followed by `;` on its line leaves a stray `;`.
         ast.parse(stripped)
     except SyntaxError:
         return source
@@ -434,7 +429,11 @@ def _absent_import(tree: ast.Module, roots: tuple[Path, ...]) -> str | None:
             continue
         for name in names:
             top = name.partition(".")[0]
-            if top not in STDLIB and top not in RUNTIME and _find(top, roots) is None:
+            if (
+                top not in STDLIB
+                and top not in RUNTIME_MODULES
+                and _find(top, roots) is None
+            ):
                 return top
     return None
 
@@ -557,11 +556,8 @@ def _imports(tree: ast.Module, package: str) -> list[tuple[str, str, Kind]]:
         stack += ast.iter_child_nodes(node)
         if isinstance(node, ast.Import):
             names += [(alias.name, "", Kind.MODULE) for alias in node.names]
-            # shortcut: `import pkg.sub` also binds pkg, but code then reads
-            # pkg.sub, so only a bare `import pkg` follows pkg's lazy imports.
-            # Upgrade to tracking attribute reads if a table package breaks.
             names += [
-                (alias.name, "", Kind.WHOLE)
+                (alias.name, "", Kind.WHOLE_PACKAGE)
                 for alias in node.names
                 if "." not in alias.name
             ]
@@ -582,9 +578,9 @@ def _from_import(node: ast.ImportFrom, package: str) -> list[tuple[str, str, Kin
     names = [(base, "", Kind.MODULE)]
     for alias in node.names:
         if alias.name == "*":
-            names.append((base, "", Kind.STAR))
+            names.append((base, "", Kind.STAR_IMPORT))
         else:
-            names.append((f"{base}.{alias.name}", "", Kind.MEMBER))
+            names.append((f"{base}.{alias.name}", "", Kind.FROM_IMPORTED_NAME))
 
     return names
 
@@ -605,7 +601,7 @@ def _computed_import(argument: ast.expr, package: str) -> list[tuple[str, str, K
     if not base:
         return []
 
-    return [(f"{base}:{rest}", " by a computed name", Kind.PREFIX)]
+    return [(f"{base}:{rest}", " by a computed name", Kind.COMPUTED_PREFIX)]
 
 
 def _literal_start(argument: ast.expr) -> str:

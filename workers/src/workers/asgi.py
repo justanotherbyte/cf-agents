@@ -127,8 +127,6 @@ class _Lifespan:
         return await self.receive_queue.get()
 
     async def send(self, got: dict[str, Any]) -> None:
-        # Failures use `or`, not a .get default: an empty message field is
-        # legal and would otherwise produce RuntimeError('').
         message = got.get("message")
         if got["type"] == "lifespan.startup.complete":
             _resolve(self.startup, True)
@@ -159,21 +157,16 @@ class _Lifespan:
                 self.startup.set_result(False)
                 return
 
-            # After a successful startup, a shutdown-phase error can't affect
-            # the already-served request, so log it and let shutdown complete.
             logger.exception("Exception in ASGI lifespan application", exc_info=exc)
             _resolve(self.shutdown_complete, None)
             return
 
-        # App returned without acking: a missing startup ack means it has no
-        # lifespan handler, so mark startup unsupported rather than hanging.
         if not self.startup.done():
             self.startup.set_result(False)
         else:
             _resolve(self.shutdown_complete, None)
 
     async def shutdown(self) -> None:
-        # Nothing to shut down if the app never completed a lifespan startup.
         if self.startup.done() and not self.startup.result():
             return
 
@@ -208,9 +201,8 @@ class _HttpCycle:
         self.result: Future[js.Response] = Future()
         self.finished_response = Event()
         self.receive_queue: Queue[dict[str, Any]] = Queue()
-        # Streaming state, set on the first body chunk with more_body=True.
-        self.writer: Any = None
-        self.writer_closed = False
+        self.stream_writer: Any = None
+        self.stream_closed = False
 
     async def queue_body(self, req: "Request | js.Request") -> None:
         if req.body:
@@ -240,26 +232,24 @@ class _HttpCycle:
             await self._send_body(got.get("body", b""), got.get("more_body", False))
 
     async def _send_body(self, body: bytes, more_body: bool) -> None:
-        if self.writer is None and more_body:
+        if self.stream_writer is None and more_body:
             self._start_stream()
-        if self.writer is None:
+        if self.stream_writer is None:
             self._respond(body)
             return
 
         with acquire_js_buffer(body) as jsbytes:
-            await self.writer.write(jsbytes.slice())
+            await self.stream_writer.write(jsbytes.slice())
         if not more_body:
-            await self.writer.close()
-            self.writer_closed = True
+            await self.stream_writer.close()
+            self.stream_closed = True
             self.finished_response.set()
 
     def _start_stream(self) -> None:
-        # A TransformStream lets the runtime consume body chunks as they are
-        # written.
         from js import Response, TransformStream
 
         transform_stream = TransformStream.new()
-        self.writer = transform_stream.writable.getWriter()
+        self.stream_writer = transform_stream.writable.getWriter()
         self.result.set_result(
             Response.new(transform_stream.readable, **self._response_init())
         )
@@ -292,29 +282,26 @@ class _HttpCycle:
         try:
             scope = request_to_scope(req, env, state=state)
             await self.app(scope, self.receive, self.send)
-            # If no response has been set yet, the app didn't generate one.
             if not self.result.done():
                 raise RuntimeError("The application did not generate a response")
         except Exception as e:
             if not self.result.done():
                 self.result.set_exception(e)
-                if self.writer is not None:
-                    await self.writer.close()
+                if self.stream_writer is not None:
+                    await self.stream_writer.close()
                 self.finished_response.set()
                 return
 
-            # Response already sent — exception can't be propagated to the
-            # client, so log it to avoid silently swallowing errors.
             logger.exception("Exception in ASGI application after response started")
             self.finished_response.set()
-            if self.writer is not None and not self.writer_closed:
+            if self.stream_writer is not None and not self.stream_closed:
                 # End the body so a client reading it sees the stream stop
                 # instead of waiting forever for chunks that will never come.
                 # Deliberately not awaited: close() settles only once the
                 # queued chunks reach a consumer, so a response body that
                 # nobody reads would block this task, which the runtime is
                 # waiting on through wait_until.
-                run_in_background(close_stream_quietly(self.writer))
+                run_in_background(close_stream_quietly(self.stream_writer))
 
 
 async def process_request(
@@ -332,15 +319,13 @@ async def process_request(
     try:
         response = await cycle.result
     except Exception:
-        # The request task handles application exceptions and should be allowed
-        # to finish before its error is propagated to fetch().
         await request_task
         raise
 
     # Buffered responses do not depend on a consumer, so request cleanup can
     # finish before returning. Streaming responses must run alongside the
     # consumer because writes can be subject to backpressure.
-    if cycle.writer is None:
+    if cycle.stream_writer is None:
         await request_task
 
     return response, request_task
@@ -418,10 +403,7 @@ class _WebSocketSession:
         if self.app_closed:
             return
 
-        # The app ended without closing, so a half-open connection would leave
-        # the client hanging instead of reconnecting.
         failed = not finished.cancelled() and finished.exception() is not None
-        # The peer may already have closed the socket.
         with suppress(Exception):
             self.server.close(1011 if failed else 1000, "")
 

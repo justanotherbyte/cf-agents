@@ -32,7 +32,6 @@ def test_generated_env_types_and_runs_a_crosswind_worker(tmp_path: Path) -> None
     }
     (tmp_path / "wrangler.json").write_text(json.dumps(config))
 
-    # dev writes src/env.py, and entry.py imports it at runtime.
     assert serve(tmp_path, [str(WYND), "dev"]) == "2 hi"
 
     checks = [

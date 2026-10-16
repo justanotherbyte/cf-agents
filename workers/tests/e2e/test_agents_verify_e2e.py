@@ -19,7 +19,6 @@ AGENTS = Path(
     os.environ.get("AGENTS_PY", CROSSWIND.parents[2] / "agents-port" / "agents-py")
 )
 VERIFY = AGENTS / "verify"
-# Run from source, as the stock suite's testlib runs it.
 PYWRANGLER = [
     "uv",
     "run",

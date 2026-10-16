@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 from devserver import CROSSWIND, WYND
 
-# The stock SDK checkout, at cb2db3c, beside this repository by default.
 STOCK_SDK = Path(
     os.environ.get(
         "STOCK_SDK", CROSSWIND.parents[1] / "workers-py" / "packages" / "runtime-sdk"

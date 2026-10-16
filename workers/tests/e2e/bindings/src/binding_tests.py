@@ -40,7 +40,6 @@ async def test_kv(env):
     assert with_metadata["metadata"] == {"m": 1}
     listing = await env.KV.list(prefix="te")
     assert [key["name"] for key in listing["keys"]] == ["text"]
-    # Stock style: camelCase passthrough and options as JS keywords.
     await env.KV.put("stock", "v", expirationTtl=3600)
     stock = await env.KV.getWithMetadata("stock")
     assert stock["value"] == "v"
@@ -122,7 +121,6 @@ async def test_workflow(env):
 
 
 async def test_unknown_binding_passes_through(env):
-    # Version metadata has no binding class: a JSON-like object or a Binding.
     metadata = env.VERSION
     assert isinstance(metadata, (Binding, dict)), type(metadata)
     assert metadata["id"] is not None

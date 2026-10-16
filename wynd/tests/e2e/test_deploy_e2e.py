@@ -27,8 +27,6 @@ def test_deploy_dry_run_runs_from_the_staged_tree(tmp_path: Path) -> None:
         "main": "src/entry.py",
         "compatibility_date": "2025-06-01",
         "compatibility_flags": ["python_workers"],
-        # Both are relative to the project, so they break from .wynd/build/
-        # unless Wynd rewrites them.
         "assets": {"directory": "./public"},
         "containers": [{"class_name": "Box", "image": "./Dockerfile"}],
         "durable_objects": {"bindings": [{"name": "BOX", "class_name": "Box"}]},

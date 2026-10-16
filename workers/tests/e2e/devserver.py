@@ -21,7 +21,6 @@ import pytest
 CROSSWIND = Path(__file__).parents[2]
 WYND = CROSSWIND.parent / "wynd"
 
-# One compatibility date per Python target.
 TARGETS = pytest.mark.parametrize(
     ("date", "version"),
     [
@@ -95,7 +94,6 @@ class DevServer:
 
 
 def _text(response: Any) -> str:
-    # An app may compress its answer, as FastAPI's GZipMiddleware does.
     data = response.read()
     if response.headers.get("Content-Encoding") == "gzip":
         data = gzip.decompress(data)
@@ -130,7 +128,6 @@ def dev_server(project: Path, command: list[str]) -> Generator[DevServer]:
     try:
         yield DevServer(f"http://127.0.0.1:{port}", process, log)
     finally:
-        # The group is gone already when the server exited on its own.
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGTERM)
         process.wait()

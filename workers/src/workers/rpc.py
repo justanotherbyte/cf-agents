@@ -1,5 +1,6 @@
 import datetime
 import inspect
+from collections.abc import Iterator
 from typing import Any
 
 import js
@@ -94,7 +95,6 @@ def _none_to_null(value: Any) -> Any:
 
 
 def _refuse_unsendable(value: Any) -> None:
-    # A wrapper is sent as its JS object, and callables as proxies.
     if hasattr(value, "js_object") or (callable(value) and not isinstance(value, type)):
         return
 
@@ -104,7 +104,7 @@ def _refuse_unsendable(value: Any) -> None:
         raise TypeError(f"{type(value)} cannot be sent over RPC.")
     if inspect.isawaitable(value):
         raise TypeError(f"Awaitable {type(value)} cannot be sent over RPC.")
-    if isinstance(value, (str, bytes)):
+    if isinstance(value, (str, bytes, Iterator)):
         return
 
     try:
@@ -112,10 +112,6 @@ def _refuse_unsendable(value: Any) -> None:
     except TypeError:
         return
 
-    # Iterating an iterator such as a generator would empty it before it is
-    # sent, which the stock SDK does. A container gives a fresh iterator.
-    if items is value:
-        return
     for item in items:
         _refuse_unsendable(item)
 
@@ -146,7 +142,6 @@ _STOCK_PRIVATE_NAMES = {
 
 
 def __getattr__(name: str) -> Any:
-    # Served lazily, because bindings imports this module.
     if name in _STOCK_PRIVATE_NAMES:
         from . import bindings
 

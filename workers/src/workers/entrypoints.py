@@ -39,7 +39,6 @@ else:
 
 
 class _Entrypoint:
-    # The class that wraps ctx, or None to leave it raw.
     _context_class: Callable[[Any], Any] | None = None
     # Handlers workerd calls with raw JS arguments, which get converted.
     _raw_handlers: tuple[str, ...] = ()
@@ -59,14 +58,11 @@ class _Entrypoint:
             init = _init_with_wrapped_args(cls.__dict__["__init__"])
             setattr(cls, "__init__", init)  # noqa: B010 (ty rejects the plain assignment)
 
-        # A handler the user names on_<name> for old dates converts too.
         for name in (*cls._raw_handlers, *(f"on_{n}" for n in cls._raw_handlers)):
             handler = getattr(cls, name, None)
-            if handler is not None and handler not in _CONVERTING | _ALIASES:
+            if handler is not None and handler not in _ALREADY_WRAPPED:
                 setattr(cls, name, _converting(handler))
 
-        # The alias looks the handler up on each call, so it follows subclass
-        # overrides and is set once. An on_<name> the user defines wins.
         for name in cls._legacy_names:
             if hasattr(cls, name) and not hasattr(cls, f"on_{name}"):
                 setattr(cls, f"on_{name}", _alias(name))
@@ -92,10 +88,7 @@ def _init_with_wrapped_args(init: Callable[..., None]) -> Callable[..., None]:
     return wrapped
 
 
-# Handlers already converting their arguments, and on_<name> aliases, so a
-# subclass doesn't rewrap them.
-_CONVERTING: set[Callable[..., Any]] = set()
-_ALIASES: set[Callable[..., Any]] = set()
+_ALREADY_WRAPPED: set[Callable[..., Any]] = set()
 
 
 def _handler_arg(value: Any) -> Any:
@@ -113,7 +106,7 @@ def _converting(handler: Callable[..., Any]) -> Callable[..., Any]:
             **{k: _handler_arg(v) for k, v in kwargs.items()},
         )
 
-    _CONVERTING.add(wrapped)
+    _ALREADY_WRAPPED.add(wrapped)
     return wrapped
 
 
@@ -123,7 +116,7 @@ def _alias(name: str) -> Callable[..., Any]:
         # handler's signature doesn't take, as workerd does for a plain fetch.
         return relaxed_call(getattr(self, name), *args, **kwargs)
 
-    _ALIASES.add(alias)
+    _ALREADY_WRAPPED.add(alias)
     return alias
 
 
@@ -161,7 +154,6 @@ class WorkflowEntrypoint(_Typed[EnvT], _Entrypoint):
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        # Only a run this class defines, so an inherited one isn't rewrapped.
         if "run" in cls.__dict__:
             setattr(cls, "run", wrap_run(cls.__dict__["run"]))  # noqa: B010
 

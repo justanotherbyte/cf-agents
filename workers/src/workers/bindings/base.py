@@ -11,17 +11,13 @@ from ..rpc import python_from_rpc, python_to_rpc
 
 __all__ = ("Binding",)
 
-# JS values that stay raw when they come back from a binding, as in the stock
-# SDK: they are meant for Response() and friends, have Python twins, or are
-# promises Python awaits.
-_RAW_JS_TYPES = RESPONSE_ACCEPTED_TYPES | {"Headers", "Promise"}
+_UNWRAPPED_JS_TYPES = RESPONSE_ACCEPTED_TYPES | {"Headers", "Promise"}
 
 
 class Binding:
     """A binding with no typed class. Every name passes through to JS."""
 
     def __new__(cls, js_object: Any) -> Self:
-        # Wrapping a wrapper of this class returns it unchanged.
         return js_object if isinstance(js_object, cls) else super().__new__(cls)
 
     def __init__(self, js_object: Any) -> None:
@@ -47,7 +43,6 @@ class Binding:
         """A JS attribute's value as Python sees it, for a name the class
         doesn't define. Subclasses override this to convert differently."""
         if not callable(value):
-            # Read on every access. The stock SDK caches the first value.
             return _convert(value)
         return lambda *args, **kwargs: _invoke(value, args, kwargs)
 
@@ -106,7 +101,7 @@ def _convert(value: Any) -> Any:
 def _wrap(value: Any) -> Any:
     """Wrap a JS value that conversion left as JS, so its names pass through."""
     name = js_name(value)
-    if name is None or name in _RAW_JS_TYPES:
+    if name is None or name in _UNWRAPPED_JS_TYPES:
         return value
     return _RpcStub(value) if callable(value) else Binding(value)
 

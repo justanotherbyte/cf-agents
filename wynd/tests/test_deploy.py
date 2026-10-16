@@ -201,7 +201,6 @@ def test_a_source_directory_holding_the_project_fails(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # The config sits above pyproject.toml, so base_dir holds .wynd/ itself.
     child = worker(tmp_path / "child", {})
     (child / "wrangler.jsonc").unlink()
     settings = {**config(), "main": "child/src/entry.py", "base_dir": "child"}
@@ -232,7 +231,6 @@ def test_an_entry_outside_base_dir_fails(
     "command",
     [
         ["versions", "upload", "--dry-run"],
-        # A flag's value comes before the subcommand.
         ["versions", "--message", "m", "upload"],
         ["preview", "--name", "pr-1"],
     ],

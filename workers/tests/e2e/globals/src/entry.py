@@ -9,7 +9,6 @@ import workers
 from workers import Response, WorkerEntrypoint, env, import_from_javascript, patch_env
 from workers.bindings import KVNamespace
 
-# Top level: env and the two preloaded modules work here, as in the stock SDK.
 TOP_TEXT = env.TEXT
 SOCKETS = import_from_javascript("cloudflare:sockets")
 try:
@@ -28,7 +27,6 @@ class Default(WorkerEntrypoint):
     async def fetch(self, request):
         path = urlparse(request.url).path
         if path == "/defer":
-            # Responds at once; only ctx.wait_until keeps the write alive.
             self.ctx.wait_until(write_later())
             return Response("scheduled")
         if path == "/deferred":
