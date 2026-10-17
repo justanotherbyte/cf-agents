@@ -1,5 +1,10 @@
 # MCP (planning; nothing implemented)
 
+> The API and internals are now proposed in [mcp_api.md](./mcp_api.md) and
+> [mcp_engine.md](./mcp_engine.md). Where §4 below differs from them, those
+> docs win. §4.4 is closed by mcp_api.md §1, which opts in through
+> `AgentOptions(mcp=MCPOptions())`.
+
 Plan for porting upstream's MCP support (`../agents/packages/agents/src/mcp/`,
 `agents` v0.28.1, built on `@modelcontextprotocol/client` and
 `/server` 2.3.1) on top of the MCP Python SDK (`mcp` on PyPI).
