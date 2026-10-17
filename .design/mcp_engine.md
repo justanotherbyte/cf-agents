@@ -34,6 +34,7 @@ src/agents/
     │   └── urls.py       # normalize_server_id, is_blocked_url, callback URL building
     └── server/
         ├── __init__.py
+        ├── server.py     # create_mcp_server: MCPServer with Workers defaults
         ├── handler.py    # create_mcp_handler, McpHandler, route/CORS/Host/Origin checks
         ├── asgi.py       # the request ⇄ ASGI bridge for one request
         └── auth_context.py  # McpAuthContext, the ContextVar, get_mcp_auth_context
@@ -360,6 +361,7 @@ McpHandler(request, env, ctx)
   ├─ OPTIONS                       → CORS preflight
   ├─ Host / Origin not allowed     → 403 (upstream's hostHeaderValidationResponse / originValidationResponse)
   ├─ set the auth ContextVar
+  ├─ server = factory() if a factory was given, else the shared instance; take its low-level Server
   ├─ manager = StreamableHTTPSessionManager(lowlevel_server, stateless=True, json_response=...)
   ├─ async with manager.run():     # new manager per request: run() raises if called twice
   │     response = await asgi.serve(manager.handle_request, request)
@@ -377,6 +379,13 @@ McpHandler(request, env, ctx)
   request, and `MCPServer.streamable_http_app()` keeps one session manager
   across lifespans, so it's used for reference only. Whether its internals
   can be reused is an implementation detail checked in step 1 (§10).
+- **`create_mcp_server`** (`server.py`) builds an `MCPServer` with the
+  Workers defaults from [mcp_api.md](./mcp_api.md) §4.1 and returns it
+  unwrapped. The handler takes any `MCPServer` or low-level `Server`, so
+  the helper sets defaults but isn't a separate code path.
+- **Factories are called once per request**, before the session manager is
+  built. An exception from the factory is a 500 that goes through the
+  handler's error reporting (upstream's `handler-errors.ts`).
 - **Tools run in the request's task.** When the handler is called from an
   agent's `on_request`, `get_current_agent()` is set inside them.
 
@@ -431,7 +440,7 @@ when it's set and MCP is on. `True` means no timeout.
 | 2 | `storage.py`, `urls.py`, `types.py`, `errors.py` | 0 |
 | 3 | `connection.py` and `manager.py` without OAuth: add, remove, restore, wait, discovery, catalog, calls, events; the `Agent` members and the broadcast | 2 |
 | 4 | OAuth: `oauth.py`, `callback.py`, the two hooks | 3 |
-| 5 | `server/`: `create_mcp_handler`, auth context | 0, 1 |
+| 5 | `server/`: `create_mcp_server`, `create_mcp_handler` (server or factory), auth context | 0, 1 |
 | 6 | Chat: `wait_for_mcp_connections` | 3 |
 | 7 | User docs and an example (`examples/mcp-client`, `examples/mcp-server`) on a 3.14 Worker | 3–5 |
 
