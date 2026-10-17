@@ -118,7 +118,7 @@ def get_mcp_servers(self) -> MCPServersState: ...
 - **On failure** it raises `MCPConnectionError`. The server stays stored, so
   `self.mcp.connect_server(id)` can retry it, as upstream.
 - **Not ported:** the RPC overload (`addMcpServer(name, env.MY_MCP)` to an
-  `McpAgent` binding), because `McpAgent` isn't ported (§4.4), and the
+  `McpAgent` binding), because `McpAgent` isn't ported (§4.3), and the
   deprecated positional `(name, url, callbackHost, agentsPrefix, options)`
   form.
 
@@ -367,8 +367,8 @@ class Default(WorkerEntrypoint):
         return await handler(request, self.env, self.ctx)
 ```
 
-Servers are the SDK's own `MCPServer` (or the low-level `Server`); the SDK
-has no server-building helper of its own (decided: no `create_mcp_server`).
+Servers are the SDK's own `MCPServer` (or the low-level `Server`); cf-agents
+adds no server-building helper (decided: no `create_mcp_server`).
 The Workers-specific handling lives in the handler instead:
 
 - **The SDK's built-in OAuth authorization server is refused.** A server
@@ -446,7 +446,7 @@ This is upstream's `createMcpHandler` (`handler-stateless.ts`):
   notifications have no channel in stateless mode), and the
   `handler-compat` / `handler-legacy` shims for upstream's own older APIs.
 
-### 4.3 Using it from an agent
+### 4.2 Using it from an agent
 
 ```python
 class MyAgent(Agent):
@@ -458,7 +458,7 @@ Tools then run inside the agent, so `get_current_agent()` works in them. The
 endpoint is still stateless: each request is independent, and any
 per-session state is the tool's job (for example, storing it in agent state).
 
-### 4.4 Not ported: `McpAgent`
+### 4.3 Not ported: `McpAgent`
 
 Upstream's `McpAgent` (`legacy-agent.ts`) is deprecated and built on SDK
 v1. Upstream tells new servers to use `createMcpHandler`. Not porting it
