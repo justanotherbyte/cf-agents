@@ -31,7 +31,9 @@ design evolves. This index lists where to look.
 | [utilities.md](./utilities.md) | SDK-wide principles (exceptions, durations, timestamps), method lookup, the FFI module, the dataclass convention, typed SQL, `retry()` |
 | [core_disposable_store.md](./core_disposable_store.md) | Upstream `core/`: `DisposableStore` → `AsyncExitStack`, `Emitter` |
 | [`[NICE_TO_HAVE_DO_NOT_INCLUDE_YET]_asgi_and_django_integrations.md`](./%5BNICE_TO_HAVE_DO_NOT_INCLUDE_YET%5D_asgi_and_django_integrations.md) | **Not in scope yet.** Ideas for agents alongside FastAPI / Starlette / Django (ASGI and WSGI) |
-| [mcp.md](./mcp.md) | **Planning, not in scope yet.** MCP client and server: the Python SDK's dependencies and Workers support, version policy, the shape of the port, core work first |
+| [mcp.md](./mcp.md) | **Planning, not in scope yet.** MCP client and server: the Python SDK's dependencies and Workers support, version policy, core work first |
+| [mcp_api.md](./mcp_api.md) | **Proposed.** MCP's public API: `MCPOptions`, `add_mcp_server` and the other `Agent` members, `MCPClientManager`, `create_mcp_handler` |
+| [mcp_engine.md](./mcp_engine.md) | **Proposed.** MCP internals: module layout, the connection task, restore, storage, the OAuth split across requests, the stateless server handler, tests, build order |
 | [platform_verification.md](./platform_verification.md) | Results of running the "to verify" items on the Python Workers runtime |
 | [observability.md](./observability.md) | Structured events: upstream pipeline, in-scope events, Python design |
 
