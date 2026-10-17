@@ -118,7 +118,7 @@ def get_mcp_servers(self) -> MCPServersState: ...
 - **On failure** it raises `MCPConnectionError`. The server stays stored, so
   `self.mcp.connect_server(id)` can retry it, as upstream.
 - **Not ported:** the RPC overload (`addMcpServer(name, env.MY_MCP)` to an
-  `McpAgent` binding), because `McpAgent` isn't ported (§4.3), and the
+  `McpAgent` binding), because `McpAgent` isn't ported (§4.4), and the
   deprecated positional `(name, url, callbackHost, agentsPrefix, options)`
   form.
 
@@ -131,15 +131,30 @@ server's OAuth keys. `get_mcp_servers()` returns what the
 `self.mcp` is the `MCPClientManager` capability (§3). Without
 `AgentOptions.mcp` it raises `MCPNotEnabledError`.
 
+On a plain `Agent`, use it from any method, a `@callable` for example:
+
 ```python
-class MyAgent(AIChatAgent):
+class MyAgent(Agent):
+    options = AgentOptions(mcp=MCPOptions())
+
+    @callable
+    async def search(self, server_id: str, query: str) -> str:
+        result = await self.mcp.call_tool(server_id, "search", {"query": query})
+        return result.content[0].text
+```
+
+`on_chat_message` only exists on `AIChatAgent`. There, the tools usually go
+to the model:
+
+```python
+class MyChatAgent(AIChatAgent):
     options = AIChatAgentOptions(mcp=MCPOptions(), wait_for_mcp_connections=5)
 
     async def on_chat_message(self, options: ChatMessageOptions) -> AsyncIterator[UIMessageChunk]:
         tools = self.mcp.list_tools()                # list[ServerTool]
         # ...hand tools to your model in its own format; when it calls one:
-        chosen = tools[0]
-        result = await self.mcp.call_tool(chosen.server_id, chosen.tool.name, {"query": "..."})
+        result = await self.mcp.call_tool(tools[0].server_id, tools[0].tool.name, {"query": "..."})
+        ...                                          # yield the chunks of the reply
 ```
 
 The SDK doesn't convert MCP tools into any model provider's format. This
@@ -328,14 +343,13 @@ importing `agents.mcp`.
 
 ## 4. Server: hosting an MCP server on a Worker
 
-### 4.1 `create_mcp_handler`
+### 4.1 `create_mcp_server`
 
 ```python
-from agents.mcp.server import create_mcp_handler, get_mcp_auth_context
-from mcp.server.mcpserver import MCPServer
+from agents.mcp.server import create_mcp_handler, create_mcp_server
 from workers import WorkerEntrypoint
 
-server = MCPServer("Demo")
+server = create_mcp_server("Demo", version="1.0.0")
 
 
 @server.tool()
@@ -344,7 +358,7 @@ def add(a: int, b: int) -> int:
     return a + b
 
 
-handler = create_mcp_handler(server, route="/mcp")
+handler = create_mcp_handler(server)
 
 
 class Default(WorkerEntrypoint):
@@ -353,8 +367,55 @@ class Default(WorkerEntrypoint):
 ```
 
 ```python
+def create_mcp_server(
+    name: str,
+    *,
+    version: str,
+    title: str | None = None,
+    description: str | None = None,
+    instructions: str | None = None,
+    website_url: str | None = None,
+    icons: Sequence[Icon] | None = None,
+    middleware: Sequence[ServerMiddleware] | None = None,
+) -> MCPServer: ...
+```
+
+- **It returns the SDK's own `MCPServer`**
+  (`mcp.server.mcpserver.MCPServer`), not a wrapper. `@server.tool()`,
+  `@server.resource(...)`, `@server.prompt()` and `add_tool` are the
+  SDK's API, documented by the SDK. Wrapping them would only fall behind it.
+- **What it adds over calling `MCPServer(...)` directly:**
+  - Workers defaults.
+  - A signature limited to what `create_mcp_handler` can serve.
+  - Keeping the server name and version required, as upstream's
+    `new McpServer({ name, version })` does. The SDK defaults the version
+    to `""`.
+- **The Workers defaults:**
+  - **No subscription bus:** `subscriptions=False`, because a stateless
+    endpoint has no channel for `resources/subscribe` updates. (The exact
+    SDK default to override is checked in step 5.)
+  - **No transport security of its own:** `create_mcp_handler` validates
+    Host and Origin itself (§4.2), so the SDK's DNS-rebinding settings,
+    which are written for a local uvicorn server, aren't used.
+- **Left out on purpose:**
+  - The SDK's built-in OAuth authorization server
+    (`auth_server_provider`, `auth`, `token_verifier`), which installs
+    Starlette routes that `create_mcp_handler` doesn't serve. On Workers,
+    auth sits in front of the handler (for example Cloudflare's OAuth
+    provider library) and reaches tools through `get_mcp_auth_context()`.
+  - `lifespan`, because there's no long-running process.
+  - The `run_*` / `*_app` methods. They still exist on the returned
+    object, but they're for stdio and uvicorn and aren't documented for
+    Workers.
+- **`MCPServer` and the low-level `Server` still work.** Anything built
+  directly with the SDK can go to `create_mcp_handler` as well. The helper
+  is the documented path, not a requirement.
+
+### 4.2 `create_mcp_handler`
+
+```python
 def create_mcp_handler(
-    server: MCPServer | Server,
+    server: MCPServer | Server | Callable[[], MCPServer | Server],
     *,
     route: str = "/mcp",
     cors: CORSOptions | None = CORSOptions(),     # None disables CORS headers
@@ -368,6 +429,33 @@ class McpHandler:
     async def __call__(self, request: Request, env: Any, ctx: Any) -> Response: ...
     async def fetch(self, request: Request) -> Response: ...       # from an Agent's on_request
 ```
+
+**`server` is either a server or a factory**, as upstream's
+`createMcpHandler(createServer)`, which takes a `McpServerFactory` and
+builds a fresh server for every request. A factory is how tools get the
+Worker's bindings, because `env` only exists inside `fetch` on Python
+Workers:
+
+```python
+def build_server(env) -> MCPServer:
+    server = create_mcp_server("Notes", version="1.0.0")
+
+    @server.tool()
+    async def get_note(id: str) -> str:
+        """Read a note."""
+        row = await env.DB.prepare("SELECT body FROM notes WHERE id = ?").bind(id).first()
+        return row.body
+
+    return server
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request):
+        return await create_mcp_handler(lambda: build_server(self.env))(request, self.env, self.ctx)
+```
+
+A server instance is reused across requests. That's safe because the
+endpoint is stateless.
 
 This is upstream's `createMcpHandler` (`handler-stateless.ts`):
 
@@ -386,7 +474,7 @@ This is upstream's `createMcpHandler` (`handler-stateless.ts`):
   notifications have no channel in stateless mode), and the
   `handler-compat` / `handler-legacy` shims for upstream's own older APIs.
 
-### 4.2 Using it from an agent
+### 4.3 Using it from an agent
 
 ```python
 class MyAgent(Agent):
@@ -398,7 +486,7 @@ Tools then run inside the agent, so `get_current_agent()` works in them. The
 endpoint is still stateless: each request is independent, and any
 per-session state is the tool's job (for example, storing it in agent state).
 
-### 4.3 Not ported: `McpAgent`
+### 4.4 Not ported: `McpAgent`
 
 Upstream's `McpAgent` (`legacy-agent.ts`) is deprecated and built on SDK
 v1. Upstream tells new servers to use `createMcpHandler`. Not porting it
@@ -413,7 +501,7 @@ transport (`mcp/rpc.ts`).
 | --- | --- |
 | `from agents import Agent, AgentOptions, MCPOptions` | Nothing from `mcp` |
 | `from agents.mcp import MCPClientManager, MCPConnectionState, ServerTool, ...` | Imports `mcp` (the client side) |
-| `from agents.mcp.server import create_mcp_handler, get_mcp_auth_context` | Imports `mcp` (the server side) |
+| `from agents.mcp.server import create_mcp_server, create_mcp_handler, get_mcp_auth_context` | Imports `mcp` (the server side) |
 
 Importing `agents.mcp` without the extra raises an `ImportError` that names
 `cf-agents[mcp]` and the Python 3.14 Workers requirement.
