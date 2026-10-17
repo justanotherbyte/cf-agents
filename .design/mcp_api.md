@@ -343,13 +343,14 @@ importing `agents.mcp`.
 
 ## 4. Server: hosting an MCP server on a Worker
 
-### 4.1 `create_mcp_server`
+### 4.1 `create_mcp_handler`
 
 ```python
-from agents.mcp.server import create_mcp_handler, create_mcp_server
+from agents.mcp.server import create_mcp_handler
+from mcp.server import MCPServer
 from workers import WorkerEntrypoint
 
-server = create_mcp_server("Demo", version="1.0.0")
+server = MCPServer("Demo", version="1.0.0")
 
 
 @server.tool()
@@ -366,52 +367,23 @@ class Default(WorkerEntrypoint):
         return await handler(request, self.env, self.ctx)
 ```
 
-```python
-def create_mcp_server(
-    name: str,
-    *,
-    version: str,
-    title: str | None = None,
-    description: str | None = None,
-    instructions: str | None = None,
-    website_url: str | None = None,
-    icons: Sequence[Icon] | None = None,
-    middleware: Sequence[ServerMiddleware] | None = None,
-) -> MCPServer: ...
-```
+Servers are the SDK's own `MCPServer` (or the low-level `Server`); the SDK
+has no server-building helper of its own (decided: no `create_mcp_server`).
+The Workers-specific handling lives in the handler instead:
 
-- **It returns the SDK's own `MCPServer`**
-  (`mcp.server.mcpserver.MCPServer`), not a wrapper. `@server.tool()`,
-  `@server.resource(...)`, `@server.prompt()` and `add_tool` are the
-  SDK's API, documented by the SDK. Wrapping them would only fall behind it.
-- **What it adds over calling `MCPServer(...)` directly:**
-  - Workers defaults.
-  - A signature limited to what `create_mcp_handler` can serve.
-  - Keeping the server name and version required, as upstream's
-    `new McpServer({ name, version })` does. The SDK defaults the version
-    to `""`.
-- **The Workers defaults:**
-  - **No subscription bus:** `subscriptions=False`, because a stateless
-    endpoint has no channel for `resources/subscribe` updates. (The exact
-    SDK default to override is checked in step 5.)
-  - **No transport security of its own:** `create_mcp_handler` validates
-    Host and Origin itself (§4.2), so the SDK's DNS-rebinding settings,
-    which are written for a local uvicorn server, aren't used.
-- **Left out on purpose:**
-  - The SDK's built-in OAuth authorization server
-    (`auth_server_provider`, `auth`, `token_verifier`), which installs
-    Starlette routes that `create_mcp_handler` doesn't serve. On Workers,
-    auth sits in front of the handler (for example Cloudflare's OAuth
-    provider library) and reaches tools through `get_mcp_auth_context()`.
-  - `lifespan`, because there's no long-running process.
-  - The `run_*` / `*_app` methods. They still exist on the returned
-    object, but they're for stdio and uvicorn and aren't documented for
-    Workers.
-- **`MCPServer` and the low-level `Server` still work.** Anything built
-  directly with the SDK can go to `create_mcp_handler` as well. The helper
-  is the documented path, not a requirement.
+- **The SDK's built-in OAuth authorization server is refused.** A server
+  built with `auth_server_provider`, `auth` or `token_verifier` raises
+  `MCPServerConfigError` when passed in (or when a factory returns one),
+  because those install Starlette routes the handler doesn't serve. On
+  Workers, auth sits in front of the handler and reaches tools through
+  `get_mcp_auth_context()`.
+- **Subscriptions are off.** A stateless endpoint has no channel for
+  `resources/subscribe` updates, so the handler serves the server without
+  its subscription bus. (Which SDK hook does this is checked in step 5.)
+- **The SDK's transport security settings aren't used**; the handler's own
+  Host / Origin checks replace them.
+- `lifespan` isn't run: there's no long-running process.
 
-### 4.2 `create_mcp_handler`
 
 ```python
 def create_mcp_handler(
@@ -438,7 +410,7 @@ Workers:
 
 ```python
 def build_server(env) -> MCPServer:
-    server = create_mcp_server("Notes", version="1.0.0")
+    server = MCPServer("Notes", version="1.0.0")
 
     @server.tool()
     async def get_note(id: str) -> str:
@@ -501,7 +473,7 @@ transport (`mcp/rpc.ts`).
 | --- | --- |
 | `from agents import Agent, AgentOptions, MCPOptions` | Nothing from `mcp` |
 | `from agents.mcp import MCPClientManager, MCPConnectionState, ServerTool, ...` | Imports `mcp` (the client side) |
-| `from agents.mcp.server import create_mcp_server, create_mcp_handler, get_mcp_auth_context` | Imports `mcp` (the server side) |
+| `from agents.mcp.server import create_mcp_handler, get_mcp_auth_context` | Imports `mcp` (the server side) |
 
 Importing `agents.mcp` without the extra raises an `ImportError` that names
 `cf-agents[mcp]` and the Python 3.14 Workers requirement.
