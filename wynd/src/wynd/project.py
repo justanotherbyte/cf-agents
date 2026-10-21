@@ -5,10 +5,20 @@ from typing import Any
 
 import jsonc
 
-__all__ = ("Project", "WyndError", "load_project")
+from .config import Context
+from .config._convert import load_config
+from .errors import WyndError
 
-# Wrangler walks every parent for one name before it tries the next.
-CONFIG_NAMES = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")
+__all__ = ("Project", "WyndError", "find_config", "load_project")
+
+# The config files Wynd reads. The nearest directory with one of them holds
+# the project's config, and it may hold only one.
+CONFIG_NAMES = (
+    "cloudflare.config.py",
+    "wrangler.json",
+    "wrangler.jsonc",
+    "wrangler.toml",
+)
 
 INHERITED = (
     "main",
@@ -22,10 +32,6 @@ INHERITED = (
     # Wrangler 4.129 inherits logfwdr, although it holds bindings.
     "logfwdr",
 )
-
-
-class WyndError(Exception):
-    """An error Wynd reports to the user as one message."""
 
 
 @dataclass(frozen=True)
@@ -44,8 +50,16 @@ class Project:
     keep_docstrings: bool
 
     @property
+    def python_config(self) -> bool:
+        """Whether the config is a cloudflare.config.py, which Wynd converts."""
+        return self.config_path.suffix == ".py"
+
+    @property
     def python_modules(self) -> Path:
-        # Wrangler collects python_modules/ beside the config file.
+        # Wrangler collects python_modules/ beside the config file, and Wrangler
+        # reads a Python config's conversion in .wynd/dev/.
+        if self.python_config:
+            return self.wynd_dir / "dev" / "python_modules"
         return self.config_path.parent / "python_modules"
 
     @property
@@ -61,15 +75,27 @@ class Project:
         return self.root / ".wynd"
 
 
-def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
-    """Read the project the way Wrangler would for `-c config` and `-e env`."""
+def load_project(
+    cwd: Path, config: str | None, env: str | None, *, preview: bool = False
+) -> Project:
+    """Read the project for `-c config` and `-e env`, choosing the environment
+    the way Wrangler would.
+
+    A cloudflare.config.py has no environments. It runs with `env` as its mode,
+    and with `preview` for a `wynd preview`.
+    """
     root = _find_up(cwd, "pyproject.toml")
     if root is None:
         raise WyndError(f"no pyproject.toml in {cwd} or any parent directory")
 
-    config_path = cwd / config if config else _find_config(cwd)
-    raw = _read(config_path)
-    environment = _environment(raw, env, config_path.name)
+    config_path = cwd / config if config else find_config(cwd)
+    if config_path is None:
+        raise WyndError(f"no config ({', '.join(CONFIG_NAMES)}) found from {cwd}")
+    if config_path.suffix == ".py":
+        raw = settings = load_config(config_path, Context(env, preview))
+    else:
+        raw = _read(config_path)
+        settings = _environment(raw, env, config_path.name)
 
     pyproject = _read(root / "pyproject.toml")
     wynd = pyproject.get("tool", {}).get("wynd", {})
@@ -118,12 +144,21 @@ def _find_up(start: Path, name: str) -> Path | None:
     return None
 
 
-def _find_config(cwd: Path) -> Path:
-    for name in CONFIG_NAMES:
-        directory = _find_up(cwd, name)
-        if directory is not None:
-            return directory / name
-    raise WyndError(f"no Wrangler config ({', '.join(CONFIG_NAMES)}) found from {cwd}")
+def find_config(cwd: Path) -> Path | None:
+    """The config in the nearest directory that has one, or None.
+
+    Raises WyndError when that directory has more than one.
+    """
+    for directory in (cwd, *cwd.parents):
+        found = [
+            directory / name for name in CONFIG_NAMES if (directory / name).is_file()
+        ]
+        if len(found) > 1:
+            names = ", ".join(path.name for path in found)
+            raise WyndError(f"{directory} has {names}. Keep one config.")
+        if found:
+            return found[0]
+    return None
 
 
 def _read(path: Path) -> dict[str, Any]:

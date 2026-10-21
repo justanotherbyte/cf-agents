@@ -5,10 +5,10 @@ from pathlib import Path
 
 from . import wrangler
 from .host import warn_on_venv_mismatch
-from .project import WyndError, load_project
+from .project import Project, WyndError, find_config, load_project
 from .scaffold import scaffold
 from .shake import ShakePlan
-from .stage import stage
+from .stage import stage, stage_dev, stage_passthrough
 from .sync import select_sdk, sync
 from .targets import select_target
 from .typegen import write_env
@@ -40,14 +40,20 @@ SUBCOMMANDS = {
 _config_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
 _config_parser.add_argument("-c", "--config")
 
+# Also takes the env flag, which is a Python config's mode. Its conversion has
+# no environments, and Wrangler would add the env to the Worker's name.
+_mode_parser = argparse.ArgumentParser(
+    add_help=False, allow_abbrev=False, parents=[_config_parser]
+)
+_mode_parser.add_argument("-e", "--env")
+
 
 def main(argv: list[str] | None = None) -> int:
     """Run a `wynd` command line. Commands Wynd doesn't own go to Wrangler."""
     args = sys.argv[1:] if argv is None else argv
     options, rest = _parser.parse_known_args(args)
-    flow = _flow(rest)
-    if flow == "passthrough":
-        return wrangler.run(args)
+    words = [arg for arg in rest if not arg.startswith("-")]
+    flow = _flow(words)
 
     if flow in ("dev", "upload") and (
         options.compatibility_date or options.compatibility_flags or options.latest
@@ -62,20 +68,34 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
+        if flow == "passthrough" and not _uses_python_config(cwd, options.config):
+            return wrangler.run(args)
         if flow == "init":
-            words = [arg for arg in rest if not arg.startswith("-")]
             scaffold(cwd / words[1] if len(words) > 1 else cwd)
             return 0
         env = options.env or os.environ.get("CLOUDFLARE_ENV")
-        project = load_project(cwd, options.config, env)
+        preview = bool(words) and words[0] == "preview"
+        project = load_project(cwd, options.config, env, preview=preview)
+        if flow == "passthrough":
+            return _run_wrangler(args, stage_passthrough(project), project)
         if flow == "types":
-            write_env(project, check="--check" in rest)
+            if project.python_config:
+                print(f"wynd: {project.config_path.name} declares Env itself.")
+            else:
+                write_env(project, check="--check" in rest)
             return 0
         target = select_target(project)
         sync(project, target)
-        if flow != "sync" and select_sdk(project.dependencies) == "crosswind-workers":
+        if (
+            flow != "sync"
+            and not project.python_config
+            and select_sdk(project.dependencies) == "crosswind-workers"
+        ):
             write_env(project)
         staged = stage(project) if flow == "upload" else None
+        dev_config = project.config_path
+        if flow == "dev" and project.python_config:
+            dev_config = stage_dev(project, env)
     except WyndError as error:
         print(f"wynd: error: {error}", file=sys.stderr)
         return 1
@@ -83,15 +103,25 @@ def main(argv: list[str] | None = None) -> int:
     if flow == "sync":
         return 0
     if staged is not None:
-        return _upload(args, rest, *staged)
+        return _upload(args, rest, project, *staged)
 
     warn_on_venv_mismatch(project, target)
-    return wrangler.run(args)
+    return _run_wrangler(args, dev_config, project)
 
 
-def _flow(rest: list[str]) -> str:
-    """Sort a command line into its flow, or passthrough."""
-    words = [arg for arg in rest if not arg.startswith("-")]
+def _uses_python_config(cwd: Path, config: str | None) -> bool:
+    """Whether a passthrough command needs Wynd to convert the config first.
+
+    Raises WyndError when the nearest config directory has more than one.
+    """
+    if config is not None:
+        return config.endswith(".py")
+    found = find_config(cwd)
+    return found is not None and found.suffix == ".py"
+
+
+def _flow(words: list[str]) -> str:
+    """Sort a command line's words into its flow, or passthrough."""
     command = words[0] if words else ""
     known = SUBCOMMANDS.get(command, set())
     subcommand = next((word for word in words[1:] if word in known), "")
@@ -105,11 +135,23 @@ def _flow(rest: list[str]) -> str:
     return command if command in ("dev", "sync", "types", "init") else "passthrough"
 
 
-def _upload(args: list[str], rest: list[str], path: Path, plan: ShakePlan) -> int:
+def _upload(
+    args: list[str], rest: list[str], project: Project, path: Path, plan: ShakePlan
+) -> int:
     """Run Wrangler on the staged config in place of the project's."""
     if "--dry-run" in rest:
         # Flushed, so it comes before Wrangler's output in a pipe.
         print(f"wynd: {plan.size_report(path.parent / 'python_modules')}", flush=True)
 
-    _, rest = _config_parser.parse_known_args(args)
-    return wrangler.run([*rest, "--config", str(path)])
+    return _run_wrangler(args, path, project)
+
+
+def _run_wrangler(args: list[str], config: Path, project: Project) -> int:
+    """Run Wrangler on `config` in place of the user's config flag."""
+    parser, environ = _config_parser, None
+    if project.python_config:
+        parser = _mode_parser
+        environ = {k: v for k, v in os.environ.items() if k != "CLOUDFLARE_ENV"}
+
+    _, rest = parser.parse_known_args(args)
+    return wrangler.run([*rest, "--config", str(config)], env=environ)

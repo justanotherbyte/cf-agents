@@ -30,6 +30,7 @@ markers = ["e2e: runs real uv and the pinned Wrangler; needs Node.js and the net
 
 [dependency-groups]
 dev = [
+    "crosswind-workers",
     "pytest>=9.1.1",
 ]
 
@@ -37,3 +38,6 @@ dev = [
 # The fixtures' packages exist only in the Pyodide installs their e2e tests
 # make, and the typed fixture's env.py only once Wynd generates it.
 exclude = ["tests/e2e/fastapi_worker", "tests/e2e/typed"]
+
+[tool.uv.sources]
+crosswind-workers = { path = "../crosswind-workers", editable = true }

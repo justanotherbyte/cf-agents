@@ -8,7 +8,7 @@ from typing import Any
 from .project import Project, WyndError
 from .shake import ShakePlan, shake
 
-__all__ = ("stage",)
+__all__ = ("stage", "stage_dev", "stage_passthrough")
 
 # Fields Wrangler resolves from the config directory, by table. A list value
 # holds one table per item.
@@ -37,6 +37,12 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
     plan = shake(project.python_modules, root / source, entry, project.keep_modules)
     if plan.errors:
         raise WyndError("\n".join(plan.errors))
+    if "wynd" in plan.unresolved:
+        raise WyndError(
+            f"the Worker imports wynd ({plan.unresolved['wynd']}), which isn't "
+            "installed in the Worker. Import Env under `if TYPE_CHECKING:` and "
+            'subscript with a string, as in WorkerEntrypoint["Env"].'
+        )
 
     build = project.wynd_dir / "build"
     shutil.rmtree(build, ignore_errors=True)
@@ -49,6 +55,57 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
     staged.write_text(json.dumps(config, indent=2, default=str))
 
     return staged, plan
+
+
+def stage_dev(project: Project, mode: str | None) -> Path:
+    """Write the Wrangler config `wynd dev` runs on for a Python config, in
+    .wynd/dev/ beside its python_modules/ and secrets files."""
+    path = _write_dev_config(project, "wrangler.json")
+    _copy_dev_vars(project.config_path.parent, path.parent, mode)
+    return path
+
+
+def stage_passthrough(project: Project) -> Path:
+    """Write the Wrangler config passthrough commands run on for a Python config.
+
+    It sits beside the dev config, because Wrangler keeps local state beside
+    its config and `--local` commands must see the dev server's. It is its own
+    file, so a running `wynd dev` doesn't reload with another mode's config.
+    """
+    return _write_dev_config(project, "wrangler.passthrough.json")
+
+
+def _write_dev_config(project: Project, name: str) -> Path:
+    config = _staged_config(project)
+    config_dir = project.config_path.parent.resolve()
+    for key in ("main", "base_dir"):
+        if key in config:
+            config[key] = str(config_dir / config[key])
+
+    dev = project.wynd_dir / "dev"
+    dev.mkdir(parents=True, exist_ok=True)
+    # It holds copies of the project's secrets, whatever the project ignores.
+    (dev / ".gitignore").write_text("*\n")
+
+    path = dev / name
+    path.write_text(json.dumps(config, indent=2))
+    return path
+
+
+def _copy_dev_vars(config_dir: Path, dev: Path, mode: str | None) -> None:
+    """Copy the secrets files Wrangler reads beside its config. A mode's own
+    .dev.vars wins, as Wrangler's --env would choose it."""
+    # shortcut: .env.<mode> files aren't read. Upgrade if a project uses them.
+    sources = {
+        ".dev.vars": [f".dev.vars.{mode}", ".dev.vars"] if mode else [".dev.vars"],
+        ".env": [".env"],
+        ".env.local": [".env.local"],
+    }
+    for name, candidates in sources.items():
+        (dev / name).unlink(missing_ok=True)
+        found = [config_dir / c for c in candidates if (config_dir / c).is_file()]
+        if found:
+            shutil.copyfile(found[0], dev / name)
 
 
 def _staged_config(project: Project) -> dict[str, Any]:
@@ -104,6 +161,12 @@ def _rewrite(section: dict[str, Any], base: Path) -> None:
             image.startswith(".") or (base / image).is_file()
         ):
             container["image"] = str(base / image)
+        # A Durable Object Container's named images.
+        images = container.get("images")
+        for named in _tables(list(images.values()) if isinstance(images, dict) else []):
+            for field in ("dockerfile", "build_context"):
+                if field in named:
+                    named[field] = _absolute(named[field], base)
 
     if "tsconfig" in section:
         section["tsconfig"] = _absolute(section["tsconfig"], base)

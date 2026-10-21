@@ -34,6 +34,16 @@ class _EnvWrapper(Binding):
         # The stock SDK's private name for the JS env, which its tests read.
         return self.js_object
 
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            if name.startswith("__") or name == "js_object":
+                raise
+            # A binding this mode's config leaves out, which a Wynd Env types
+            # as `X | None`. The stock SDK raises AttributeError.
+            return None
+
     def _pass_through(self, name: str, value: Any) -> Any:
         js_class = js_name(value)
         if js_class is None:
