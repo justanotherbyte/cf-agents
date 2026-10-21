@@ -7,12 +7,10 @@ from .base import Binding, _js_options
 __all__ = ("Queue",)
 
 
-class Queue[T](Binding):
-    """A queue producer. `T` is the message body type `send` accepts."""
-
+class Queue(Binding):
     async def send(
         self,
-        body: T,
+        body: Any,
         options: Any = None,
         /,
         *,

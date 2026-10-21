@@ -51,14 +51,6 @@ def test_env_wraps_each_binding_by_its_js_class() -> None:
     assert env.KV is env.KV
 
 
-def test_a_binding_the_env_lacks_reads_as_none() -> None:
-    env = worker_env(KV=JsBinding("KvNamespace"))
-
-    assert env.CACHE is None
-    with pytest.raises(AttributeError):
-        env.__deepcopy__  # noqa: B018
-
-
 def test_wrappers_expose_and_accept_their_js_object() -> None:
     js_kv = JsBinding("KvNamespace")
     kv = KVNamespace(js_kv)

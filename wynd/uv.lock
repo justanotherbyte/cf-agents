@@ -12,19 +12,6 @@ wheels = [
 ]
 
 [[package]]
-name = "crosswind-workers"
-version = "0.1.0"
-source = { editable = "../crosswind-workers" }
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyodide-py", specifier = ">=0.27.8" },
-    { name = "pytest", specifier = ">=9.1.1" },
-]
-
-[[package]]
 name = "iniconfig"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -95,7 +82,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "crosswind-workers" },
     { name = "pytest" },
 ]
 
@@ -103,7 +89,4 @@ dev = [
 requires-dist = [{ name = "json-with-comments", specifier = ">=1.3.0" }]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "crosswind-workers", editable = "../crosswind-workers" },
-    { name = "pytest", specifier = ">=9.1.1" },
-]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]

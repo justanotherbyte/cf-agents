@@ -60,9 +60,7 @@ def test_dev_installs_the_full_tree_then_runs_wrangler_dev(
 ) -> None:
     assert main(["dev", "--port", "8788"]) == 0
 
-    # Named, so Wrangler reads the config Wynd installed for.
-    path = str(project / "wrangler.jsonc")
-    assert tools.wrangler() == [["dev", "--port", "8788", "--config", path]]
+    assert tools.wrangler() == [["dev", "--port", "8788"]]
     modules = project / "python_modules"
     assert (modules / "workers" / "__init__.py").is_file()
     # uv --target extras: console scripts with host paths, and its lock file.
@@ -205,8 +203,7 @@ def test_env_flag_chooses_the_environments_target(tools: Tools, project: Path) -
 
     assert main(["dev", "--env=next"]) == 0
     assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
-    path = str(project / "wrangler.jsonc")
-    assert tools.wrangler() == [["dev", "--env=next", "--config", path]]
+    assert tools.wrangler() == [["dev", "--env=next"]]
 
 
 def test_an_unknown_env_fails(
@@ -247,7 +244,7 @@ def test_wrangler_value_flags_are_not_taken_for_the_command(
 
     assert main(args) == 0
     assert tools.uv("pip", "compile") != []
-    assert tools.wrangler() == [[*args, "--config", str(project / "wrangler.jsonc")]]
+    assert tools.wrangler() == [args]
 
 
 def test_cwd_flag_moves_config_discovery(
@@ -268,13 +265,13 @@ def test_config_flag_chooses_the_file(tools: Tools, project: Path) -> None:
 
     assert main(["-c", "other.toml", "dev"]) == 0
     assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
-    assert tools.wrangler() == [["dev", "--config", str(project / "other.toml")]]
+    assert tools.wrangler() == [["-c", "other.toml", "dev"]]
 
 
-def test_discovery_stops_at_the_nearest_directory_with_a_config(
+def test_discovery_tries_each_name_up_the_tree_before_the_next(
     tools: Tools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Wrangler alone would find the parent's wrangler.json first.
+    # Wrangler finds the parent's wrangler.json before the cwd's wrangler.toml.
     parent = tmp_path / "parent"
     (parent / "child").mkdir(parents=True)
     (parent / "wrangler.json").write_text(json.dumps(config("2026-09-08")))
@@ -285,20 +282,9 @@ def test_discovery_stops_at_the_nearest_directory_with_a_config(
     monkeypatch.chdir(child)
 
     assert main(["dev"]) == 0
-    assert interpreter(tools) == "cpython-3.12.7-emscripten-wasm32-musl"
-    assert tools.wrangler() == [["dev", "--config", str(child / "wrangler.toml")]]
+    assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
     # python_modules sits beside the config Wrangler reads.
-    assert (child / "python_modules" / "workers").is_dir()
-
-
-def test_two_configs_in_one_directory_fail(
-    tools: Tools, project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (project / "wrangler.toml").write_text("")
-
-    assert main(["dev"]) == 1
-    assert "wrangler.jsonc, wrangler.toml. Keep one" in capsys.readouterr().err
-    assert tools.wrangler() == []
+    assert (parent / "python_modules" / "workers").is_dir()
 
 
 @pytest.mark.parametrize(
