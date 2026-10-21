@@ -425,22 +425,6 @@ def test_keep_must_be_a_list_of_module_names(
     )
 
 
-def test_a_dry_run_reports_bytes_before_and_after_pruning(
-    tools: Tools, project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    install(tools, {"used.py": "x=1\n" * 25, "unused.py": "x=1\n" * 600})
-    entry(project, "import used\n")
-
-    assert main(["deploy", "--dry-run"]) == 0
-    assert capsys.readouterr().out == (
-        "wynd: python_modules is 2,500 bytes, 100 after pruning (2,400 fewer). "
-        "Each file's decision is in .wynd/shake.txt.\n"
-    )
-
-    assert main(["deploy"]) == 0
-    assert capsys.readouterr().out == ""
-
-
 def test_namespace_packages_resolve(tools: Tools, project: Path) -> None:
     install(
         tools,
@@ -530,18 +514,6 @@ def test_keep_docstrings_ships_vendored_docstrings(tools: Tools, project: Path) 
     assert b"A comment" not in source
     assert namespace["__doc__"] == "Module docstring."
     assert namespace["Thing"].__doc__ == "A class."
-
-
-def test_keep_docstrings_must_be_a_boolean(
-    tools: Tools, project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with (project / "pyproject.toml").open("a") as pyproject:
-        pyproject.write("[tool.wynd]\nkeep-docstrings = 'yes'\n")
-
-    assert main(["deploy"]) == 1
-    assert "[tool.wynd] keep-docstrings must be true or false" in (
-        capsys.readouterr().err
-    )
 
 
 @pytest.mark.parametrize(

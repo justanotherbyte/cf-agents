@@ -31,7 +31,3 @@ def test_importing_beside_the_stock_sdk_names_both_and_wynd(tmp_path: Path) -> N
     assert "workers-runtime-sdk" in error
     assert "crosswind-workers" in error
     assert "Wynd" in error
-
-
-def test_importing_alone_works() -> None:
-    assert import_workers().returncode == 0

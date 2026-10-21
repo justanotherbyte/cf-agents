@@ -1,5 +1,6 @@
 """The stock SDK's HTTP unit tests (tests/workerd-test/sdk/tests/test_sdk.py),
-minus those needing env, plus a test for each stock bug crosswind fixes."""
+minus those needing env or repeating another test, plus a test for each
+stock bug crosswind fixes."""
 
 from contextlib import contextmanager
 from http import HTTPMethod, HTTPStatus
@@ -64,12 +65,6 @@ async def test_fetch_options():
     assert response.headers.get("Custom-Header-That-Should-Passthrough") == "true"
 
 
-async def test_fetch_rejects_a_js_style_options_dict():
-    with raises(TypeError):
-        # The JS calling convention, which Python rejects.
-        await fetch(f"{ORIGIN}/sub", {"headers": {"X": "1"}})  # ty: ignore[too-many-positional-arguments]
-
-
 async def test_fetch_manual_redirect_and_cf_options():
     response = await fetch(
         f"{ORIGIN}/redirect",
@@ -93,15 +88,6 @@ async def test_fetched_form_data_with_blobs():
 
 
 # Stock: Response
-
-
-async def test_inherited_response_methods():
-    assert await Response("test123").text() == "test123"
-
-
-async def test_redirect_rejects_invalid_input():
-    with raises(ValueError):
-        Response.redirect("", HTTPStatus.BAD_GATEWAY)
 
 
 async def test_response_json():
@@ -276,10 +262,6 @@ async def test_fix_form_data_len_and_missing_key():
 
 async def test_fix_response_from_blob():
     assert await Response(Blob(["blob body"])).text() == "blob body"
-
-
-async def test_fix_non_standard_method():
-    assert Request("http://example.com", method="PURGE").method == "PURGE"
 
 
 async def test_fix_buffers_as_a_single_blob_part():

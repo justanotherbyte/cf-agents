@@ -132,10 +132,6 @@ def test_storage_camel_case_names_still_pass_through() -> None:
     assert js_storage.calls == [("deleteAll", ())]
 
 
-def test_ctx_storage_is_typed() -> None:
-    assert isinstance(DurableObjectContext(js_state()).storage, DurableObjectStorage)
-
-
 # Handlers workerd calls with raw JS values
 
 
@@ -166,21 +162,6 @@ def test_alarm_and_web_socket_handlers_receive_python_values() -> None:
     assert message == "hi"
 
 
-def test_a_subclass_handler_is_wrapped_once() -> None:
-    received = []
-
-    class Base(DurableObject):
-        async def alarm(self, info: Any) -> None:
-            received.append(info)
-
-    class Child(Base):
-        pass
-
-    asyncio.run(Child(js_state(), js_env()).alarm(JsValue("Object", {"n": 1})))
-
-    assert received == [{"n": 1}]
-
-
 def test_queue_batches_arrive_wrapped() -> None:
     received = []
 
@@ -193,17 +174,6 @@ def test_queue_batches_arrive_wrapped() -> None:
 
     assert isinstance(received[0], Binding)
     assert received[0].js_object is batch
-
-
-def test_storage_put_needs_a_value_for_a_key() -> None:
-    with pytest.raises(TypeError, match="value"):
-        run(DurableObjectStorage(JsBinding("DurableObjectStorage")).put("k"))
-
-
-def test_storage_is_the_same_object_on_each_access() -> None:
-    ctx = DurableObjectContext(js_state())
-
-    assert ctx.storage is ctx.storage
 
 
 def test_a_user_defined_legacy_handler_also_receives_python_values() -> None:

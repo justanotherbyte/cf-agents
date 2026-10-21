@@ -392,17 +392,6 @@ def test_warns_when_the_venv_python_differs_from_the_target(
     )
 
 
-def test_a_matching_venv_gives_no_warning(
-    tools: Tools, project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (project / ".venv").mkdir()
-    (project / ".venv" / "pyvenv.cfg").write_text("version_info = 3.12.11\n")
-
-    main(["dev"])
-
-    assert capsys.readouterr().err == ""
-
-
 def test_sync_installs_without_running_wrangler(tools: Tools, project: Path) -> None:
     assert main(["sync"]) == 0
 

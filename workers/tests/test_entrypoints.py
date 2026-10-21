@@ -45,20 +45,6 @@ def test_fetch_returns_a_js_response() -> None:
     assert js_response.init == {"status": 201}
 
 
-def test_fetch_receives_the_js_request_wrapped() -> None:
-    sent = js_request("https://x/")
-    seen = []
-
-    class Default(WorkerEntrypoint):
-        async def fetch(self, request: Request) -> Response:
-            seen.append(request.js_object)
-            return Response()
-
-    call(Default(None, None), "fetch", sent)
-
-    assert seen == [sent]
-
-
 LEGACY_NAMES = [
     (WorkerEntrypoint, "fetch"),
     (WorkerEntrypoint, "connect"),

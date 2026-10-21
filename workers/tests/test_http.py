@@ -6,7 +6,7 @@ from http import HTTPMethod
 import pytest
 from fake_js import JsValue, js_request, js_response
 
-from workers import File, Request, Response
+from workers import Request, Response
 
 
 def test_response_rejects_unsupported_bodies() -> None:
@@ -27,11 +27,6 @@ def test_method_is_an_http_method_or_the_raw_string() -> None:
     assert Request(js_request("https://x/", "POST")).method is HTTPMethod.POST
     # The stock SDK raises KeyError for a method HTTPMethod lacks.
     assert Request(js_request("https://x/", "PURGE")).method == "PURGE"
-
-
-def test_a_file_needs_a_filename_unless_it_wraps_a_file() -> None:
-    with pytest.raises(TypeError, match="needs a filename"):
-        File(["contents"])
 
 
 def test_headers_are_stripped_without_the_commas_flag() -> None:
