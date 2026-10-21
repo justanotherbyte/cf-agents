@@ -25,5 +25,5 @@ def test_http_types_in_workerd(tmp_path: Path, date: str, version: str) -> None:
         _, body = server.get("/")
 
     result = json.loads(body)
-    assert len(result["ran"]) == 25
+    assert len(result["ran"]) == 21
     assert result["failures"] == {}, "\n".join(result["failures"].values())

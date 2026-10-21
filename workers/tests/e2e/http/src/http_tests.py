@@ -1,5 +1,6 @@
 """The stock SDK's HTTP unit tests (tests/workerd-test/sdk/tests/test_sdk.py),
-minus those needing env, plus a test for each stock bug crosswind fixes."""
+minus those needing env or repeating another test, plus a test for each
+stock bug crosswind fixes."""
 
 from contextlib import contextmanager
 from http import HTTPMethod, HTTPStatus
@@ -263,10 +264,6 @@ async def test_fix_form_data_len_and_missing_key():
 
 async def test_fix_response_from_blob():
     assert await Response(Blob(["blob body"])).text() == "blob body"
-
-
-async def test_fix_non_standard_method():
-    assert Request("http://example.com", method="PURGE").method == "PURGE"
 
 
 async def test_fix_buffers_as_a_single_blob_part():

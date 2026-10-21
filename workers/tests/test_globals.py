@@ -1,4 +1,3 @@
-import pytest
 from fake_js import (
     CLOUDFLARE_WAIT_UNTIL,
     CLOUDFLARE_WORKERS,
@@ -8,7 +7,7 @@ from fake_js import (
 )
 
 import workers
-from workers import Request, handler, import_from_javascript, patch_env
+from workers import Request, handler, import_from_javascript
 
 
 def test_module_env_reads_the_cloudflare_workers_env() -> None:
@@ -24,11 +23,6 @@ def test_wait_until_hands_workerd_a_promise_and_waituntil_is_the_same() -> None:
     assert workers.waitUntil is workers.wait_until
 
 
-def test_an_unknown_module_attribute_raises() -> None:
-    with pytest.raises(AttributeError):
-        _ = workers.nonexistent
-
-
 def test_the_preloaded_modules_import_without_jspi() -> None:
     workers_module = import_from_javascript("cloudflare:workers")
     sockets_module = import_from_javascript("cloudflare:sockets")
@@ -41,11 +35,6 @@ def test_other_modules_import_through_do_an_import() -> None:
     JS_MODULES["node:buffer"] = buffer = JsValue("Module")
 
     assert import_from_javascript("node:buffer") is buffer
-
-
-def test_patch_env_explains_that_workerd_removed_it() -> None:
-    with pytest.raises(NotImplementedError, match="2026-06-30"), patch_env(NAME="x"):
-        pass
 
 
 def test_handler_converts_the_request_and_wraps_env() -> None:

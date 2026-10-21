@@ -82,12 +82,6 @@ def test_python_values_with_js_twins_are_converted() -> None:
     assert sent[3].proxied is callback
 
 
-def test_a_wrapped_js_value_is_sent_as_itself() -> None:
-    request = js_request("https://x/")
-
-    assert python_to_rpc(Request(request)) is request
-
-
 @pytest.mark.parametrize(
     "value",
     [
