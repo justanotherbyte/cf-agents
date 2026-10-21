@@ -40,7 +40,6 @@ class Default(WorkerEntrypoint):
         failures = []
 
         async def call(method, *args):
-            # The env's Fetcher converts arguments and results both ways.
             return await getattr(self.env.OTHER, method)(*args)
 
         def check(name, ok):

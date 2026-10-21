@@ -10,7 +10,6 @@ from wynd.targets import select_target
 def test_init_writes_a_project_wynd_can_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A wrangler.json in a parent must not stand in for the new project's config.
     (tmp_path / "wrangler.json").write_text("{}")
     monkeypatch.chdir(tmp_path)
 

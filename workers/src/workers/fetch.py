@@ -13,7 +13,7 @@ from .response import Response
 if TYPE_CHECKING:
     from .types import FetchKwargs
 
-__all__ = ["fetch"]
+__all__ = ("fetch",)
 
 
 async def _pyfetch_0_26(request: Any, **kwargs: Any) -> Response:
@@ -39,8 +39,6 @@ async def fetch(
     if isinstance(kwargs.get("method"), HTTPMethod):
         kwargs["method"] = kwargs["method"].value
 
-    # The body conversion Request() does: FormData and Blob as their JS
-    # objects, and bytes lent as a buffer while the request is sent.
     body = kwargs.pop("body", None)
     send = _pyfetch_0_26 if pyodide_version == "0.26.0a2" else pyfetch
     with js_body(body) as converted:

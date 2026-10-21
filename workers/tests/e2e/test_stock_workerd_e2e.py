@@ -6,7 +6,6 @@ from stock_workerd import STOCK_CONFIGS, WORKERD_TESTS, run_stock_test
 
 pytestmark = pytest.mark.e2e
 
-# Every stock test directory with a .wd-test config, as stock's runner finds them.
 NAMES = sorted(path.parent.name for path in WORKERD_TESTS.glob("*/*.wd-test"))
 
 

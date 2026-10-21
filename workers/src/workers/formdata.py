@@ -6,7 +6,7 @@ import js
 from ._js import js_name
 from .blob import Blob, File
 
-__all__ = ["FormData", "FormDataValue"]
+__all__ = ("FormData", "FormDataValue")
 
 type FormDataValue = str | js.Blob | Blob
 
@@ -29,7 +29,6 @@ class FormData(MutableMapping[str, Any]):
             )
 
     def __getitem__(self, key: str) -> Any:
-        # The stock SDK returns JS null for a missing key.
         if not self._js_form_data.has(key):
             raise KeyError(key)
         return _to_python(self._js_form_data.get(key))
@@ -49,7 +48,6 @@ class FormData(MutableMapping[str, Any]):
         yield from self.keys()
 
     def __len__(self) -> int:
-        # The stock SDK calls len() on a generator here and raises TypeError.
         return sum(1 for _ in self.keys())
 
     def append(self, key: str, value: Any, filename: str | None = None) -> None:
@@ -83,10 +81,9 @@ def _to_js(value: Any) -> Any:
     return value.js_object if isinstance(value, Blob) else value
 
 
-# The Python wrapper for each JS value FormData can hold besides a string.
-_WRAPPERS: dict[str | None, type[Blob]] = {"File": File, "Blob": Blob}
+_CLASS_FOR_JS: dict[str | None, type[Blob]] = {"File": File, "Blob": Blob}
 
 
 def _to_python(value: Any) -> Any:
-    wrapper = _WRAPPERS.get(js_name(value))
+    wrapper = _CLASS_FOR_JS.get(js_name(value))
     return value if wrapper is None else wrapper(value)

@@ -27,9 +27,6 @@ def js_env() -> JsValue:
     return JsValue("Object", KV=JsBinding("KvNamespace"))
 
 
-# Construction
-
-
 def test_entrypoints_wrap_ctx_by_kind_and_patch_wait_until() -> None:
     js_context = JsBinding("ExecutionContext")
     state = js_state()
@@ -56,9 +53,6 @@ def test_a_user_init_receives_wrapped_ctx_and_env() -> None:
     assert seen == [(DurableObjectContext, KVNamespace)]
 
 
-# ExecutionContext and DurableObjectContext
-
-
 def test_wait_until_hands_the_coroutine_to_js() -> None:
     js_context = JsBinding("ExecutionContext")
 
@@ -68,7 +62,6 @@ def test_wait_until_hands_the_coroutine_to_js() -> None:
     async def run_wait_until() -> None:
         ExecutionContext(js_context).wait_until(background())
         ((_, (promise,)),) = js_context.calls
-        # JS gets a promise that follows a task running the coroutine.
         await promise.source.proxied
 
     asyncio.run(run_wait_until())
@@ -101,9 +94,6 @@ def test_abort_queues_the_js_abort_and_raises_past_except_exception() -> None:
     assert aborted == ["bye"]
 
 
-# Storage
-
-
 def test_storage_typed_methods_convert_values_and_options() -> None:
     js_storage = JsBinding("DurableObjectStorage", returns=JsValue("Map", {"a": 1}))
     storage = DurableObjectStorage(js_storage)
@@ -132,7 +122,8 @@ def test_storage_camel_case_names_still_pass_through() -> None:
     assert js_storage.calls == [("deleteAll", ())]
 
 
-# Handlers workerd calls with raw JS values
+def test_ctx_storage_is_typed() -> None:
+    assert isinstance(DurableObjectContext(js_state()).storage, DurableObjectStorage)
 
 
 def test_alarm_and_web_socket_handlers_receive_python_values() -> None:

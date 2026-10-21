@@ -44,9 +44,7 @@ async def large():
 
 
 @app.get("/sync")
-def sync_route():
-    # FastAPI runs a sync route through anyio.to_thread, which crosswind's
-    # package patch runs inline.
+def sync_route_via_anyio_to_thread():
     return {"sync": True}
 
 

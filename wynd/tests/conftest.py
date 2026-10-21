@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 
-# Each fake logs its call as one JSON line, then acts as the test asks.
 LOG = """
 import json, os, sys
 with open(os.environ["WYND_TEST_LOG"], "a") as log:
@@ -74,7 +73,6 @@ def tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Tools:
         script = bin_dir / tool
         script.write_text(f"#!{sys.executable}\nTOOL = {tool!r}\n{LOG}{body}")
         script.chmod(0o755)
-    # What a Pyodide install of the project's dependencies puts in site-packages.
     site_packages = tmp_path / "site-packages"
     (site_packages / "workers").mkdir(parents=True)
     (site_packages / "workers" / "__init__.py").write_text("")

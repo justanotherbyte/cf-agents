@@ -10,8 +10,6 @@ __all__ = ("Project", "WyndError", "load_project")
 # Wrangler walks every parent for one name before it tries the next.
 CONFIG_NAMES = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")
 
-# Top-level keys Wynd reads that an environment inherits when it leaves them out.
-# Bindings, vars and the rest stay with the table that sets them.
 INHERITED = (
     "main",
     "base_dir",
@@ -34,20 +32,15 @@ class WyndError(Exception):
 class Project:
     root: Path
     config_path: Path
-    # The config file as parsed, every environment included.
     config: dict[str, Any]
-    # The chosen environment's table over the top-level keys it inherits, or
-    # the top level without an environment.
-    settings: dict[str, Any]
+    environment: dict[str, Any]
     main: str | None
     base_dir: str | None
     compatibility_date: str | None
     compatibility_flags: tuple[str, ...]
     dependencies: tuple[str, ...]
     allow_build: bool
-    # Modules the shaker keeps although nothing imports them by a literal name.
-    keep: tuple[str, ...]
-    # Ship vendored docstrings, for a library that breaks when they're None.
+    keep_modules: tuple[str, ...]
     keep_docstrings: bool
 
     @property
@@ -65,7 +58,6 @@ class Project:
 
     @property
     def wynd_dir(self) -> Path:
-        # Wynd's builds and state.
         return self.root / ".wynd"
 
 
@@ -77,7 +69,7 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
 
     config_path = cwd / config if config else _find_config(cwd)
     raw = _read(config_path)
-    settings = _environment(raw, env, config_path.name)
+    environment = _environment(raw, env, config_path.name)
 
     pyproject = _read(root / "pyproject.toml")
     wynd = pyproject.get("tool", {}).get("wynd", {})
@@ -88,20 +80,20 @@ def load_project(cwd: Path, config: str | None, env: str | None) -> Project:
     if not isinstance(keep_docstrings, bool):
         raise WyndError("[tool.wynd] keep-docstrings must be true or false")
 
-    date = settings.get("compatibility_date")
+    date = environment.get("compatibility_date")
     return Project(
         root=root,
         config_path=config_path,
         config=raw,
-        settings=settings,
-        main=settings.get("main"),
-        base_dir=settings.get("base_dir"),
+        environment=environment,
+        main=environment.get("main"),
+        base_dir=environment.get("base_dir"),
         # TOML parses a bare date as datetime.date. Wrangler reads it as text.
         compatibility_date=None if date is None else str(date),
-        compatibility_flags=tuple(settings.get("compatibility_flags", ())),
+        compatibility_flags=tuple(environment.get("compatibility_flags", ())),
         dependencies=tuple(pyproject.get("project", {}).get("dependencies", ())),
         allow_build=bool(wynd.get("allow-build")),
-        keep=tuple(keep),
+        keep_modules=tuple(keep),
         keep_docstrings=keep_docstrings,
     )
 
@@ -115,7 +107,6 @@ def _environment(config: dict[str, Any], env: str | None, name: str) -> dict[str
     if env not in envs:
         raise WyndError(f"{name} has no environment named {env!r}")
 
-    # An environment's value replaces the top-level one; nothing merges.
     inherited = {key: config[key] for key in INHERITED if key in config}
     return {**inherited, **envs[env]}
 

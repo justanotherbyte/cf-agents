@@ -6,7 +6,7 @@ from ..fetch import fetch
 from ..response import Response
 from .base import Binding, _js_options
 
-__all__ = ["DurableObjectNamespace", "Fetcher"]
+__all__ = ("DurableObjectNamespace", "Fetcher")
 
 
 class Fetcher(Binding):
@@ -20,8 +20,6 @@ class Fetcher(Binding):
 
 
 def _stub(js_stub: Any) -> Any:
-    # Callers type it as the Durable Object class, which no Python type can
-    # say of a stub (decisions.md#typed-bindings).
     return Fetcher(js_stub)
 
 

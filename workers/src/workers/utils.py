@@ -5,7 +5,7 @@ from typing import Any, NoReturn
 import _pyodide_entrypoint_helper
 from pyodide.ffi import JsException
 
-__all__ = ["import_from_javascript", "patch_env"]
+__all__ = ("import_from_javascript", "patch_env")
 
 # JS modules workerd imports ahead of time, by the helper attribute holding each.
 _PRELOADED = {

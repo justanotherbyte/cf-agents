@@ -324,7 +324,6 @@ def test_a_uv_failure_stops_before_wrangler(
     assert main(["dev"]) == 1
     assert "no solution found" in capsys.readouterr().err
     assert tools.wrangler() == []
-    # The last good install stays in place.
     assert (project / "python_modules" / "workers").is_dir()
 
 
@@ -462,7 +461,6 @@ def test_a_local_source_is_reinstalled_on_every_sync(
     main(["sync"])
     main(["sync"])
 
-    # Edits inside ../mylib change no input the sync token hashes.
     assert len(tools.uv("pip", "install")) == 2
 
 

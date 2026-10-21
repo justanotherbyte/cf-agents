@@ -115,7 +115,6 @@ def _make_wsgi_input(req: "Request | js.Request") -> "io.BufferedIOBase | None":
     if not hasattr(pyodide.ffi, "run_sync"):
         return None
 
-    # `req.body` is a JS ReadableStream for both workers.Request and js.Request.
     return io.BufferedReader(_ReadableStreamInput(req.body))
 
 
@@ -137,23 +136,20 @@ def build_environ(
     if not url.scheme:
         raise ValueError(f"Request URL is not absolute: {req.url!r}")
 
-    # `body` may be raw bytes or a file-like `wsgi.input` stream
     if isinstance(body, (bytes, bytearray)):
         wsgi_input: Any = io.BytesIO(body)
-        content_length_fallback: int | None = len(body)
+        buffered_length: int | None = len(body)
     else:
         wsgi_input = body
-        content_length_fallback = None
+        buffered_length = None
 
     environ: dict[str, Any] = {
-        "REQUEST_METHOD": _method_name(req.method),
+        "REQUEST_METHOD": str(req.method),
         "SCRIPT_NAME": "",
         # PATH_INFO is the URL-decoded path expressed as a WSGI native string.
         "PATH_INFO": _wsgi_native_string(unquote(url.path or "/")),
         # QUERY_STRING stays percent-encoded per the spec.
         "QUERY_STRING": url.query,
-        # A request URL is always absolute here, so hostname is populated; keep a
-        # fallback since WSGI requires SERVER_NAME to be non-empty.
         "SERVER_NAME": url.hostname,
         "SERVER_PORT": _server_port(url),
         "SERVER_PROTOCOL": "HTTP/1.1",
@@ -164,24 +160,14 @@ def build_environ(
         "wsgi.multithread": False,
         "wsgi.multiprocess": False,
         "wsgi.run_once": False,
-        # Cloudflare-specific extension so handlers can reach bindings, mirroring
-        # the `scope["env"]` convention used by asgi.py.
         "workers.env": env,
     }
     environ.update(_header_variables(request_headers(req)))
 
-    # Only synthesize CONTENT_LENGTH when the body was pre-buffered; when
-    # streaming lazily we don't know the length without consuming it.
-    if "CONTENT_LENGTH" not in environ and content_length_fallback:
-        environ["CONTENT_LENGTH"] = str(content_length_fallback)
+    if "CONTENT_LENGTH" not in environ and buffered_length:
+        environ["CONTENT_LENGTH"] = str(buffered_length)
 
     return environ
-
-
-def _method_name(method: Any) -> str:
-    # `workers.Request.method` is an `http.HTTPMethod` (a str subclass); coerce
-    # to a plain string so frameworks comparing against literals behave.
-    return str(method.value) if hasattr(method, "value") else str(method)
 
 
 def _server_port(url: SplitResult) -> str:
@@ -228,7 +214,6 @@ def _close_iterable(iterable: Any) -> None:
         close()
 
 
-# Sentinel marking exhaustion of the response body iterator.
 _END = object()
 
 
@@ -261,7 +246,6 @@ def _make_streaming_response(
 def _response_init(status: str, headers: "list[tuple[str, str]]") -> dict[str, Any]:
     from js import Headers as JsHeaders
 
-    # WSGI status is e.g. "200 OK"; split into code + reason phrase.
     code, _, reason = status.partition(" ")
     init: dict[str, Any] = {"status": int(code), **body_encoding(headers)}
     if reason:
@@ -325,10 +309,6 @@ class _StartResponse:
     def __init__(self) -> None:
         self.status: str | None = None
         self.headers: list[tuple[str, str]] = []
-        # Output from the (rarely used) legacy `write()` callable. Modern
-        # frameworks (Flask, Werkzeug, Django) return an iterable instead; when
-        # they do use write(), that output is emitted before the iterable's
-        # chunks.
         self.written: list[bytes] = []
 
     def __call__(self, status, response_headers, exc_info=None):
@@ -399,12 +379,9 @@ async def fetch(
     app: Any,
     req: "Request | js.Request",
     env: Any,
-    # Accepted for parity with asgi.fetch; WSGI has no use for it.
     ctx: "Context | ExecutionContext | None" = None,
 ) -> js.Response:
     logger.debug("WSGI request: %s %s", req.method, req.url)
-    # Prefer lazily streaming the body through `wsgi.input` (no full buffering);
-    # fall back to pre-buffering when `run_sync`/JSPI isn't available.
     body: bytes | io.IOBase | None = _make_wsgi_input(req)
     if body is None:
         body = await _read_body(req)

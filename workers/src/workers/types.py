@@ -1,4 +1,4 @@
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from http import HTTPMethod
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict
 
@@ -9,14 +9,14 @@ if TYPE_CHECKING:
     from .blob import Blob
     from .formdata import FormData
 
-__all__ = [
+__all__ = (
     "Body",
     "Context",
     "FetchKwargs",
     "Headers",
     "JSBody",
     "RequestInitCfProperties",
-]
+)
 
 
 class Context(Protocol):
@@ -53,5 +53,4 @@ class FetchKwargs(TypedDict, total=False):
     method: HTTPMethod | str | None
     redirect: str | None
     cf: RequestInitCfProperties | None
-    # A JS fetch function, such as a service binding's.
-    fetcher: Any
+    fetcher: Callable[..., Awaitable[Any]]

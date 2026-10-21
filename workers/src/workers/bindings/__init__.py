@@ -19,8 +19,7 @@ from .r2 import R2Bucket, R2Object, R2ObjectBody
 from .services import DurableObjectNamespace, Fetcher
 from .workflow import Workflow, WorkflowInstance
 
-# The private names above are for the rest of the SDK and rpc's stock aliases.
-__all__ = [
+__all__ = (
     "Binding",
     "D1Database",
     "D1PreparedStatement",
@@ -33,4 +32,4 @@ __all__ = [
     "R2ObjectBody",
     "Workflow",
     "WorkflowInstance",
-]
+)

@@ -68,7 +68,6 @@ def managed_pyproxies() -> Generator[Any]:
         destroy_proxies(proxies)
 
 
-# JS errors with a Python twin, by JS name.
 _PYTHON_ERRORS = {"RangeError": ValueError, "TypeError": TypeError}
 
 

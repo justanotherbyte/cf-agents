@@ -8,7 +8,7 @@ from pyodide.ffi import to_js
 
 from ._js import js_name, lend_buffer, managed_pyproxies
 
-__all__ = ["Blob", "BlobEnding", "BlobValue", "File"]
+__all__ = ("Blob", "BlobEnding", "BlobValue", "File")
 
 type BlobValue = (
     str | bytes | js.ArrayBuffer | js.TypedArray | js.DataView | js.Blob | Blob | File
@@ -28,7 +28,6 @@ class Blob:
         endings: BlobEnding | str | None = None,
     ) -> None:
         if not _is_part_list(blob_parts):
-            # A single Blob or File passes on its type. A File's name is lost.
             if not content_type:
                 content_type = _blob_type(blob_parts)
             blob_parts = [blob_parts]
@@ -75,8 +74,6 @@ class File(Blob):
         last_modified: int | None = None,
     ) -> None:
         if not _is_part_list(blob_parts):
-            # A single Blob or File passes on its type, and a File its name and
-            # time, so a JS File received over RPC wraps without a filename.
             if not content_type:
                 content_type = _blob_type(blob_parts)
             source: Any = blob_parts

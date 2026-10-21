@@ -11,7 +11,7 @@ from typing import Any
 from .project import Project, WyndError
 from .targets import Target
 
-__all__ = ["select_sdk", "sync"]
+__all__ = ("select_sdk", "sync")
 
 SDKS = ("crosswind-workers", "workers-runtime-sdk")
 MIN_UV = (0, 12, 3)
@@ -24,8 +24,7 @@ def sync(project: Project, target: Target) -> None:
     if (
         project.python_modules.is_dir()
         and _text(token_path) == _token(project, target)
-        # The token can't see edits inside a local source, so reinstall it.
-        and not any(map(_local_paths, _locked_packages(project)))
+        and not _has_local_sources(project)
     ):
         return
 
@@ -33,8 +32,6 @@ def sync(project: Project, target: Target) -> None:
     _check_uv(project)
     _compile(project, target, sdk)
 
-    # Install beside python_modules/ and swap it in only once uv succeeds, so a
-    # failed install never leaves a half-built tree for Wrangler.
     staging = project.wynd_dir / "site-packages"
     shutil.rmtree(staging, ignore_errors=True)
     _install(project, target, staging)
@@ -76,7 +73,6 @@ def _name(requirement: str) -> str:
 
 def _token(project: Project, target: Target) -> str:
     inputs = [
-        # Each config has its own python_modules/ beside it.
         str(project.config_path),
         _text(project.root / "pyproject.toml"),
         _text(project.root / "pylock.toml"),
@@ -146,6 +142,10 @@ def _install(project: Project, target: Target, staging: Path) -> None:
 
 def _locked_packages(project: Project) -> list[dict[str, Any]]:
     return tomllib.loads(_text(project.root / "pylock.toml")).get("packages", [])
+
+
+def _has_local_sources(project: Project) -> bool:
+    return any(map(_local_paths, _locked_packages(project)))
 
 
 def _local_paths(package: dict[str, Any]) -> list[str]:

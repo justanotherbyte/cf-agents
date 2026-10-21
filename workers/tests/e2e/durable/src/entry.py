@@ -13,13 +13,12 @@ from workers import DurableObject, Response, WorkerEntrypoint
 
 class Room(DurableObject):
     def __init__(self, ctx, env):
-        # Before super().__init__: the wrapping must already have happened.
-        self.init_saw = [type(ctx).__name__, type(env.KV).__name__]
+        self.types_before_super_init = [type(ctx).__name__, type(env.KV).__name__]
         super().__init__(ctx, env)
         self.calls = 0
 
     async def init_types(self):
-        return self.init_saw
+        return self.types_before_super_init
 
     async def bump(self):
         self.calls += 1

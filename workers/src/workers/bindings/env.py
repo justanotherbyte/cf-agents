@@ -37,14 +37,12 @@ class _EnvWrapper(Binding):
     def _pass_through(self, name: str, value: Any) -> Any:
         js_class = js_name(value)
         if js_class is None:
-            binding = value  # a text var or secret
+            binding = value
         elif js_class in ("Object", "Array"):
-            # A JSON var, or a plain-object binding such as version metadata.
             binding = python_from_rpc(value)
         else:
             binding = _CLASS_FOR_JS.get(js_class, Binding)(value)
 
-        # Bindings don't change, so later reads skip __getattr__.
         setattr(self, name, binding)
 
         return binding

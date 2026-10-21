@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable, Coroutine
+from functools import partial
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, overload
 
@@ -15,9 +16,8 @@ from .formdata import FormData
 if TYPE_CHECKING:
     from .types import Body, Headers
 
-__all__ = ["RESPONSE_ACCEPTED_TYPES", "FetchResponse", "Response"]
+__all__ = ("RESPONSE_ACCEPTED_TYPES", "FetchResponse", "Response")
 
-# The JS body types js.Response accepts.
 RESPONSE_ACCEPTED_TYPES = {
     "Blob",
     "ArrayBuffer",
@@ -58,11 +58,10 @@ class _Json:
     def __get__(self, instance: "FetchResponse | None", owner: type) -> Any:
         if instance is None:
             return _stock_json
-        return lambda *args, **kwargs: _stock_json(instance, *args, **kwargs)
+        return partial(pyodide.http.FetchResponse.json, instance)
 
 
 def _stock_json(data: Any, *args: Any, **kwargs: Any) -> Any:
-    # The stock SDK's one method: a Response's body parse, else from_json.
     if isinstance(data, Response):
         return pyodide.http.FetchResponse.json(data)
     return FetchResponse.from_json(data, *args, **kwargs)
@@ -87,7 +86,6 @@ class FetchResponse(BodyMixin, pyodide.http.FetchResponse):
 
     @staticmethod
     def redirect(url: str, status: HTTPStatus | int = HTTPStatus.FOUND) -> "Response":
-        # The stock SDK returns the raw JS Response here.
         with python_errors():
             return Response(js.Response.redirect(url, int(status)))
 
@@ -131,7 +129,6 @@ class Response(FetchResponse):
             if name not in RESPONSE_ACCEPTED_TYPES:
                 raise TypeError(f"Unsupported type in Response: {name}")
         elif not isinstance(body, (str, bytes, FormData, Blob)) and body is not None:
-            # The stock SDK also rejects a Blob.
             raise TypeError(f"Unsupported type in Response: {type(body).__name__}")
 
         if name == "Response":

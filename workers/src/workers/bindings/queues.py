@@ -4,7 +4,7 @@ from typing import Any
 from ..rpc import python_to_rpc
 from .base import Binding, _js_options
 
-__all__ = ["Queue"]
+__all__ = ("Queue",)
 
 
 class Queue(Binding):

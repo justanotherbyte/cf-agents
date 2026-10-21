@@ -7,7 +7,7 @@ from typing import Any
 from ..rpc import python_from_rpc, python_to_rpc
 from .base import Binding, _js_options
 
-__all__ = ["Workflow", "WorkflowInstance"]
+__all__ = ("Workflow", "WorkflowInstance")
 
 
 class WorkflowInstance(Binding):

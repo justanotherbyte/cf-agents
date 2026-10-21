@@ -101,8 +101,6 @@ def to_js(
     return convert(value)
 
 
-# The cloudflare:workers module workerd imports ahead of time, and the modules
-# doAnImport finds. A test that needs one sets it.
 CLOUDFLARE_ENV = JsValue("Object", TEXT="hi")
 
 
@@ -122,7 +120,6 @@ CLOUDFLARE_WORKERS = JsValue(
 )
 JS_MODULES: dict[str, Any] = {}
 
-# What the SDK handed workerd's patchWaitUntil and queueMicrotask.
 PATCHED_CONTEXTS: list[Any] = []
 MICROTASKS: list[Any] = []
 
@@ -180,7 +177,6 @@ def fake_module(name: str, **attrs: Any) -> ModuleType:
     return fake
 
 
-# workerd's compatibility flags, all off. A test sets one with monkeypatch.
 COMPAT_FLAGS = ModuleType("_cloudflare_compat_flags")
 
 
@@ -219,7 +215,6 @@ def install() -> None:
             "to_js": to_js,
             "create_proxy": create_proxy,
             "create_once_callable": lambda function: function,
-            # Settled already, so run_sync returns the value.
             "run_sync": lambda value: value,
             "jsnull": jsnull,
         },

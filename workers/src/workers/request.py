@@ -10,7 +10,7 @@ from ._js import js_body, js_name, none_if_null, to_js_headers
 if TYPE_CHECKING:
     from .types import FetchKwargs
 
-__all__ = ["Request"]
+__all__ = ("Request",)
 
 
 class Request(BodyMixin):
@@ -88,8 +88,6 @@ class Request(BodyMixin):
 
     @property
     def method(self) -> HTTPMethod | str:
-        # HTTPMethod for a standard method. The stock SDK raises KeyError on
-        # any other; this returns the method string instead.
         method = self.js_object.method
         return HTTPMethod[method] if method in HTTPMethod.__members__ else method
 

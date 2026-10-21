@@ -39,9 +39,7 @@ def test_non_retryable_error_stops_retries(
 
     assert status["status"] == "complete", status
     output = status["output"]
-    # Both steps allow two retries. Only the ordinary error is retried.
     assert output["attempts"] == {"non_retryable": 1, "retryable": 3}, output
-    # The engine rethrows each step's error into run() as its Python type.
     assert output["errors"]["non_retryable"] == ["NonRetryableError", "stop"]
     assert output["errors"]["retryable"][0] == "ValueError", output
     assert "again" in output["errors"]["retryable"][1], output

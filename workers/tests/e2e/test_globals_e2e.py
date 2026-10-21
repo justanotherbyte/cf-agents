@@ -25,7 +25,6 @@ def test_module_globals_in_workerd(tmp_path: Path, date: str, version: str) -> N
         _, body = server.get("/")
         assert server.get("/defer")[1] == "scheduled"
         time.sleep(1.5)
-        # Written 0.3 s after /defer had already responded.
         assert server.get("/deferred")[1] == "yes"
 
     result = json.loads(body)

@@ -8,7 +8,7 @@ from typing import Any
 from .project import Project, WyndError
 from .shake import ShakePlan, shake
 
-__all__ = ["stage"]
+__all__ = ("stage",)
 
 # Fields Wrangler resolves from the config directory, by table. A list value
 # holds one table per item.
@@ -32,10 +32,9 @@ def stage(project: Project) -> tuple[Path, ShakePlan]:
     config_dir = project.config_path.parent
     source = _source_dir(project)
 
-    # Resolved, so "src/sub/../entry.py" names the module entry.
     root = config_dir.resolve()
     entry = (root / (project.main or "")).resolve()
-    plan = shake(project.python_modules, root / source, entry, project.keep)
+    plan = shake(project.python_modules, root / source, entry, project.keep_modules)
     if plan.errors:
         raise WyndError("\n".join(plan.errors))
 
@@ -57,9 +56,7 @@ def _staged_config(project: Project) -> dict[str, Any]:
     config = copy.deepcopy(project.config)
     _rewrite(config, project.config_path.parent)
 
-    # shortcut: only "./" and "../" values count as relative paths, so a bare
-    # "public" under an unknown key slips through. Upgrade if Wrangler adds one.
-    unknown = list(_relative_paths(config, ""))
+    unknown = list(_dot_relative_paths(config, ""))
     if unknown:
         raise WyndError(
             f"{project.config_path.name} has a relative path under "
@@ -74,12 +71,12 @@ def _source_dir(project: Project) -> Path:
     """The module root, relative to the config directory."""
     source = project.source_dir
     config_dir = project.config_path.parent.resolve()
+    holds_project = project.root.resolve().is_relative_to(source)
 
-    # A source holding .wynd/ would be copied into itself.
     if (
         source == config_dir
         or not source.is_relative_to(config_dir)
-        or project.root.resolve().is_relative_to(source)
+        or holds_project
         or not (config_dir / (project.main or "")).resolve().is_relative_to(source)
     ):
         raise WyndError(
@@ -135,13 +132,15 @@ def _absolute(value: Any, base: Path) -> Any:
     return str(base / value) if isinstance(value, str) else value
 
 
-def _relative_paths(node: Any, where: str) -> Iterator[str]:
+def _dot_relative_paths(node: Any, where: str) -> Iterator[str]:
     if isinstance(node, str) and node.startswith(("./", "../")):
         yield where
     elif isinstance(node, list):
         for index, item in enumerate(node):
-            yield from _relative_paths(item, f"{where}[{index}]")
+            yield from _dot_relative_paths(item, f"{where}[{index}]")
     elif isinstance(node, dict):
         for key, value in node.items():
             if key not in LEFT_ALONE:
-                yield from _relative_paths(value, f"{where}.{key}" if where else key)
+                yield from _dot_relative_paths(
+                    value, f"{where}.{key}" if where else key
+                )
