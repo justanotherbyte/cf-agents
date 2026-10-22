@@ -1,19 +1,36 @@
-import json
 import re
+from importlib.metadata import version
 from pathlib import Path
 
-from .project import CONFIG_NAMES, WyndError, load_project
+from .project import CONFIG_NAMES, PYTHON_CONFIG, WyndError, load_project
 from .targets import TARGETS
 from .typegen import write_env
 
 __all__ = ("scaffold",)
 
+# Wynd is a dev dependency, so editors resolve wynd.config. Sync compiles only
+# [project] dependencies, so it never reaches the Worker.
 PYPROJECT = """\
 [project]
 name = "{name}"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["crosswind-workers"]
+
+[dependency-groups]
+dev = ["wynd>={wynd}"]
+"""
+
+CONFIG = """\
+from wynd.config import Config, Worker
+
+config = Config(
+    worker=Worker(
+        name="{name}",
+        entrypoint="src/main.py",
+        compatibility_date="{date}",
+    ),
+)
 """
 
 MAIN = """\
@@ -26,7 +43,7 @@ class Default(WorkerEntrypoint[Env]):
         return Response("Hello from Python!")
 """
 
-IGNORED = (".venv/", "python_modules/", ".wynd/")
+IGNORED = (".venv/", "python_modules/", ".wynd/", ".wynd.*wrangler.json")
 
 
 def scaffold(directory: Path) -> None:
@@ -35,18 +52,11 @@ def scaffold(directory: Path) -> None:
     name = name or "worker"
     # The newest target's date, because the pinned Wrangler rejects later ones.
     target = TARGETS[0]
-    config = {
-        "name": name,
-        "main": "src/main.py",
-        "compatibility_date": str(target.since),
-        "compatibility_flags": ["python_workers"],
-    }
     files = {
-        "pyproject.toml": PYPROJECT.format(name=name),
+        "pyproject.toml": PYPROJECT.format(name=name, wynd=version("wynd")),
         # uv sync builds the editor's .venv on the target's Python.
         ".python-version": f"{target.version}\n",
-        # Not wrangler.jsonc, which loses to a wrangler.json in any parent.
-        "wrangler.json": json.dumps(config, indent=2) + "\n",
+        PYTHON_CONFIG: CONFIG.format(name=name, date=target.since),
         "src/main.py": MAIN,
     }
 

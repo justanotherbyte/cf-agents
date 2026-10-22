@@ -9,7 +9,8 @@ import pytest
 LOG = """
 import json, os, sys
 with open(os.environ["WYND_TEST_LOG"], "a") as log:
-    record = {"tool": TOOL, "args": sys.argv[1:], "cwd": os.getcwd()}
+    record = {"tool": TOOL, "args": sys.argv[1:], "cwd": os.getcwd(),
+              "cloudflare_env": os.environ.get("CLOUDFLARE_ENV")}
     log.write(json.dumps(record) + "\\n")
 """
 
