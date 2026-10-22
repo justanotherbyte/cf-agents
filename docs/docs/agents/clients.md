@@ -82,9 +82,10 @@ class Counter(Agent):
 - The method must be `async`. A plain `def` raises `TypeError` when the class
   is defined.
 - Arguments and return values must be JSON-serializable. A return value of
-  `None` resolves the client's call with `undefined`.
-- Clients can't pass keyword arguments. Give every parameter a default or
-  accept it positionally.
+  `None` resolves the client's call with `undefined`. Any other value JSON
+  can't encode rejects the call with `Result is not JSON-serializable: ...`.
+- Clients pass arguments positionally only. A keyword-only parameter can't be
+  set from a client, so give it a default.
 - A subclass that overrides a callable method must decorate the override
   again, or the method stops being callable.
 
@@ -109,9 +110,10 @@ try {
 }
 ```
 
-Only the message reaches the client. A call to a method that isn't
-`@callable` fails with `Method <name> is not callable`, and one that doesn't
-exist fails with `Method <name> does not exist`.
+Only the message reaches the client. An exception with an empty message
+sends its class name instead, as `raise KeyError()` sends `KeyError`. A call to a method that
+isn't `@callable` fails with `Method <name> is not callable`, and one that
+doesn't exist fails with `Method <name> does not exist`.
 
 ## Stream results
 
@@ -151,8 +153,8 @@ without calling `end()`, the SDK ends the stream for you. If it raises, the
 client's call is rejected with the message, as above.
 
 `send()` returns `False` once the client has disconnected, so a long stream can
-check it and stop. An async generator stops on its own when the client goes
-away.
+check it and stop. An async generator stops at its first `yield` after the
+client leaves. The SDK closes it, so its `finally` blocks run.
 
 ## Call agents from Worker code
 

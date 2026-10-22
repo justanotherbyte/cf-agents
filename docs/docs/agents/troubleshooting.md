@@ -4,9 +4,17 @@ description: "Causes and fixes for cf-agents errors: unmatched agent URLs, uncal
 ---
 
 Each entry starts with the text you see in a response, a client error or the
-Worker's log. Search this page for it. To see the SDK's own debug output, set
-`logging.getLogger("agents").setLevel(logging.DEBUG)` at the top of
-`src/entry.py`.
+Worker's log. Search this page for it. To see the SDK's own debug output, add
+this at the top of `src/entry.py`:
+
+```python
+import logging
+
+logging.basicConfig()
+logging.getLogger("agents").setLevel(logging.DEBUG)
+```
+
+Without `basicConfig()`, Python prints only `WARNING` and above.
 
 ## `Invalid request` (HTTP 400)
 
@@ -48,14 +56,23 @@ method name matches exactly, since clients use the Python name:
 The client's `onStateUpdateError` callback receives it, and the Worker log
 shows `State update from connection '<id>' rejected` with a traceback.
 
-**Cause.** One of these:
-
-- `validate_state_change` raised. The traceback shows the exception.
-- The connection is readonly, because `should_connection_be_readonly`
-  returned `True` for it.
+**Cause.** `validate_state_change` raised. The traceback shows the exception.
 
 **Fix.** Check the traceback. A client can't see the exception's message, so
 return details through a `@callable` method if the client needs them.
+
+## `Connection is readonly`
+
+**Cause.** A readonly client sent `setState`, or a `@callable` method called
+`set_state()` while serving one. In the second case the log shows
+`ReadonlyConnectionError`. The connection is readonly because
+`should_connection_be_readonly` returned `True` for it, or code set
+`connection.readonly = True`.
+
+**Fix.** Don't mark that client readonly, or have the method check
+`get_current_agent().connection.readonly` and return before it calls
+`set_state()`. See
+[Readonly connections](connections.md#readonly-connections).
 
 ## `Result is not JSON-serializable`
 
@@ -81,6 +98,8 @@ before its start chunk with the same `id`.
 `ToolInputStart(tool_call_id=...)` first, with the same id.
 
 ## `on_chat_message yielded a str after chunks`
+
+The same cause gives `on_chat_message yielded a chunk after str text`.
 
 **Cause.** One turn yielded both `str` values and chunk objects.
 
@@ -109,6 +128,22 @@ name.
 `on_start` runs on every wake, each wake adds another schedule.
 
 **Fix.** Pass `idempotent=True`, or use `schedule_every()` for recurring work.
+
+## `Unknown schedule callback '<name>'` or `Unknown queue callback '<name>'`
+
+**Cause.** `schedule`, `schedule_every` or `queue` got a method name the
+agent doesn't have, often a typo in a string callback.
+
+**Fix.** Pass the method itself, such as `self.remind`, so a typo fails as an
+`AttributeError` where you wrote it.
+
+## `A connection can have at most 10 tags, including its id`
+
+**Cause.** `get_connection_tags` returned more than 9 tags. The WebSocket
+upgrade fails.
+
+**Fix.** Return at most 9 tags. Keep other per-client data in
+[connection state](connections.md#store-data-on-a-connection).
 
 ## `ValueError: A schedule interval can't exceed 30 days`
 

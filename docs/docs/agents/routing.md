@@ -34,8 +34,10 @@ no list of agents.
 It returns:
 
 - the agent's response, for a matching path,
-- `None` for a path outside the prefix, so you can handle it yourself,
+- `None` for a path outside the prefix, or one with no `{name}` segment, so
+  you can handle it yourself,
 - a `400` with the body `Invalid request` when `{agent}` matches no binding.
+  The log line names the segment that didn't match.
 
 The agent receives the request unchanged, URL included. HTTP requests go to
 `on_request`, and WebSocket upgrades become connections.
@@ -52,28 +54,57 @@ The prefix may contain `/`. Clients then need the same prefix. With
 ## Check requests before they reach the agent
 
 Pass `on_before_connect` for WebSocket upgrades and `on_before_request` for
-everything else. Each gets the request and an `AgentRoute` with the binding
-name and the instance name:
+everything else. Each gets the request and an `AgentRoute`, whose
+`class_name` is the binding name and `name` is the instance name.
+
+Browsers can't set headers on a WebSocket upgrade, so this example reads the
+token from the `Authorization` header for HTTP and from the `token` query
+parameter for WebSockets:
 
 ```python
-from workers import Request, Response
+import hmac
+from urllib.parse import parse_qs, urlparse
+
+from workers import Request, Response, WorkerEntrypoint
 
 from agents import AgentRoute, route_agent_request
 
 
-async def require_token(request: Request, route: AgentRoute) -> Response | None:
-    if request.headers.get("authorization") != "Bearer secret":
-        return Response("Unauthorized", status=401)
-    return None
+class Default(WorkerEntrypoint):
+    def _valid(self, token: str | None) -> bool:
+        return token is not None and hmac.compare_digest(
+            token.encode(), self.env.API_TOKEN.encode()
+        )
 
+    async def check_header(self, request: Request, route: AgentRoute) -> Response | None:
+        header = request.headers.get("authorization") or ""
+        if not self._valid(header.removeprefix("Bearer ")):
+            return Response("Unauthorized", status=401)
+        return None
 
-response = await route_agent_request(
-    request,
-    self.env,
-    on_before_connect=require_token,
-    on_before_request=require_token,
-)
+    async def check_query(self, request: Request, route: AgentRoute) -> Response | None:
+        token = parse_qs(urlparse(request.url).query).get("token", [None])[0]
+        if not self._valid(token):
+            return Response("Unauthorized", status=401)
+        return None
+
+    async def fetch(self, request: Request) -> Response:
+        response = await route_agent_request(
+            request,
+            self.env,
+            on_before_connect=self.check_query,
+            on_before_request=self.check_header,
+        )
+        if response is None:
+            return Response("Not found", status=404)
+        return response
 ```
+
+Set the token as a secret with `npx wrangler secret put API_TOKEN`, and for
+`pywrangler dev`, put `API_TOKEN=...` in `.dev.vars`. On the client, pass it
+with `useAgent({ query: { token } })`. `hmac.compare_digest` takes the same
+time however many characters match, so the check doesn't leak the token
+through timing.
 
 A hook can return:
 
@@ -82,9 +113,8 @@ A hook can return:
 - a `Request` to forward that request instead, for example with an added
   header.
 
-Browsers can't set headers on a WebSocket upgrade. For `on_before_connect`,
-read a token from the query string instead, and pass it from the client with
-`useAgent({ query: { token } })`.
+To check it, request an agent URL without the token. The response is
+`401 Unauthorized`, and the agent never runs.
 
 ## Allow cross-origin requests
 
@@ -95,8 +125,16 @@ HTTP responses:
 response = await route_agent_request(request, self.env, cors=True)
 ```
 
-The permissive headers allow any origin. To restrict them, pass the headers
-yourself:
+The permissive headers are:
+
+```text
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, HEAD, OPTIONS
+Access-Control-Allow-Headers: *
+Access-Control-Max-Age: 86400
+```
+
+They allow any origin. To restrict them, pass the headers yourself:
 
 ```python
 response = await route_agent_request(
@@ -110,6 +148,7 @@ response = await route_agent_request(
 )
 ```
 
+The headers also go on a `Response` that `on_before_request` returns.
 WebSocket upgrade responses never get CORS headers.
 
 ## Other options
@@ -120,9 +159,15 @@ WebSocket upgrade responses never get CORS headers.
 | `location_hint` | `str \| None`                          | `None`  | Where to create the agent if it doesn't exist yet, such as `"wnam"`.  |
 | `routing_retry` | `RoutingRetryOptions \| False \| None` | `None`  | Retries errors the platform marks as transient. `False` turns it off. |
 
-By default the SDK tries 3 times and waits at most 0.8 seconds between attempts. Pass
-`RoutingRetryOptions(max_attempts=..., base_delay=..., max_delay=...)` to
-change that.
+An error counts as transient when the platform sets `retryable` on it and
+doesn't set `overloaded`. By default the SDK makes 3 attempts. Before each
+retry it waits a random time up to `min(0.1 * 2 ** (attempt - 1), 0.8)`
+seconds. To change that, pass
+`RoutingRetryOptions(max_attempts=..., base_delay=..., max_delay=...)`. Its
+`on_retry` field takes an `async` function that receives a
+`RoutingRetryEvent` before each wait, for logging. A `max_attempts` below 1,
+a delay that isn't positive, or a `base_delay` above `max_delay` raises
+`ValueError`.
 
 ## Call an agent from Worker code
 
@@ -181,3 +226,8 @@ class Default(WorkerEntrypoint):
 
 On the client, set `basePath: "me"` in `useAgent` so it connects to `/me`
 instead of building the default path.
+
+Any client can send any `x-user-id` header, so in production take the user id
+from a token you verify, as in
+[Check requests before they reach the agent](#check-requests-before-they-reach-the-agent).
+Otherwise one user can reach another user's agent.

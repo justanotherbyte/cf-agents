@@ -1,23 +1,24 @@
 ---
 title: "Wynd commands and configuration reference"
-description: "Every Wynd command, the flags Wynd reads, [tool.wynd] settings, Python target selection, when packages reinstall, the staged config and the files Wynd writes."
+description: "Every Wynd command including init, the flags Wynd reads, [tool.wynd] settings, Python target selection, when packages reinstall, the staged config and the files Wynd writes."
 ---
 
 Run Wynd with `uvx wynd <command>`. To pin its version, run
-`uvx wynd@0.1.0 <command>`. Wynd needs uv 0.12.3 or later and Node.js on
+`uvx wynd@0.3.0 <command>`. Wynd needs uv 0.12.3 or later and Node.js on
 `PATH`, and runs Wrangler 4.129.0 through `npx --yes wrangler@4.129.0`.
 
 ## Commands
 
 | Command                        | What Wynd does                                                                                                   |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `wynd init [directory]`        | Writes a new crosswind-workers project into `directory`, or the current directory, with a [`cloudflare.config.py`](python-config.md#create-a-project). Refuses a directory that already has a project. Doesn't run Wrangler. |
 | `wynd sync`                    | Installs packages for the Worker's Python target into `python_modules/`, if [anything changed](#when-packages-reinstall). Doesn't run Wrangler. |
 | `wynd types [--check]`         | Writes `env.py`, or with `--check` exits `1` if it's out of date. crosswind-workers only. See [Generate typed bindings](types.md). |
 | `wynd dev [args]`              | Syncs, regenerates `env.py` on crosswind-workers projects, then runs `wrangler dev [args]` on the full `python_modules/`. |
 | `wynd deploy [args]`           | Syncs, regenerates `env.py`, [prunes](pruning.md) into `.wynd/build/`, then runs `wrangler deploy [args]` on the staged config. |
 | `wynd versions upload [args]`  | As `deploy`, with `wrangler versions upload`.                                                                    |
 | `wynd preview [args]`          | As `deploy`, with `wrangler preview`. `preview delete`, `preview settings`, `preview secret` and `preview base-config` pass through. |
-| Any other command              | Runs `wrangler <command> [args]` unchanged, without syncing.                                                     |
+| Any other command              | Runs `wrangler <command> [args]` without syncing. Unchanged for a Wrangler config. For a `cloudflare.config.py`, Wynd [compiles it first](python-config.md#check-the-compiled-config) and passes the compiled file. |
 
 With `--dry-run`, the three upload commands print one line before Wrangler's
 output:
@@ -31,7 +32,7 @@ wynd: python_modules is 127,013 bytes, 92,668 after pruning (34,345 fewer). Each
 | Code         | Meaning                                                              |
 | ------------ | -------------------------------------------------------------------- |
 | Wrangler's   | Wynd ran Wrangler, and it exited with this code.                     |
-| `1`          | Wynd stopped before Wrangler ran. The error starts with `wynd: error:`. |
+| `1`          | Wynd stopped before Wrangler ran. The error starts with `wynd: error:`, or is `wynd: npx not found on PATH`. An exception raised by your `cloudflare.config.py` prints a Python traceback. |
 | `128 + N`    | Wrangler was killed by signal `N`.                                   |
 
 ## Flags Wynd reads
@@ -41,12 +42,14 @@ on to Wrangler unchanged:
 
 | Flag                     | Effect                                                                                  |
 | ------------------------ | --------------------------------------------------------------------------------------- |
-| `-c`, `--config <path>`  | Uses this Wrangler config in place of the [discovered one](#config-discovery).          |
-| `-e`, `--env <name>`     | Uses this [environment](#environments) from the config. Defaults to `$CLOUDFLARE_ENV`.  |
+| `-c`, `--config <path>`  | Uses this config, a Wrangler file or a `cloudflare.config.py`, in place of the [discovered one](#config-discovery). |
+| `-e`, `--env <name>`     | Uses this [environment](#environments) from a Wrangler config, or passes this [mode](python-config.md#use-modes) to `cloudflare.config.py`. Defaults to `$CLOUDFLARE_ENV`. |
 | `--cwd <path>`           | Looks for `pyproject.toml` and the config from this directory.                          |
 
 For the upload commands, Wynd replaces `--config` with the path of the staged
-config in `.wynd/build/` and keeps every other argument in its order.
+config in `.wynd/build/` and keeps every other argument in its order. For a
+`cloudflare.config.py`, Wynd also removes `-e` and `--env`, and runs Wrangler
+without `CLOUDFLARE_ENV`, because the compiled file has no environments.
 
 `dev`, `deploy`, `versions upload` and `preview` refuse
 `--compatibility-date`, `--compatibility-flags` and `--latest`, and exit with
@@ -61,12 +64,14 @@ Settings in `pyproject.toml`:
 [tool.wynd]
 keep = ["myplugins.csv_export"]
 allow-build = false
+keep-docstrings = false
 ```
 
 | Key           | Type        | Default | Description                                                                                       |
 | ------------- | ----------- | ------- | ------------------------------------------------------------------------------------------------- |
 | `keep`        | `list[str]` | `[]`    | Dotted module names that pruning keeps with everything they import. Anything else raises `wynd: error: [tool.wynd] keep must be a list of module names`. |
 | `allow-build` | `bool`      | `false` | Lets uv build packages from source. When it's off, uv installs only wheels, which must be built for Pyodide or be pure Python. |
+| `keep-docstrings` | `bool`  | `false` | Ships docstrings in the package modules pruning keeps. Wynd strips them otherwise. See [What Wynd strips](pruning.md#what-wynd-strips-from-kept-files). Anything but `true` or `false` raises `wynd: error: [tool.wynd] keep-docstrings must be true or false`. |
 
 ## Runtime SDK
 
@@ -101,7 +106,8 @@ wynd: error: wrangler.jsonc has compatibility_date '2026-09-08' and compatibilit
 these changed since the last install:
 
 - The contents of `pyproject.toml` or `pylock.toml`.
-- The config file path.
+- The config file path. For a `cloudflare.config.py`, that is the compiled
+  file, so switching modes reinstalls.
 - The target: Python version, compatibility date or compatibility flags.
 - The Wynd version.
 
@@ -119,7 +125,11 @@ Wrangler doesn't run.
 Without `--config`, Wynd looks for `wrangler.json` in the working directory
 and each parent, then for `wrangler.jsonc` the same way, then for
 `wrangler.toml`, as Wrangler does. A `wrangler.json` in a parent directory
-wins over a `wrangler.toml` in the working directory. `python_modules/` goes
+wins over a `wrangler.toml` in the working directory. Wynd also looks for
+`cloudflare.config.py` in the working directory and each parent. If it finds
+both kinds, the one in the deeper directory wins, and both in one directory
+is an error. Without any config, Wynd exits with
+`wynd: error: no config (cloudflare.config.py, wrangler.json, wrangler.jsonc, wrangler.toml) found from <directory>`. `python_modules/` goes
 next to the config file. `pyproject.toml` is the nearest one at or above the
 working directory, and `.wynd/` goes next to it.
 
@@ -132,7 +142,9 @@ the environment leaves them out: `main`, `base_dir`, `compatibility_date`,
 `logfwdr`. Bindings and `vars` don't, so an environment lists its own.
 
 An unknown environment name exits with `1`. If the config has no `env`
-section at all, Wynd uses the top level, as Wrangler does.
+section at all, Wynd uses the top level, as Wrangler does. A
+`cloudflare.config.py` has no `env` sections. It takes the name as a
+[mode](python-config.md#use-modes) instead.
 
 ## Source directory
 
@@ -174,9 +186,11 @@ wynd: error: wrangler.jsonc has a relative path under unsafe.metadata.path, whic
 
 | Path                     | Written by                  | Commit it | Contents                                                     |
 | ------------------------ | --------------------------- | --------- | ------------------------------------------------------------ |
+| `cloudflare.config.py`, `pyproject.toml`, `.python-version`, `src/main.py` | `init` | Yes | A new project |
 | `pylock.toml`            | Every syncing command       | Yes       | Locked versions for the Pyodide target                       |
-| `src/env.py`             | `types`, `dev`, uploads     | Yes       | The generated `Env` class, crosswind-workers only             |
+| `src/env.py`             | `types`, `dev`, uploads, `init` | Yes       | The generated `Env` class, crosswind-workers only             |
 | `python_modules/`        | Every syncing command       | No        | Every installed package, which `wynd dev` runs               |
+| `.wynd.wrangler.json`, `.wynd.<mode>.wrangler.json` | Every command, for a `cloudflare.config.py` | No | The [compiled config](python-config.md#check-the-compiled-config) that Wrangler reads |
 | `.wynd/synced`           | Every syncing command       | No        | A hash of the install's inputs                               |
 | `.wynd/excludes.txt`     | Every syncing command       | No        | The SDK left out of the install                              |
 | `.wynd/site-packages/`   | Every syncing command       | No        | An install in progress                                       |

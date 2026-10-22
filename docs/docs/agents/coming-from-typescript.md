@@ -52,12 +52,14 @@ Methods and hooks use `snake_case`. The common ones:
 | `validateStateChange`, `onStateChanged`                     | `validate_state_change`, `on_state_changed`                      |
 | `onStart`, `onRequest`, `onConnect`, `onMessage`, `onClose` | `on_start`, `on_request`, `on_connect`, `on_message`, `on_close` |
 | `shouldConnectionBeReadonly`, `getConnectionTags`           | `should_connection_be_readonly`, `get_connection_tags`           |
-| `scheduleEvery`, `getSchedule`, `getSchedules`              | `schedule_every`, `get_schedule_by_id`, `list_schedules`         |
+| `scheduleEvery`, `getScheduleById`, `listSchedules`         | `schedule_every`, `get_schedule_by_id`, `list_schedules`         |
+| `getSchedule`, `getSchedules` (deprecated)                  | `get_schedule_by_id`, `list_schedules`, both `async`             |
 | `getQueue`, `getQueues`, `dequeueAllByCallback`             | `get_queue`, `queue_items`, `dequeue_all_by_callback`            |
 | `runFiber`, `startFiber`, `onFiberRecovered`                | `run_fiber`, `start_fiber`, `on_fiber_recovered`                 |
 | `keepAlive`, `keepAliveWhile`                               | `keep_alive`, `keep_alive_while`                                 |
 | `routeAgentRequest`, `getAgentByName`, `getCurrentAgent`    | `route_agent_request`, `get_agent_by_name`, `get_current_agent`  |
 | `@callable()`                                               | `@callable` or `@callable(...)`                                  |
+| `this.retry(fn, options)`                                   | `await retry(fn, ...)`, a module function                        |
 
 URLs don't change. A class still answers at `/agents/{kebab-case-name}/...`,
 so existing clients keep working.
@@ -127,7 +129,9 @@ type, raises `TypeError`, `ValueError` or `RuntimeError` instead.
 | Chat client tools and approvals                     | Not ported.                                  |
 | Recovery of interrupted chat turns                  | Not ported.                                  |
 | `props` in `routeAgentRequest` and `getAgentByName` | Not ported.                                  |
-| Think, voice, email, workflows, browser             | Not ported.                                  |
+| Think, voice, email, channels, workflows, browser   | Not ported.                                  |
+| Agents as tools, `RoutedAgents`                     | Not ported.                                  |
+| Chat stall watchdog (`chatStreamStallTimeoutMs`)    | Not ported.                                  |
 | Cap'n Web transport                                 | Not ported.                                  |
 | Tracing spans                                       | Not ported. Structured events are.           |
 | Deprecated `subAgent`, `abortSubAgent` and related  | Use `self.dynamic_agents`.                   |

@@ -20,17 +20,26 @@ including the `Protocol` that [`wynd types`](../wynd/types.md) writes.
 
 | Class                | `self.ctx`                                       | Handlers the runtime calls                                                  |
 | -------------------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
-| `WorkerEntrypoint`   | [`ExecutionContext`](#executioncontext)          | `fetch`, `scheduled`, `queue`, `connect`, and your own RPC methods          |
+| `WorkerEntrypoint`   | [`ExecutionContext`](#executioncontext)          | `fetch(request)`, `scheduled(controller, env, ctx)`, `queue(batch, env, ctx)`, `connect`, and your own RPC methods |
 | `DurableObject`      | [`DurableObjectContext`](#durableobjectcontext)  | `fetch`, `alarm`, `webSocketMessage`, `webSocketClose`, `webSocketError`, `connect`, and RPC methods |
 | `WorkflowEntrypoint` | The JavaScript context, unwrapped                | `run(event, step)`                                                          |
 
 All three take `(ctx, env)` in `__init__` and set `self.ctx` and `self.env`.
-If you override `__init__`, call `super().__init__(ctx, env)` first.
-`self.env` reads bindings as the [binding classes](#bindings) below.
+If you override `__init__`, call `super().__init__(ctx, env)` before you read
+`self.ctx` or `self.env`. The `ctx` and `env` your `__init__` receives are
+already wrapped. `self.env` reads bindings as the
+[binding classes](#bindings) below.
 
 Arguments the runtime passes to `connect`, `queue`, `alarm`, the
 `webSocket*` handlers and `run` arrive as Python values or wrappers. A binary
 WebSocket message stays a JavaScript `ArrayBuffer`.
+
+`queue` and `scheduled` must accept three arguments after `self`. The runtime
+passes `env` and `ctx` positionally as `None`, so read `self.env` and
+`self.ctx` instead. A `queue(self, batch)` fails on every batch with
+`TypeError: Default.queue() takes 2 positional arguments but 4 were given`.
+In `queue`, `batch.messages` is a list of messages. Each `message.body` is a
+Python value, and `message.ack()` acknowledges it.
 
 On compatibility dates before 2025-08-14 the runtime calls `on_fetch` and
 `on_connect`, plus `on_alarm` and `on_webSocket*` on Durable Objects.
@@ -83,6 +92,9 @@ Other names, such as `waitUntil` and `props`, return the raw JavaScript value.
 
 `DurableObjectAbort` derives from `BaseException`, so `except Exception`
 doesn't catch it. Import it from `workers.entrypoints` or `workers.context`.
+The caller's `await` raises `pyodide.ffi.JsException` with the reason, such
+as `Error: bye` for `abort("bye")`. The next call to that name reaches a new
+instance, so attributes set on `self` start over.
 
 ### `DurableObjectStorage`
 
@@ -92,7 +104,7 @@ position, and forwards unknown keywords into it.
 
 | Method                                                                                  | Returns                                                         |
 | --------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `get(keys, options=None, *, allow_concurrency=None, no_cache=None)`                     | The value for one key, `None` if missing, or a `dict` for a list of keys. |
+| `get(keys, options=None, *, allow_concurrency=None, no_cache=None)`                     | The value for one key, `None` if missing, or a `dict` for a list of keys that leaves out missing keys. |
 | `put(key, value, options=None, *, allow_concurrency=None, allow_unconfirmed=None, no_cache=None)` | `None`. Also `put(entries, options=None)` with a `dict` of entries. Raises `TypeError` for `put(key)` with no value. |
 | `delete(keys, options=None, *, allow_unconfirmed=None, no_cache=None)`                  | `True` if one key existed, or the count for a list of keys.     |
 | `delete_all(options=None)`                                                              | `None`.                                                         |
@@ -124,7 +136,7 @@ JavaScript body, or `None`.
 | `url`                             | `str`                                                            |
 | `method`                          | `http.HTTPMethod`, or `str` for a non-standard method            |
 | `headers`                         | A mapping, read with `request.headers["content-type"]` or `.get()` |
-| `cf`                              | Cloudflare's request properties, or `None`                       |
+| `cf`                              | Cloudflare's request properties as a JavaScript object. `None` on a `Request` you build yourself. |
 | `body`                            | The JavaScript `ReadableStream`                                  |
 | `body_used`                       | `bool`                                                           |
 | `async text()`                    | `str`                                                            |
@@ -139,8 +151,8 @@ JavaScript body, or `None`.
 `keepalive`, `mode`, `redirect`, `referrer` and `referrer_policy` return the
 JavaScript property of the same name.
 
-Each body method raises `OSError("Body already used")` if the body was read
-before.
+Each body method, and `clone()`, raises `OSError("Body already used")` if the
+body was read before.
 
 ### `Response`
 
@@ -157,15 +169,18 @@ defaults to `200`. `web_socket` is the client end of a `WebSocketPair`, for a
 
 | Member                                                            | Description                                                         |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `Response.json(data, status=200, status_text="", headers=None)`   | A response with `data` serialized by `json.dumps` and `content-type: application/json`. |
-| `Response.redirect(url, status=302)`                              | A redirect response.                                                |
+| `Response.json(data, status=200, status_text="", headers=None)`   | A response with `data` serialized by `json.dumps`. Sets `content-type: application/json` unless `headers` has a `content-type`. |
+| `Response.redirect(url, status=302)`                              | A redirect response. A status other than 301, 302, 303, 307 or 308 raises `ValueError`. |
 | `replace_body(body)`                                              | A new `Response` with this one's status and headers.                |
-| `status`, `status_text`, `ok`, `url`, `headers`, `body`           | Properties of the response.                                         |
+| `status`, `status_text`, `ok`, `url`, `headers`, `body`           | Properties of the response. `body` is `None` for a response with no body. |
 | `async text()`, `async json()`, `async bytes()`                   | The body as `str`, parsed JSON or `bytes`.                          |
 | `async form_data()`, `async blob()`                               | The body as [`FormData`](#formdata) or [`Blob`](#blob).             |
+| `raise_for_status()`                                              | Raises `pyodide.http.HttpStatusError`, a subclass of `OSError`, for a 4xx or 5xx status. |
 
 On the class, `Response.json(data)` builds a response. On an instance,
-`await response.json()` parses its body.
+`await response.json()` parses its body. Reading a body a second time raises
+`pyodide.http.BodyUsedError: Response body is already used`, a subclass of
+`OSError`.
 
 ```python
 from workers import Response
@@ -233,7 +248,7 @@ Any other type raises `TypeError`. `FormData` is a mutable mapping:
 | `get_all(key)`                              | Every value for `key`, as a `list`.                       |
 | `delete(key)`, `del form["key"]`            | Removes every value for `key`.                            |
 | `keys()`, `values()`, `items()`             | Generators over the entries.                              |
-| `len(form)`                                 | The number of keys.                                       |
+| `len(form)`                                 | The number of entries. A key with two values counts twice. |
 
 A value is a `str`, a [`Blob`](#blob) or a [`File`](#file).
 
@@ -260,10 +275,10 @@ coroutine. `Binding(js_object)` wraps a JavaScript object, and
 | Method                                                                          | Returns                                                           |
 | ------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `async get(key, type="text", *, cache_ttl=None)`                                | `str` for `"text"`, the parsed value for `"json"`, `memoryview` for `"arrayBuffer"`, a stream for `"stream"`. `None` if the key is missing. |
-| `async get_with_metadata(key, type="text", *, cache_ttl=None)`                  | `{"value": ..., "metadata": ..., "cacheStatus": ...}`             |
-| `async put(key, value, options=None, *, expiration=None, expiration_ttl=None, metadata=None)` | `None`. `expiration` is seconds since the epoch, `expiration_ttl` is seconds from now, at least 60. |
+| `async get_with_metadata(key, type="text", *, cache_ttl=None)`                  | `{"value": ..., "metadata": ..., "cacheStatus": ...}`. For a missing key, all three are `None`. |
+| `async put(key, value, options=None, *, expiration=None, expiration_ttl=None, metadata=None)` | `None`. `expiration` is seconds since the epoch, `expiration_ttl` is seconds from now, at least 60. A smaller `expiration_ttl` raises `JsException` with `KV PUT failed: 400 Invalid expiration_ttl`. |
 | `async delete(key)`                                                             | `None`                                                            |
-| `async list(options=None, *, prefix=None, limit=None, cursor=None)`             | `{"keys": [...], "list_complete": bool, "cursor": ...}`           |
+| `async list(options=None, *, prefix=None, limit=None, cursor=None)`             | `{"keys": [...], "list_complete": bool, "cacheStatus": ...}`. Each key is a `dict` with `name`, plus `expiration` and `metadata` when set. When `list_complete` is `False`, `cursor` holds the value to pass for the next page. |
 
 ### `D1Database`
 
@@ -271,14 +286,14 @@ coroutine. `Binding(js_object)` wraps a JavaScript object, and
 | ---------------------------- | ------------------------------------------------------------- |
 | `prepare(query)`             | A [`D1PreparedStatement`](#d1preparedstatement)               |
 | `async batch(statements)`    | A `list` of result `dict`s, one per statement, run in one transaction |
-| `async exec(query)`          | A `dict` with `count` and `duration`. Runs one or more statements without bindings. |
+| `async exec(query)`          | A `dict` with `count` and `duration`. Runs one or more statements without bound values. |
 
 ### `D1PreparedStatement`
 
 | Method                                       | Returns                                                     |
 | -------------------------------------------- | ----------------------------------------------------------- |
 | `bind(*values)`                              | A new `D1PreparedStatement` with `?` placeholders filled     |
-| `async first(column=None)`                   | The first row as a `dict`, or one column's value, or `None` |
+| `async first(column=None)`                   | The first row as a `dict`, or one column's value. `None` when the query returns no rows. |
 | `async all()`                                | `{"results": [...], "success": bool, "meta": {...}}`        |
 | `async run()`                                | The same `dict` as `all()`                                  |
 | `async raw(options=None, *, column_names=None)` | Rows as lists. With `column_names=True`, the first list is the column names. |
@@ -291,7 +306,7 @@ coroutine. `Binding(js_object)` wraps a JavaScript object, and
 | `async get(key, options=None)`                                                | An [`R2ObjectBody`](#r2objectbody), an `R2Object` when an `onlyIf` condition fails, or `None` |
 | `async put(key, value, options=None, *, http_metadata=None, custom_metadata=None)` | An `R2Object`, or `None` when an `onlyIf` condition fails     |
 | `async delete(keys)`                                                          | `None`. `keys` is one key or a list of up to 1,000.             |
-| `async list(options=None, *, prefix=None, limit=None, cursor=None, delimiter=None)` | A `dict` whose `objects` is a list of `R2Object`          |
+| `async list(options=None, *, prefix=None, limit=None, cursor=None, delimiter=None)` | A `dict` with `objects`, a list of `R2Object`, plus `truncated`, `cursor` and `delimitedPrefixes`. When `truncated` is `True`, pass `cursor` to get the next page. |
 
 `http_metadata` and `custom_metadata` keep their keys as written, so use R2's
 camelCase names such as `contentType`.
@@ -363,9 +378,24 @@ keyword argument reaches the other side as one trailing dictionary.
 | Member                                                  | Returns                                                           |
 | ------------------------------------------------------- | ----------------------------------------------------------------- |
 | `id`                                                    | `str`                                                             |
-| `async status()`                                        | A `dict` with `status`, `output` and `error`                      |
+| `async status()`                                        | A `dict` with `status`, `output` and `error`. [Write a Workflow](workflows.md#instance-status) lists the `status` values. `output` is `None` until the instance completes. `error` is `None` unless it errored, and then a `dict` with `name` and `message`. |
 | `async pause()`, `resume()`, `restart()`, `terminate()` | `None`                                                            |
 | `async send_event(event=None, *, type=None, payload=None)` | `None`                                                         |
+
+### Other binding classes
+
+These classes have typed methods with snake_case keywords, like the classes
+above. Each returns Python values.
+
+| Class                    | Config section              | Methods                                                                                   |
+| ------------------------ | --------------------------- | ----------------------------------------------------------------------------------------- |
+| `Vectorize`              | `vectorize`                 | `async describe()`, `async query(vector, *, top_k, namespace, return_values, return_metadata, filter)`, `async query_by_id(vector_id, ...)` with the same keywords, `async insert(vectors)`, `async upsert(vectors)`, `async delete_by_ids(ids)`, `async get_by_ids(ids)`. `ids` is one id or a list. |
+| `AnalyticsEngineDataset` | `analytics_engine_datasets` | `write_data_point(event=None, *, indexes, doubles, blobs)`, not async. `indexes` and `blobs` must be lists, and a bare `str` or `bytes` raises `TypeError`. |
+| `ImagesBinding`          | `images`                    | `async info(stream)`, and `input(stream)`, which returns an `ImageTransformer`. Chain `transform(**options)` and `draw(image, ...)`, then `await output(format=..., quality=...)`. The result has `response()`, `content_type()` and `image()`. |
+| `RateLimit`              | `ratelimits`                | `async limit(*, key)`, which returns the JavaScript result as a `dict`.                  |
+
+Every keyword on these methods defaults to `None`, and a `None` keyword is
+left out of the JavaScript options.
 
 ## Workflows
 
@@ -380,11 +410,12 @@ The `step` argument of `run`.
 | `do(name=None, depends=None, concurrent=False, config=None)`          | A decorator that makes a function a step. Returns an async callable that runs it. `name` defaults to the function's name. |
 | `async sleep(name, duration)`                                          | Pauses the Workflow. `duration` is a string such as `"1 hour"` or milliseconds. |
 | `async sleep_until(name, timestamp)`                                   | Pauses until `timestamp`, a `datetime` or milliseconds since the epoch.   |
-| `async wait_for_event(name, event_type, timeout="24 hours")`           | Waits for an event sent with `WorkflowInstance.send_event`. Returns a `dict` with `type`, `timestamp` and `payload`. |
+| `async wait_for_event(name, event_type, timeout="24 hours")`           | Waits for an event sent with `WorkflowInstance.send_event`. Returns a `dict` with `type`, `timestamp` and `payload`. `timeout` defaults to 24 hours. |
 
 `do` raises `TypeError` when:
 
 - You pass `depends` while `python_workflows_implicit_dependencies` is on.
+  workerd turns the flag on for compatibility dates from 2026-02-25.
 - With the flag on, a parameter other than `ctx` names no earlier step.
 - With the flag off, the number of parameters other than `ctx` differs from
   the length of `depends`, or an item in `depends` isn't a step.
@@ -395,7 +426,10 @@ The `step` argument of `run`.
 ### `NonRetryableError`
 
 Raise it inside a step to fail the step without retries. Awaiting the step in
-`run` raises `NonRetryableError` with the same message.
+`run` raises `NonRetryableError` with the same message. Any other exception a
+step raises is retried as `config` allows. Once the retries run out, awaiting
+the step raises that exception's class for `TypeError` and `ValueError`, and
+`pyodide.ffi.JsException` for other classes.
 
 ## Module functions
 
@@ -425,7 +459,8 @@ results.
 | `Exception`                              | `Error` with `str(exception)`      |
 | A wrapper with `js_object`               | Its `js_object`                    |
 | A function                               | A callable proxy                   |
-| `tuple`, `bytearray`, an awaitable       | Raises `TypeError`                 |
+| `tuple`, `bytearray`, an awaitable, a JavaScript `RegExp` | Raises `TypeError`, at any depth |
+| An instance of your own class, `complex`, `range`, a generator | Converts, then the RPC send raises `JsException` with `DataCloneError` |
 
 `python_from_rpc(value)` converts the other way. A plain object becomes a
 `JsDict`, a `dict` whose keys also read as attributes, so `result.meta` and
@@ -442,8 +477,12 @@ becomes an `Exception`, and a JavaScript `Request`, `Response`, `FormData`,
 | -------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `async fetch(app, req, env, ctx=None)`       | Runs the ASGI `app` on `req` and returns a JavaScript `Response`. The scope has the env under `"env"`. |
 | `async websocket(app, req, env=None, ctx=None)` | Runs a WebSocket connection through `app` and returns the `101` response.          |
-| `entrypoint(app)`                            | A `WorkerEntrypoint` subclass that calls `websocket` for upgrade requests and `fetch` otherwise. |
-| `env`                                        | A FastAPI dependency that returns the Worker's env.                                   |
+| `entrypoint(app)`                            | A `WorkerEntrypoint` subclass that calls `websocket` for upgrade requests and `fetch` otherwise, passing `self.ctx` to both. |
+| `env`                                        | A FastAPI dependency that returns the Worker's env. Reading it without FastAPI installed raises `ImportError`. |
+
+`fetch` runs the app's lifespan startup before each request and its shutdown
+after the response. It reads the whole request body before the app runs. The
+scope has no `client`, `server` or `root_path` keys.
 
 `import asgi` imports the same module, as in the stock SDK.
 
@@ -452,4 +491,8 @@ becomes an `Exception`, and a JavaScript `Request`, `Response`, `FormData`,
 | Name                                         | Description                                                                           |
 | -------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `async fetch(app, req, env, ctx=None)`       | Runs the WSGI `app` on `req` and returns a JavaScript `Response`. The environ has the env under `"workers.env"`. |
-| `entrypoint(app)`                            | A `WorkerEntrypoint` subclass that calls `fetch`.                                     |
+| `entrypoint(app)`                            | A `WorkerEntrypoint` subclass that calls `fetch`. It has no WebSocket support.        |
+
+The app runs synchronously inside the request. On Python 3.13 and later,
+`wsgi.input` streams the body as the app reads it. Python 3.12 has no
+`run_sync`, so there the adapter reads the whole body first.

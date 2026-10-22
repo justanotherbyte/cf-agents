@@ -5,6 +5,7 @@ theme:
   custom_dir: overrides
   logo: assets/logo.png
   favicon: assets/logo.png
+  font: false  # overrides/main.html loads Geist
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -79,8 +80,14 @@ nav:
     - Overview: wynd/overview.md
     - Switch from pywrangler: wynd/getting-started.md
     - Guides:
+      - Write config in Python: wynd/python-config.md
       - Prune the upload: wynd/pruning.md
       - Generate typed bindings: wynd/types.md
     - Reference:
       - Commands and configuration: wynd/commands.md
       - Troubleshooting: wynd/troubleshooting.md
+validation:
+  links:
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn

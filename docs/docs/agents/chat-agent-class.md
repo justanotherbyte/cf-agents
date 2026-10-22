@@ -18,7 +18,9 @@ Set `options = AIChatAgentOptions(...)` on the class. It extends
 | `max_persisted_messages` | `int \| None`        | `None`              | Keep at most this many stored messages, deleting the oldest after each save.                                 |
 | `hydration_byte_budget`  | `int \| None`        | `33554432` (32 MiB) | Bytes of the newest messages `self.messages` loads on wake. `None` loads all.                                |
 
-`Debounce(seconds=0.75)` raises `ValueError` for a negative or infinite value.
+`Debounce(seconds)` waits 0.75 seconds by default. A negative or non-finite
+`seconds` raises `ValueError`. `message_concurrency` applies only to user
+sends. Regenerations and turns from `save_messages` always queue.
 
 ## Hooks
 
@@ -40,7 +42,7 @@ iterator also works. The default raises `NotImplementedError`.
 | -------------- | ------------------------------ | -------------------------------------------------------------------- |
 | `request_id`   | `str`                          | The turn's id.                                                       |
 | `client_tools` | `Sequence[ClientToolSchema]`   | Tools the client declared, with `name`, `description`, `parameters`. |
-| `body`         | `dict[str, JSONValue] \| None` | Extra fields from the client's request body.                         |
+| `body`         | `dict[str, JSONValue] \| None` | Extra fields from the client's request body. `None` when there are none. |
 | `continuation` | `bool`                         | `True` when the turn appends to the last assistant message.          |
 
 ### `on_chat_response`
@@ -49,9 +51,12 @@ iterator also works. The default raises `NotImplementedError`.
 async def on_chat_response(self, result: ChatResponseResult) -> None
 ```
 
-Runs after a turn's message is saved. `ChatResponseResult` has `message`,
-`request_id`, `continuation`, `status` (`"completed"`, `"error"` or
-`"aborted"`) and `error`. It may call `save_messages`.
+Runs after a turn's message is saved, for every outcome except a skipped
+turn. `ChatResponseResult` has `message`, `request_id`, `continuation`,
+`status` (`"completed"`, `"error"` or `"aborted"`) and `error`, the error
+message, which is `None` unless `status` is `"error"`. It may call
+`save_messages`. A turn started from here doesn't call `on_chat_response`
+again.
 
 ### `sanitize_message_for_persistence`
 
@@ -108,14 +113,15 @@ Cancelling the code awaiting `save_messages` stops the turn and raises
 
 ## Messages and parts
 
-`UIMessage` is a dataclass matching the AI SDK's `UIMessage`:
+`UIMessage` is a dataclass matching the AI SDK's `UIMessage`. Its fields are
+keyword-only:
 
 ```python
-@dataclass
+@dataclass(slots=True, kw_only=True)
 class UIMessage:
     id: str
     role: Literal["system", "user", "assistant"]
-    parts: list[UIMessagePart] = []
+    parts: list[UIMessagePart] = field(default_factory=list)
     metadata: JSONValue = None
 ```
 
@@ -148,4 +154,7 @@ Rules the SDK enforces:
 - A delta or end chunk must follow a start chunk with the same id
   (`TextStart`, `ReasoningStart` or `ToolInputStart`). Otherwise the turn fails
   with `TypeError`.
-- `Error` ends the turn as failed.
+- A `str` after chunks, or a chunk after a `str`, fails the turn with
+  `TypeError`.
+- `Error` ends the turn as failed, and `on_error` receives a
+  `ChatStreamError` whose `error_text` is what the client was sent.

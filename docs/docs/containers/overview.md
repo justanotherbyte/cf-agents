@@ -79,7 +79,8 @@ build and no cold start of a few seconds.
 
 ## Status
 
-`containers-py` is pre-1.0. Its API may change between minor releases. It is
+These pages cover `containers-py` 0.1.1, which needs Python 3.12 or later.
+The package is pre-1.0, and its API may change between minor releases. It is
 an independent community project, not an official Cloudflare SDK.
 
 ## Next steps

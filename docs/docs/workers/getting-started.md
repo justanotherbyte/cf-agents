@@ -60,6 +60,11 @@ The `python_workers` flag and the date pick the Python version. A date of
 `main` must point into a subdirectory such as `src/`. Wynd copies that
 directory when it deploys, and fails if `main` sits next to `wrangler.jsonc`.
 
+`uvx wynd init` creates the same layout with the config written in Python, in
+`cloudflare.config.py`. This guide uses `wrangler.jsonc` because no Wynd test
+yet deploys a Durable Object declared in a Python config. See
+[Configure a Worker in Python](../wynd/python-config.md).
+
 ## 3. Write the Worker
 
 ```python title="src/entry.py"
@@ -89,6 +94,8 @@ on it over RPC.
 >
 > Pass RPC arguments by position. `counter.increment(by=1)` type-checks, but
 > the Durable Object receives one dictionary, `{"by": 1}`, in place of `by`.
+> The request then fails with `TypeError: unsupported operand type(s) for +:
+> 'int' and 'JsDict'`.
 
 `env.py` doesn't exist yet. Wynd writes it in the next step.
 

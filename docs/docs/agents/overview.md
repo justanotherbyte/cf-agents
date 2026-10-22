@@ -48,10 +48,11 @@ connections without a separate database.
 `{name}`. `{agent}` is the binding name in kebab case, so the binding `Counter`
 answers at `/agents/counter/{name}`.
 
-When no client is connected and no work is running, the runtime evicts the
-agent from memory. WebSocket connections stay open while the agent
-hibernates. The next message, request or alarm wakes it and calls `on_start()`
-again.
+When no request, message or alarm is running, the runtime can evict the agent
+from memory, even while clients are connected. Their WebSockets stay open
+while the agent hibernates. The next message, request or alarm wakes it and
+calls `on_start()` again, so keep anything you need between events in state
+or SQL, not in instance attributes.
 
 ## Works with the JavaScript clients
 
@@ -87,15 +88,16 @@ like in `on_chat_message` and yield text or typed chunks.
 - MCP clients and servers.
 - Chat client tools, tool approvals and automatic recovery of interrupted chat
   turns.
-- Voice, email, workflows and browser automation.
+- Voice, email, workflows, channels and browser automation.
 - The experimental Cap'n Web transport.
 - Tracing. Structured events are ported.
 
 ## Status
 
-`cf-agents` is pre-1.0 and its API may change between minor releases. It is an
-independent community project, not an official Cloudflare SDK. It ports
-`agents` v0.25.0.
+These pages cover `cf-agents` 0.1.3, which is alpha. Its API may change
+between minor releases. It is an independent community project, not an
+official Cloudflare SDK. It ports `agents` v0.25.0 and the `AIChatAgent` from
+`@cloudflare/ai-chat`.
 
 ## Next steps
 

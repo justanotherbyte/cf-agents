@@ -7,7 +7,9 @@ description: "What crosswind-workers is, how it relates to workers-runtime-sdk, 
 [Python Worker](https://developers.cloudflare.com/workers/languages/python/)
 imports as `workers`. It replaces Cloudflare's `workers-runtime-sdk`, keeps
 every public name and call signature of that SDK, and adds types and Python
-methods on top.
+methods on top. Use it for a Python Worker you build with Wynd. A project
+built with pywrangler has to stay on `workers-runtime-sdk`, because pywrangler
+always installs it.
 
 ```python
 from env import Env
@@ -45,13 +47,13 @@ crosswind-workers adds:
 - `WorkerEntrypoint[Env]`, `DurableObject[Env]` and `WorkflowEntrypoint[Env]`,
   so `self.env` has a type.
 - [Binding classes](bindings.md) for KV, D1, R2, Queues, Durable Objects,
-  service bindings and Workflows, with `async` snake_case methods that take and
-  return Python values.
+  service bindings, Workflows, Vectorize, Analytics Engine, Images and rate
+  limiting, with snake_case methods that take and return Python values.
 - `js_object` on every wrapper, which returns the JavaScript object
   underneath. See [Call JavaScript APIs](javascript.md).
 - Workflows written in Python only, with no JavaScript helper file in the
   package.
-- Fixes for a dozen stock SDK bugs. [Migrate from
+- Fixes for 14 stock SDK bugs. [Migrate from
   workers-runtime-sdk](migrate.md#differences-from-the-stock-sdk) lists
   them.
 

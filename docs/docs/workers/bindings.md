@@ -39,6 +39,7 @@ Each binding's class comes from the binding's JavaScript type at runtime:
 | `durable_objects.bindings`   | [`DurableObjectNamespace`](api.md#durableobjectnamespace) |
 | `services`, `assets`         | [`Fetcher`](api.md#fetcher)                               |
 | `workflows`                  | [`Workflow`](api.md#workflow)                             |
+| `vectorize`, `analytics_engine_datasets`, `images`, `ratelimits` | `Vectorize`, `AnalyticsEngineDataset`, `ImagesBinding`, `RateLimit`. See [Other binding classes](api.md#other-binding-classes). |
 | `vars` and secrets           | `str`, or a Python value for a JSON var                  |
 | Anything else, such as `ai`  | [`Binding`](api.md#binding)                               |
 
@@ -67,9 +68,14 @@ class Default(WorkerEntrypoint[Env]):
 {"text": "{\"name\": \"Ada\"}", "name": "Ada", "keys": 1}
 ```
 
-KV rejects an `expiration_ttl` below 60 seconds. The second argument of `get`
-picks the type. `"text"` is the default, `"json"` parses the value,
-`"arrayBuffer"` returns a `memoryview` and `"stream"` returns a stream.
+The second argument of `get` picks the type. `"text"` is the default,
+`"json"` parses the value, `"arrayBuffer"` returns a `memoryview` and
+`"stream"` returns a JavaScript `ReadableStream`. Every type returns `None`
+for a missing key.
+
+KV rejects an `expiration_ttl` below 60 seconds. `expiration_ttl=30` raises
+`JsException: Error: KV PUT failed: 400 Invalid expiration_ttl of 30.
+Expiration TTL must be at least 60.`
 
 ## D1
 
@@ -96,8 +102,9 @@ On the first request:
 ```
 
 `bind` returns a new statement, so you can prepare a query once and bind it
-many times. `batch` runs a list of bound statements in one transaction. A
-dictionary from D1 also reads by attribute, so `result.results` works.
+many times. `first` returns `None` when the query matches no row. `batch` runs
+a list of bound statements in one transaction. A dictionary from D1 also reads
+by attribute, so `result.results` works.
 
 ## R2
 
@@ -130,7 +137,8 @@ class Default(WorkerEntrypoint[Env]):
 keep R2's camelCase names. `get` returns an
 [`R2ObjectBody`](api.md#r2objectbody), or `None` when the key doesn't exist.
 `list(prefix=...)` returns a dictionary whose `objects` are
-[`R2Object`](api.md#r2object)s.
+[`R2Object`](api.md#r2object)s. When its `truncated` is `True`, pass its
+`cursor` to the next `list` call.
 
 ## Queues
 
@@ -146,9 +154,36 @@ class Default(WorkerEntrypoint[Env]):
         return Response("queued", status=202)
 ```
 
-The message body can be any value that crosses RPC, such as a `dict`, `list`,
-`str` or `bytes`. `send_batch` takes one dictionary per message, with the body
-under `"body"`.
+`curl` returns `queued` with status 202. The message body can be any value
+that crosses RPC, such as a `dict`, `list`, `str` or `bytes`. `send_batch`
+takes one dictionary per message, with the body under `"body"`.
+`delay_seconds=10` holds the message for 10 seconds before delivery.
+
+### Consume messages
+
+Add a consumer to the config, and a `queue` method to the entrypoint:
+
+```jsonc title="wrangler.jsonc"
+"queues": {
+  "producers": [{ "binding": "JOBS", "queue": "jobs" }],
+  "consumers": [{ "queue": "jobs" }]
+}
+```
+
+```python title="src/entry.py"
+class Default(WorkerEntrypoint[Env]):
+    async def queue(self, batch, env, ctx):
+        for message in batch.messages:
+            await self.env.CACHE.put("last-task", message.body["task"])
+            message.ack()
+```
+
+`message.body` is the Python value you sent, so `message.body["task"]` is
+`"resize"` for the message above. `queue` must take three arguments after
+`self`. The runtime passes `env` and `ctx` as `None`, so use `self.env` and
+`self.ctx`. A `queue(self, batch)` fails on every batch with
+`TypeError: Default.queue() takes 2 positional arguments but 4 were given`
+in the `wynd dev` log, and the runtime delivers the batch again.
 
 ## Service bindings
 

@@ -7,10 +7,12 @@ Wynd is a command-line tool that builds, runs and deploys
 [Python Workers](https://developers.cloudflare.com/workers/languages/python/).
 It replaces pywrangler and keeps pywrangler's project layout: a
 `pyproject.toml`, a Wrangler config, your code in `src/`, and packages in
-`python_modules/`. You run it with `uvx wynd`, and it runs a pinned Wrangler
-for you.
+`python_modules/`. You run it with `uvx wynd`, and it runs Wrangler 4.129.0
+for you. It can also read the config from a Python file,
+[`cloudflare.config.py`](python-config.md).
 
 ```sh
+uvx wynd init     # write a new crosswind-workers project
 uvx wynd dev      # install packages for the Worker's Python, then wrangler dev
 uvx wynd deploy   # prune unused packages, then wrangler deploy
 uvx wynd tail     # anything else goes to Wrangler unchanged
@@ -18,7 +20,8 @@ uvx wynd tail     # anything else goes to Wrangler unchanged
 
 ## What it does
 
-For `wynd dev`, Wynd reads your Wrangler config, picks the Python version the
+For `wynd dev`, Wynd reads your Wrangler config, or compiles
+`cloudflare.config.py` into one, picks the Python version the
 Worker will run on, installs your dependencies for that version into
 `python_modules/`, and starts Wrangler's dev server.
 
@@ -26,9 +29,10 @@ For `wynd deploy`, `wynd versions upload` and `wynd preview`, Wynd also:
 
 1. Follows the imports from your entry module through every installed
    package.
-2. Copies your source and the files those imports can reach into
-   `.wynd/build/`, and leaves out tests, docs, type stubs and modules nothing
-   imports.
+2. Copies your source and the package files those imports can reach into
+   `.wynd/build/`. It leaves out tests, docs, type stubs and modules nothing
+   imports, and strips comments and docstrings from the package modules it
+   keeps.
 3. Runs Wrangler on that copy.
 
 Every other command, such as `wynd login`, `wynd tail` or
@@ -44,6 +48,8 @@ Every other command, such as `wynd login`, `wynd tail` or
 | Runtime SDK                                       | Always adds `workers-runtime-sdk`                | Installs the one you declare, `crosswind-workers` or `workers-runtime-sdk` |
 | Typed bindings                                    | TypeScript types converted to Python             | `wynd types` writes a Python `Env` class for crosswind-workers |
 | Editor environment                                | A separate `.venv-workers`                       | Your normal `.venv` from `uv sync`                         |
+| New projects                                      | `pywrangler init`                                | `wynd init`, with a `cloudflare.config.py`                 |
+| Config file                                       | Wrangler's                                       | Wrangler's, or `cloudflare.config.py`                      |
 
 ## What pruning saves
 
@@ -51,31 +57,36 @@ Every other command, such as `wynd login`, `wynd tail` or
 >
 > The pruner is in early alpha, and its rules will change often between
 > releases. [Prune the upload](pruning.md) says what it handles well today
-> and what's planned.
+> and what it doesn't do.
 
 Pruning drops Python files that nothing imports, plus tests, docs and type
-stubs. It copies every file it keeps byte for byte, and keeps compiled
-extensions and data files whole. How much it saves depends on your packages:
+stubs. It strips comments and docstrings from the package modules it keeps,
+and keeps compiled extensions and data files whole. How much it saves depends
+on your packages. These figures come from Wynd 0.3.0 with a Python 3.14
+target:
 
 | Worker                                   | `python_modules/` | After pruning | Saved |
 | ---------------------------------------- | ----------------: | ------------: | ----: |
-| A Durable Object counter, crosswind-workers only | 127,013 bytes | 92,668 bytes | 27% |
-| FastAPI and pydantic                     | 9,627,191 bytes   | 9,417,629 bytes | 2.2% |
-| An agents app with pydantic and Jinja2   | 7,887,580 bytes   | 7,654,619 bytes | 3.0% |
+| `wynd init`'s project, crosswind-workers 0.2.0 only | 130,629 bytes | 84,128 bytes | 36% |
+| workers-runtime-sdk only                 | 113,809 bytes     | 62,897 bytes  | 45%   |
+| FastAPI and pydantic on workers-runtime-sdk | 9,376,122 bytes   | 7,872,724 bytes | 16% |
 
-Most of a FastAPI Worker's bytes are pydantic-core's compiled extension,
-which Wynd keeps whole. `wynd deploy --dry-run` prints the numbers for your
-Worker. See [Prune the upload](pruning.md).
+In the FastAPI Worker, pydantic-core's compiled extension is 4,689,616 of the
+bytes after pruning, and Wynd keeps it whole. `wynd deploy --dry-run` prints
+the numbers for your Worker. See [Prune the upload](pruning.md).
 
 ## When to use it
 
 Use Wynd for any Python Worker built with
 [crosswind-workers](../workers/overview.md), which doesn't run under pywrangler.
 
+Start a new project with `uvx wynd init`, which writes a crosswind-workers
+Worker configured in [`cloudflare.config.py`](python-config.md).
+
 On the stock SDK, Wynd is worth switching to if you deploy with `--env` or
 more than one config, if you change compatibility dates, or if you want to see
-what each upload contains. It doesn't create projects. Start a new one by hand
-or from `pywrangler init`, then [switch it to Wynd](getting-started.md).
+what each upload contains. [Switch from pywrangler](getting-started.md) moves
+an existing project.
 
 ## Requirements
 
@@ -86,13 +97,15 @@ or from `pywrangler init`, then [switch it to Wynd](getting-started.md).
 ## Status
 
 Wynd is pre-1.0, and its commands and options may change between minor
-releases. It doesn't yet have `init`, an `--upgrade` flag for `sync`, or a way
-to run the pruned tree under `dev`. Wynd is an
+releases. It has no `--upgrade` flag for `sync`, and `wynd dev` always runs
+the full `python_modules/`, never the pruned tree. Wynd is an
 independent community project, not an official Cloudflare tool.
 
 ## Next steps
 
 - [Switch from pywrangler](getting-started.md) moves an existing project to
   Wynd.
+- [Write config in Python](python-config.md) creates a project with
+  `wynd init` and configures it in `cloudflare.config.py`.
 - [Commands and configuration](commands.md) lists every command, flag and
   setting.

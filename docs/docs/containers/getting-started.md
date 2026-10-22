@@ -11,6 +11,8 @@ container and routes requests to it from a Python Worker. By the end, each
 
 - [`uv`](https://docs.astral.sh/uv/) and Node.js, to build and deploy
   [Python Workers](https://developers.cloudflare.com/workers/languages/python/).
+  `containers-py` 0.1.1 needs Python 3.12 or later and installs
+  `workers-runtime-sdk` 1.9.0 or later with it.
 - Docker, or another Docker-compatible engine, running locally. Check with
   `docker info`. Wrangler builds your image with it in both `dev` and
   `deploy`.
@@ -134,8 +136,10 @@ node_modules
 ```
 
 The server doesn't need a health-check route. While the container starts, the
-SDK sends plain HTTP requests to `http://ping` on the port it's waiting for,
-and treats any response as ready, including a `404`.
+SDK sends plain HTTP requests to the port it's waiting for, every 300
+milliseconds for up to 20 seconds. It treats any response as ready, including
+a `404`. The port check requests `http://ping` unless you set
+`ping_endpoint`.
 
 ## 3. Define the Container class
 

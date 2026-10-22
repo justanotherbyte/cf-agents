@@ -1,13 +1,59 @@
 ---
 title: "Troubleshoot Wynd errors"
-description: "Causes and fixes for Wynd errors: missing SDK or uv, Python target errors, uv install failures, staging and path errors, and refused Wrangler flags."
+description: "Causes and fixes for Wynd errors: missing config or SDK, cloudflare.config.py errors, missing uv, Python target errors, uv install failures, staging and path errors, and refused Wrangler flags."
 ---
 
 Wynd's own errors start with `wynd: error:` and stop the command before
 Wrangler runs. Search this page for the text after that prefix. Errors from
-pruning are on [Prune the upload](pruning.md#troubleshooting), and errors
+pruning are on [Prune the upload](pruning.md#troubleshooting), errors
 from `wynd types` are on
-[Generate typed bindings](types.md#troubleshooting).
+[Generate typed bindings](types.md#troubleshooting), and each error that
+`cloudflare.config.py` can raise is on
+[Write config in Python](python-config.md#errors).
+
+## `no config (cloudflare.config.py, wrangler.json, wrangler.jsonc, wrangler.toml) found`
+
+**Cause.** No directory from the working directory up to the root has a
+config file.
+
+**Fix.** Run Wynd from the project directory, pass `--cwd <project>`, or
+create a project with `uvx wynd init`.
+
+## `no pyproject.toml in <directory> or any parent directory`
+
+**Cause.** Wynd reads dependencies and `[tool.wynd]` from the nearest
+`pyproject.toml`, and found none.
+
+**Fix.** Run Wynd from the project, or add a `pyproject.toml` that lists
+`crosswind-workers` or `workers-runtime-sdk`.
+
+## `has cloudflare.config.py and wrangler.jsonc. Keep one.`
+
+**Cause.** One directory has both a `cloudflare.config.py` and a Wrangler
+file, so Wynd can't tell which one you mean. Every command stops, passthrough
+commands included.
+
+**Fix.** Delete the file you don't use. If you're
+[moving to `cloudflare.config.py`](python-config.md#move-a-wrangler-config-to-python),
+check its compiled output first, then delete the Wrangler file.
+
+## `cloudflare.config.py has errors:` or `cloudflare.config.py:<line>:`
+
+**Cause.** The Python config failed a check. A message with a line number
+comes from one object, such as a malformed `compatibility_date`. A list under
+`has errors:` comes from rules across objects, such as a binding to a class
+missing from `exports`.
+
+**Fix.** See [Write config in Python](python-config.md#errors) for each
+message and the change that triggers it.
+
+## `already has <files>. wynd init only writes a new project.`
+
+**Cause.** `wynd init` found a project file, such as `pyproject.toml`,
+`src/main.py` or a Wrangler config, in the target directory. It writes
+nothing.
+
+**Fix.** Run `uvx wynd init <new-directory>`, or move the files away.
 
 ## `pyproject.toml declares neither crosswind-workers nor workers-runtime-sdk`
 
@@ -48,7 +94,8 @@ top-level list.
 ## `Wynd needs uv 0.12.3 or later`
 
 **Cause.** The `uv` on `PATH` is older than 0.12.3, the oldest version Wynd
-supports.
+supports. Without any `uv` on `PATH`, the message is
+`uv not found on PATH. Install uv 0.12.3 or later.`
 
 **Fix.** Run `uv self update`, or install uv again from
 [its docs](https://docs.astral.sh/uv/getting-started/installation/).
@@ -100,7 +147,9 @@ or in an environment you select with `--env`.
 `.wynd/build/`. That fails when `main` sits next to the config, or when
 `base_dir` points at the project root or outside it.
 
-**Fix.** Move your code into `src/` and set `"main": "src/entry.py"`.
+**Fix.** Move your code into `src/` and set `"main": "src/entry.py"`. With a
+`cloudflare.config.py`, the message names `.wynd.wrangler.json`, and the fix
+is `entrypoint="src/main.py"` or another path under a subdirectory.
 
 ## `has a relative path under <key>, which Wynd can't point back at the project`
 

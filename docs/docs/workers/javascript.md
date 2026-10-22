@@ -6,6 +6,9 @@ description: "Use js_object, JavaScript names, wrapper constructors, outbound fe
 crosswind-workers wraps the common runtime APIs in Python classes. For
 everything else, you call the JavaScript object through
 [Pyodide's FFI](https://pyodide.org/en/stable/usage/type-conversions.html).
+Use a typed method when the [API reference](api.md) lists one, because it
+converts keywords and values for you and your type checker can check the call.
+Use a JavaScript name or `js_object` only for what the wrappers don't cover.
 This page shows the ways to get from a wrapper to JavaScript and back.
 
 ## Call a method by its JavaScript name
@@ -91,8 +94,12 @@ class Default(WorkerEntrypoint):
 ```
 
 A network failure, such as a DNS lookup that fails, raises
-`pyodide.http.AbortError`, a subclass of `OSError`. An HTTP error status
-doesn't raise, so check `upstream.status` or `upstream.ok`.
+`pyodide.http.AbortError`, a subclass of `OSError`. Its message is only
+`internal error; reference = ...`, and the `wynd dev` log has the cause, such
+as `DNS lookup failed`. An HTTP error status doesn't raise, so check
+`upstream.status` or `upstream.ok`, or call `upstream.raise_for_status()`.
+To see both cases, fetch `https://does-not-exist.invalid/` and
+`https://httpbin.org/status/404`.
 
 ## Import a runtime module
 

@@ -14,6 +14,8 @@ come from `workers.bindings`.
   regenerate it whenever its contents would change.
 - `wynd types --check` fails when the file is out of date, for CI.
 - Commit `env.py`.
+- With a [`cloudflare.config.py`](python-config.md), `wynd types` reads the
+  config Wynd compiles from it. The types are the same.
 
 ## Generate `env.py`
 
@@ -94,8 +96,12 @@ runtime.
 | `durable_objects.bindings` with `script_name`                 | `DurableObjectNamespace`                |
 | `services`, `assets`                                          | `Fetcher`                               |
 | `workflows`                                                   | `Workflow`                              |
+| `vectorize`                                                   | `Vectorize`                             |
+| `analytics_engine_datasets`                                   | `AnalyticsEngineDataset`                |
+| `images`                                                      | `ImagesBinding`                         |
+| `ratelimits`                                                  | `RateLimit`                             |
 | `version_metadata`                                            | `JsDict`                                |
-| Any other binding, such as `ai`, `browser` or `ratelimits`    | `Binding`                               |
+| Any other binding, such as `ai` or `browser`                  | `Binding`                               |
 | A text var, and each name in `.dev.vars`                      | `str`                                   |
 | A JSON var                                                    | The type of its value, such as `int`, `list[str]` or `dict[str, int]` |
 
@@ -152,5 +158,7 @@ The project uses the stock SDK. Switch to crosswind-workers with
 
 ### A secret is missing from `Env`
 
-Wynd reads secret names from `.dev.vars` next to the Wrangler config. Add the
-secret there with any local value, and run `uvx wynd types`.
+Wynd reads secret names from `.dev.vars` next to the Wrangler config or
+`cloudflare.config.py`. Add the secret there with any local value, and run
+`uvx wynd types`. A `bindings.Secret()` in `cloudflare.config.py` doesn't add
+the name to `Env` by itself.

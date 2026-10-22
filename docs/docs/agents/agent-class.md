@@ -9,8 +9,9 @@ Subclass it, override the hooks you need and decorate methods with
 `@callable`. `self.ctx` and `self.env` work as on any Durable Object. Don't
 override `fetch`, `alarm` or the `webSocket*` handlers. The SDK uses them.
 
-Durations are a `timedelta` or a number of seconds everywhere in the SDK.
-Every public name below imports from `agents`.
+Durations are a `timedelta` or a number of seconds everywhere in the SDK, so
+a default of `30` means 30 seconds. Every public name below imports from
+`agents`.
 
 ## Class attributes
 
@@ -39,7 +40,7 @@ its parent's. To extend them, use
 | `fiber_recovery_scan_deadline`   | `Duration`         | `10`             | Soft deadline for one fiber-recovery scan.                                 |
 | `fiber_recovery_max_age`         | `Duration \| None` | 24 hours         | When to stop retrying a failed recovery. `None` retries forever.           |
 | `max_alarm_memory_limit_strikes` | `int`              | `3`              | Alarm memory-limit resets tolerated before recovery work stops.            |
-| `expose_error_details`           | `bool`             | `False`          | Send an unhandled error's traceback to the client. Local development only. |
+| `expose_error_details`           | `bool`             | `False`          | Put an unhandled error's traceback in the `500` body. Local development only. |
 
 ### `RetryOptions`
 
@@ -67,7 +68,7 @@ Override these on your subclass. All are `async def` except
 | `on_error(connection, error)`                            | When a hook, callback or socket fails. `connection` is set only for a socket's own error. | Re-raises.      |
 | `on_state_changed(state, source)`                        | After a state change is saved and sent to clients.                                        | Does nothing.   |
 | `validate_state_change(next_state, source)`              | Before a state change is saved. Raise to reject it. Synchronous.                          | Accepts.        |
-| `get_connection_tags(connection, ctx) -> list[str]`      | Once per new connection. At most 9 tags.                                                  | `[]`.           |
+| `get_connection_tags(connection, ctx) -> list[str]`      | Once per new connection. At most 9 tags of up to 256 characters, or `ValueError`.         | `[]`.           |
 | `should_connection_be_readonly(connection, ctx) -> bool` | Once per new connection.                                                                  | `False`.        |
 | `should_send_protocol_messages(connection, ctx) -> bool` | Once per new connection.                                                                  | `True`.         |
 | `on_alarm()`                                             | On every alarm, after due schedules and queue items.                                      | Does nothing.   |
@@ -81,6 +82,11 @@ When `on_error` returns normally, the error counts as handled. A failed
 request gets a `500`, and a failed connect or message leaves the connection
 open.
 
+Some errors reach `on_error` only as a report: errors from `on_start`,
+`on_state_changed`, and scheduled, queued or task callbacks that ran out of
+retries. Returning normally doesn't recover them. `on_start` still fails, and
+so does the request, message or alarm that woke the agent.
+
 ## Identity
 
 | Member                     | Type                      | Description                                              |
@@ -90,7 +96,7 @@ open.
 | `tasks`                    | `Tasks`                   | Durable task runs. See [Run durable tasks](tasks.md). |
 | `dynamic_agents`           | `DynamicAgents`           | This agent's sub-agents.                                 |
 | `parent_path`, `self_path` | `Sequence[AgentPathStep]` | Agents from the root down. Empty on a root.              |
-| `session_affinity`         | `str`                     | A stable key for this instance.                          |
+| `session_affinity`         | `str`                     | The Durable Object id as a string. Stable per instance.  |
 
 ## State
 
@@ -169,7 +175,7 @@ generator with `streaming=True`.
 
 | Member            | Description                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
-| `send(chunk)`     | Sends one chunk. Returns `False` once closed or after the client leaves. |
+| `send(chunk)`     | Sends one chunk. Returns `False` once closed or after the client leaves. Raises `TypeError` for a chunk JSON can't encode. |
 | `end(final=None)` | Closes the stream. The client's call resolves with `final`.              |
 | `error(message)`  | Closes the stream and rejects the client's call with `message`.          |
 | `is_closed`       | Whether `end` or `error` has been called.                                |
@@ -188,7 +194,8 @@ generator with `streaming=True`.
   seconds to run once after that delay, or a cron `str` evaluated in UTC.
 - `interval` is at most 30 days. A longer one raises `ValueError`.
 - `callback` is a method of the agent or its name. It's called as
-  `callback(payload, schedule)`.
+  `callback(payload, schedule)`. A name the agent doesn't have raises
+  `ValueError`.
 - `idempotent` defaults to `True` for cron and interval schedules and `False`
   for one-off schedules.
 
@@ -208,8 +215,9 @@ generator with `streaming=True`.
 | `queue_items(callback=None)`                            | `Sequence[QueueItem]` |
 
 The callback is called as `callback(payload, item)`. Queuing an existing `id`
-replaces that pending item. `QueueItem` has `id`, `callback`, `payload`,
-`created_at` and `retry`.
+replaces that pending item. A blank `id` or an unknown callback raises
+`ValueError`. `QueueItem` has `id`, `callback`, `payload`, `created_at` and
+`retry`.
 
 ## Fibers and keep-alive
 
@@ -227,7 +235,18 @@ replaces that pending item. `QueueItem` has `id`, `callback`, `payload`,
 | `keep_alive_while(fn)`                                                                                    | What `fn` returns           |
 
 `fn` receives a `FiberContext` with `id` and `stash(data)`. `stash` outside a
-fiber raises `RuntimeError`. See [Long-running work](long-running-work.md).
+fiber raises `RuntimeError`.
+
+- `start_fiber` runs `fn` in the background and discards its return value.
+  A blank `fiber_id` or `idempotency_key` raises `ValueError`.
+- `list_fibers` returns 50 records by default and at most 100.
+- `delete_fibers` deletes `completed`, `error` and `aborted` records by
+  default, 100 at a time by default and at most 500. It deletes
+  `interrupted` records only when `status` names them.
+- `cancel_fiber` and `resolve_fiber` return `False` for an unknown or
+  finished fiber.
+
+See [Long-running work](long-running-work.md).
 
 ## Teardown
 
@@ -286,6 +305,26 @@ async def route_sub_agent_request(request: Request, parent: Any, *, from_path: s
 
 See [Use sub-agents](sub-agents.md).
 
+### `retry`
+
+```python
+async def retry(
+    fn: Callable[[int], Awaitable[T]],
+    *,
+    max_attempts: int = 3,
+    base_delay: Duration = 0.1,
+    max_delay: Duration = 3.0,
+    should_retry: Callable[[Exception, int], bool] | None = None,
+) -> T
+```
+
+Calls `fn(attempt)` until it returns, with the same random backoff as
+[`RetryOptions`](#retryoptions). `attempt` starts at 1. `should_retry` gets
+the error and the next attempt number, and returning `False` re-raises the
+error at once. After the last attempt, the last error propagates. Retries
+live in memory only, so a restart loses them. For retries that survive a
+restart, use a [task step](tasks.md#retries-and-timeouts).
+
 ### `get_current_agent`
 
 ```python
@@ -307,13 +346,18 @@ Every exception the SDK raises on purpose subclasses `AgentsException`.
 | `ReadonlyConnectionError`      | `set_state` runs while serving a readonly connection.            |
 | `ConnectionStateTooLargeError` | `Connection.set_state` exceeds 16 KiB.                           |
 | `DuplicateConnectionIdError`   | `get_connection` finds two connections with one id.              |
-| `InvalidCronExpressionError`   | `schedule` gets an invalid cron string.                          |
+| `InvalidCronExpressionError`   | `schedule` gets an invalid cron string. Also a `ValueError`.     |
 | `NonRetryableError`            | You raise it in a task step to fail the run without retries.     |
-| `StepTimeoutError`             | A task step attempt runs past its timeout.                       |
+| `StepTimeoutError`             | A task step attempt runs past its timeout. Also a `TimeoutError`. |
 | `DuplicateTaskStepError`       | A task run reuses a step name.                                   |
 | `TaskReplayDivergedError`      | A task's steps changed while a run was in progress.              |
+| `MissingTaskDefinitionError`   | A run's `@task` method was removed or renamed. The run fails.    |
+| `TaskSerializationError`       | A task input, step result or result isn't JSON, or is over 1 MiB. Also a `TypeError`. |
 | `FiberConflictError`           | `fiber_id` and `idempotency_key` name different existing fibers. |
+| `FiberNotFoundError`           | A fiber is deleted while `start_fiber(..., wait_for_completion=True)` waits. |
 | `SubAgentAbortedError`         | A call to a sub-agent was cut off by `dynamic_agents.abort`.     |
+| `ChatStreamError`              | A chat turn yielded an `Error` chunk. `on_error` receives it.    |
+| `StreamClosedError`, `StreamNotFoundError`, `StreamSerializationError` | A write to a settled stream, a read of a missing one, or a chunk that isn't JSON. Raised by `AIChatAgent.streams`. |
 
 ## Logging and events
 
@@ -328,8 +372,12 @@ JSON line to the `agents.events` logger at `DEBUG`. To see them:
 ```python
 import logging
 
+logging.basicConfig()
 logging.getLogger("agents.events").setLevel(logging.DEBUG)
 ```
+
+Without a handler such as the one `basicConfig()` adds, Python prints only
+`WARNING` and above, so the events don't appear.
 
 To send events elsewhere, set `observability` to an object with an
 `emit(event: ObservabilityEvent)` method.

@@ -97,8 +97,10 @@ with only those.
   doesn't retry them.
 - `on_fiber_recovered` runs before `on_start`. The default logs a warning.
 
-If `on_fiber_recovered` raises, the SDK tries again on later wakes for up to
-`options.fiber_recovery_max_age`, 24 hours by default.
+If `on_fiber_recovered` raises for a fiber from `run_fiber`, the SDK calls it
+again on later wakes, for up to `options.fiber_recovery_max_age` after the
+fiber started. That is 24 hours by default, and `None` retries forever. For a
+managed fiber from `start_fiber`, raising marks the record `error` instead.
 
 ## Track fibers by id
 
@@ -122,21 +124,38 @@ class Exporter(Agent):
         return started.fiber_id
 ```
 
-A second `start_fiber` with the same `fiber_id` or `idempotency_key` returns
-the existing fiber with `accepted=False` instead of starting another. Pass
-`wait_for_completion=True` to wait until the fiber finishes.
+`start_fiber` returns a `StartFiberResult`, a record with `fiber_id`, `name`,
+`status`, `snapshot` and `accepted`. The body's return value is discarded, so
+save results with `ctx.stash` or in SQL. A second `start_fiber` with the same
+`fiber_id` or `idempotency_key` returns the existing fiber with
+`accepted=False` instead of starting another. If the two name different
+existing fibers, it raises `FiberConflictError`.
+
+Pass `wait_for_completion=True` to return only once the fiber has finished.
+If the record is deleted while you wait, the call raises
+`FiberNotFoundError`.
 
 | Method                                    | What it does                                               |
 | ----------------------------------------- | ---------------------------------------------------------- |
 | `inspect_fiber(fiber_id)`                 | Returns the record, or `None`.                             |
 | `inspect_fiber_by_key(key)`               | Looks the record up by idempotency key.                    |
 | `list_fibers(status=, name=, limit=)`     | Returns records, newest first. 50 by default, at most 100. |
-| `cancel_fiber(fiber_id, reason)`          | Aborts a running fiber. Its body gets `CancelledError`.    |
-| `resolve_fiber(fiber_id, result)`         | Settles an `interrupted` fiber yourself.                   |
-| `delete_fibers(status=, settled_before=)` | Deletes finished records.                                  |
+| `cancel_fiber(fiber_id, reason)`          | Aborts a live fiber. Its body gets `CancelledError` at its next `await`. `False` if it's unknown or finished. |
+| `resolve_fiber(fiber_id, result)`         | Settles an `interrupted` fiber yourself. `False` for any other status. |
+| `delete_fibers(status=, settled_before=, limit=)` | Deletes `completed`, `error` and `aborted` records by default, 100 at a time (at most 500). Returns how many. |
 
-A record's `status` is `"pending"`, `"running"`, `"completed"`, `"error"`,
-`"aborted"` or `"interrupted"`. A managed fiber whose isolate stopped becomes
-`interrupted`. To settle it from `on_fiber_recovered`, return
+A record's `status` is one of these:
+
+| `status`        | Enters it when                                                   | What to do                                              |
+| --------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
+| `"pending"`     | `start_fiber` saved it and the body hasn't started.              | Wait, or `cancel_fiber`.                                |
+| `"running"`     | The body is running.                                             | Wait, or `cancel_fiber`.                                |
+| `"completed"`   | The body returned, or recovery returned `FiberCompleted`.        | Read `snapshot`. Delete the record when done.           |
+| `"error"`       | The body raised, recovery raised, or recovery returned `FiberErrored`. | Read `error`, the exception's message.            |
+| `"aborted"`     | `cancel_fiber` stopped it, or recovery returned `FiberAborted`.  | Nothing. Delete the record when done.                   |
+| `"interrupted"` | The isolate stopped mid-run, and recovery didn't settle it.      | Settle it with `resolve_fiber`, or delete it by status. |
+
+To settle an interrupted fiber from `on_fiber_recovered`, return
 `FiberCompleted(snapshot=...)`, `FiberErrored(error=...)` or
-`FiberAborted(reason=...)`. Returning `None` leaves it `interrupted`.
+`FiberAborted(reason=...)`. Returning `None` or `FiberInterrupted(reason=...)`
+leaves it `interrupted`.

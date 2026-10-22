@@ -188,7 +188,11 @@ class Default(WorkerEntrypoint[Env]):
 ```
 
 Connect with any WebSocket client, send `hi`, and every client in the room
-receives `echo: hi`.
+receives `echo: hi`. A plain HTTP request to this `fetch`, such as a browser
+visit, fails with `Worker tried to return a WebSocket in a response to a
+request which did not contain the header "Upgrade: websocket"`.
+[Troubleshooting](troubleshooting.md#worker-tried-to-return-a-websocket-in-a-response-to-a-request-which-did-not-contain-the-header-upgrade-websocket)
+shows the header check that prevents it.
 
 Handler names stay camelCase, because the runtime calls them by those names.
 `ws` is a [`Binding`](api.md#binding), so `ws.send()` and `ws.close()` call the
@@ -214,13 +218,26 @@ class Room(DurableObject[Env]):
 ```
 
 Use the JavaScript name here. The typed `block_concurrency_while` is `async`,
-so calling it from `__init__` without `await` never runs it.
+so calling it from `__init__` without `await` never runs it, and
+`self.messages` is never set. Outside `__init__`, `await
+self.ctx.block_concurrency_while(callback)` returns the callback's result.
 
 ## Reset the object
 
 `self.ctx.abort()` resets the object and stops the current call by raising
 [`DurableObjectAbort`](api.md#durableobjectcontext). It derives from
-`BaseException`, so `except Exception` doesn't catch it.
+`BaseException`, so `except Exception` doesn't catch it, and the reset still
+happens.
+
+```python
+class Room(DurableObject[Env]):
+    async def close_room(self) -> None:
+        self.ctx.abort("room closed")
+```
+
+The caller's `await room.close_room()` raises `pyodide.ffi.JsException` with
+the message `Error: room closed`. The next call to the same name reaches a new
+instance, so attributes set on `self` start over.
 
 ## Older compatibility dates
 

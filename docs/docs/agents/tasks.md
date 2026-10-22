@@ -55,7 +55,9 @@ class Reports(Agent):
 ```
 
 `run()` saves the run and returns a `TaskReceipt` right away. The run starts in
-the background.
+the background. `run()` also takes `run_id` to choose the id, `metadata` for
+JSON kept with the run, and `retain=False` to delete the run's record once it
+settles.
 
 To start a run at most once, pass an `idempotency_key`. A second `run()` with
 the same key returns the existing run with `receipt.accepted == False`:
@@ -98,16 +100,23 @@ before recording the result.
 
 - Step names must be unique within one run. Reusing a name raises
   `DuplicateTaskStepError`.
+- A step name is a non-empty string of up to 256 characters that doesn't
+  start with `__cf`. Anything else raises `ValueError`.
+- A run can have at most 10,000 steps. The next one raises `RuntimeError`,
+  so split larger work across several runs.
 - Keep step order and names stable. If you change the steps of a task that
   has runs in progress, those runs can fail with `TaskReplayDivergedError`.
   Rename the task instead, for example `checkout_v2`.
-- Step results must be JSON-serializable.
+- Step results, the run's input and its result must be JSON-serializable
+  and at most 1 MiB (1,048,576 bytes) as JSON. Otherwise the SDK raises
+  `TaskSerializationError`.
 
 ## Retries and timeouts
 
-A step that raises is retried. By default a step gets 5 attempts, starting 1
-second apart and doubling, and each attempt can run for 5 minutes. Set them
-per step:
+A step that raises is retried. By default a step gets 5 attempts. The first
+retry waits 1 second and each later one doubles, up to 1 day. Each attempt can
+run for 5 minutes. While it waits, the run is `waiting` with
+`reason="retry"`, and the agent can leave memory. Set these per step:
 
 ```python
 from datetime import timedelta
@@ -122,8 +131,11 @@ result = await step.do(
 )
 ```
 
-`backoff` is `"constant"`, `"linear"` or `"exponential"`. An attempt that runs
-past `timeout` raises `StepTimeoutError` and is retried like any other error.
+`limit` counts every attempt, including the first. `delay` is the wait before
+the first retry. `backoff` is `"constant"`, `"linear"` or `"exponential"`, and
+sets the wait before retry `n` to `delay`, `delay * n` or `delay * 2 ** (n - 1)`.
+An attempt that runs past `timeout` raises `StepTimeoutError` and is retried
+like any other error.
 
 To fail the run without more retries, raise `NonRetryableError`:
 
@@ -137,8 +149,16 @@ async def charge(attempt: TaskStepAttempt) -> str:
     ...
 ```
 
-When a step runs out of attempts, the run ends as `failed`, and the SDK calls
-`on_error(None, error)`.
+When a step runs out of attempts, the run ends as `failed`, the SDK logs
+`Task run '<id>' (definition '<name>') failed` with the traceback, and calls
+`on_error(None, error)`. An exception raised outside any step fails the run
+the same way, at once and without retries. To see it, start a run of a task
+whose step raises `NonRetryableError`, then `get()` it:
+
+```python
+run = await self.checkout.get(run_id)
+print(run.state, run.error)  # failed TaskError(name='NonRetryableError', message='nothing to charge')
+```
 
 ## Wait inside a task
 
@@ -162,20 +182,24 @@ if run is not None and run.state == "completed":
     print(run.result)
 ```
 
-`get()` returns `None` for an unknown id, or one of these:
+`get()` returns `None` for an unknown id, a run of another task, or a run
+started with `retain=False` that has settled. Otherwise it returns one of
+these. Every run also has `run_id`, `definition`, `created_at` and `metadata`.
 
-| `run.state`   | Class          | Extra fields                                 |
-| ------------- | -------------- | -------------------------------------------- |
-| `"pending"`   | `PendingRun`   |                                              |
-| `"running"`   | `RunningRun`   | `attempt`, `started_at`, `status_message`    |
-| `"waiting"`   | `WaitingRun`   | `reason` (`"sleep"` or `"retry"`), `wake_at` |
-| `"completed"` | `CompletedRun` | `result`, `settled_at`                       |
-| `"failed"`    | `FailedRun`    | `error` (`name` and `message`), `settled_at` |
-| `"cancelled"` | `CancelledRun` | `reason`, `settled_at`                       |
+| `run.state`   | Enters it when                                                  | Class          | Extra fields                                                   |
+| ------------- | --------------------------------------------------------------- | -------------- | -------------------------------------------------------------- |
+| `"pending"`   | `run()` accepted it and no attempt has started.                 | `PendingRun`   |                                                                |
+| `"running"`   | An attempt is executing.                                        | `RunningRun`   | `attempt`, `started_at`, `status_message`                      |
+| `"waiting"`   | It reached a `step.sleep` or a step retry delay.                | `WaitingRun`   | `reason` (`"sleep"` or `"retry"`), `wake_at`, `status_message` |
+| `"completed"` | The method returned. Final.                                     | `CompletedRun` | `result`, `settled_at`                                         |
+| `"failed"`    | A step ran out of attempts, or code outside a step raised. Final. | `FailedRun`    | `error` (`name` and `message`), `settled_at`                   |
+| `"cancelled"` | `cancel()` stopped it. Final.                                   | `CancelledRun` | `reason`, `settled_at`                                         |
 
 `self.build.get_by_idempotency_key(key)` looks a run up by its key.
 `self.tasks.list(definition=None, status=None, limit=100)` returns runs of
-every task, newest first.
+every task, newest first. Settled runs stay stored until you delete them with
+`self.tasks.delete(status=None, settled_before=None, limit=100)`, which
+returns how many it deleted.
 
 ## Cancel a run
 
@@ -183,5 +207,7 @@ every task, newest first.
 cancelled = await self.build.cancel(run_id, "customer cancelled")
 ```
 
-`cancel()` returns `False` when the run doesn't exist or belongs to another
-task.
+A `pending` or `waiting` run becomes `cancelled` at once. A `running` one
+becomes `cancelled` at its next step boundary, and the running step gets
+`asyncio.CancelledError`. `cancel()` returns `False` when the run doesn't
+exist, belongs to another task, or has already settled.

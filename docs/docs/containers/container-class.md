@@ -87,7 +87,8 @@ async def on_stop(
 ) -> None
 ```
 
-Runs after the container process exits. By default it does nothing. Annotating
+Runs after the container process exits, the next time the SDK checks the
+state. `reason` is always `"exit"` in this version. By default it does nothing. Annotating
 `reason` as `str` in your override is also valid, because an override may
 accept a wider type.
 
@@ -97,8 +98,9 @@ accept a wider type.
 async def on_error(self, error: Exception) -> None
 ```
 
-Runs when starting the container or waiting for a port fails. By default it
-logs `error` and re-raises it.
+Runs when starting the container or waiting for a port fails, and when the
+runtime reports a failure without an exit code. By default it logs `error` and
+re-raises it.
 
 ### `on_activity_expired`
 
@@ -190,20 +192,25 @@ async def start_and_wait_for_ports(
 
 Starts the container if it isn't running, waits until every port accepts
 connections, marks it `healthy` and runs `on_start()`. Ports resolve in this
-order: `ports`, then `required_ports`, then `default_port`.
+order: `ports`, then `required_ports`, then `default_port`, then port `33` as
+a last resort. Before it starts, it runs `on_stop()` for any exit the SDK
+hasn't reported yet.
 
 - `abort`: set this `asyncio.Event` to cancel waiting. Only usable inside the
   Durable Object.
 - `instance_get_timeout_ms`: how long to wait for an instance to be assigned
   and started. Your application may not be ready yet at that point.
-- `port_ready_timeout_ms`: the total time budget for the ports to become
-  ready.
+- `port_ready_timeout_ms`: the total budget for the ports to become ready.
+  The SDK converts it to attempts, `ceil(port_ready_timeout_ms /
+  wait_interval)`, and the attempts the start used count against it.
 - `wait_interval`: the time between polls.
 - `env_vars`, `entrypoint`, `enable_internet`, `labels`: override the class
   attributes for this start only.
 
-Raises `RuntimeError` if the container can't be started or a port isn't ready
-in time.
+Raises `RuntimeError` if the container can't be started, and re-raises the
+last connection error if a port isn't ready in time. The container keeps
+running in the `running` state after a port timeout. See
+[When a start fails or times out](lifecycle.md#when-a-start-fails-or-times-out).
 
 ### `start`
 
@@ -226,9 +233,11 @@ Starts the container without waiting for your application's ports, then runs
 `on_start()`. The state stays `running`. Use it for batch jobs, or when you
 check readiness yourself.
 
-`port_to_check` defaults to `default_port`, then the first of `required_ports`.
-`retries` defaults to about 8 seconds of attempts at `wait_interval`. Raises
-`RuntimeError` if every attempt fails.
+`port_to_check` defaults to `default_port`, then the first of
+`required_ports`, then port `33`. `retries` defaults to
+`ceil(8_000 / wait_interval)`, which is 27 attempts at the default 300
+milliseconds. Each attempt's request times out after 5,000 milliseconds.
+Raises `RuntimeError` if every attempt fails.
 
 ```python
 await self.start(
@@ -253,9 +262,16 @@ async def wait_for_port(
 ) -> int
 ```
 
-Polls one port until it accepts connections. `retries` defaults to about 20
-seconds of attempts. Returns the number of tries. Raises the last connection
-error if the port never becomes ready, or right away if the container crashes.
+Polls one port until it accepts connections. `retries` defaults to
+`ceil(20_000 / wait_interval)`, which is 67 attempts at the default 300
+milliseconds, and each request times out after 5,000 milliseconds.
+
+Returns the `retries` value it ran with, not the number of attempts it used.
+The TypeScript SDK does the same.
+
+Raises the last connection error if the port never becomes ready, or right
+away if the container crashes. Raises `RuntimeError: Container request
+aborted.` if `signal` is set while it waits.
 
 ### `stop`
 
@@ -265,8 +281,9 @@ async def stop(self, signal: Signal | int = "SIGTERM") -> None
 
 Sends a signal to the container's main process. Accepts a signal name, a number
 or a `signal.Signals` member. `Signal` is
-`Literal["SIGKILL", "SIGINT", "SIGTERM"]`. `on_stop()` runs once the process
-exits.
+`Literal["SIGKILL", "SIGINT", "SIGTERM"]`. It returns without waiting for the
+process to exit. `on_stop()` runs after the exit, the next time the SDK checks
+the state.
 
 ### `destroy`
 
@@ -274,7 +291,8 @@ exits.
 async def destroy(self) -> None
 ```
 
-Kills the container with `SIGKILL`. `on_stop()` runs once the process exits.
+Kills the container with `SIGKILL`. `on_stop()` runs after the exit, the next
+time the SDK checks the state.
 
 ## State and monitoring
 
@@ -361,6 +379,10 @@ class MyContainer(Container):
         )
 ```
 
+`on_start()` can run more than once per container, so this sample adds new
+tasks on every start. Check `list_schedules()` first, as in
+[Recurring work](examples.md#recurring-work-inside-the-durable-object).
+
 The SDK looks up callbacks by name at runtime, so a type checker can't connect the
 `callback` string to the method. Keep the payload type and the callback's
 `payload` annotation in sync yourself.
@@ -385,7 +407,8 @@ async def list_schedules(self, name: str) -> list[Schedule[PayloadT]]
 def delete_schedules(self, name: str) -> None
 ```
 
-- `get_schedule` looks up a task by its `task_id`.
+- `get_schedule` looks up a task by its `task_id`. It returns `None` once the
+  task has run or been deleted.
 - `list_schedules` returns pending tasks for the callback `name`. Like the
   TypeScript SDK, it currently returns at most one.
 - `delete_schedules` removes every pending task for the callback `name`. It
@@ -404,8 +427,8 @@ tasks: list[Schedule[RotatePayload]] = await self.list_schedules("rotate_logs")
 async def schedule_next_alarm(self, ms: int = 1000) -> None
 ```
 
-Sets the Durable Object alarm to fire in `ms` milliseconds. The SDK calls this
-itself, and you shouldn't normally need it.
+Sets the Durable Object alarm to fire in `ms` milliseconds, 1,000 by default.
+The SDK calls this itself, and you shouldn't normally need it.
 
 ## Outbound interception
 

@@ -59,7 +59,8 @@ notify clients, so always build a new value and pass it to `set_state()`.
 
 Clients can change the state too, with `setState` in `useAgent` or
 `AgentClient`. The SDK runs the same steps, with the client's `Connection` as
-the source instead of `"server"`.
+the source instead of `"server"`. It sends the new state to every client
+except the one that sent it.
 
 Override `validate_state_change` to reject a change. It is a plain `def`, not
 `async`. Raise any exception to reject:
@@ -75,10 +76,12 @@ class Counter(Agent[CounterState]):
 ```
 
 A rejected client gets the error `State update rejected` in its
-`onStateUpdateError` callback. The server logs the exception.
+`onStateUpdateError` callback. The client never sees your exception's
+message. The server logs it with a traceback.
 
 To stop a client from changing the state at all, mark its connection
-readonly. See [Readonly connections](connections.md#readonly-connections).
+readonly. Its `setState` then fails with `Connection is readonly`. See
+[Readonly connections](connections.md#readonly-connections).
 
 ## React to changes
 

@@ -30,8 +30,8 @@ class Reminders(Agent):
 ```
 
 The callback receives the payload and the `Schedule` record. Pass it as a
-method of the agent or as the method's name, `"remind"`. The payload must be
-JSON-serializable.
+method of the agent or as the method's name, `"remind"`. A name the agent
+doesn't have raises `ValueError`. The payload must be JSON-serializable.
 
 `when` decides how the schedule runs:
 
@@ -49,7 +49,10 @@ await self.schedule(30, self.remind, {"text": "in 30 seconds"})
 await self.schedule("0 9 * * 1", self.remind, {"text": "weekly sync"})  # Mondays 09:00 UTC
 ```
 
-An invalid cron expression raises `InvalidCronExpressionError`.
+A cron expression has five fields, or six with seconds first. The nicknames
+`@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@hourly` and
+`@minutely` also work. An invalid expression, or one with no match within
+five years, raises `InvalidCronExpressionError`.
 
 ## Repeat at an interval
 
@@ -63,6 +66,10 @@ If a run is still in progress when the next one is due, the SDK skips the next
 one. A run counts as hung after `options.hung_schedule_timeout`, 30 seconds by
 default, and then the schedule runs again.
 
+An interval longer than 30 days raises
+`ValueError: A schedule interval can't exceed 30 days`. Use a cron expression
+for those.
+
 ## Avoid duplicate schedules
 
 `on_start` runs on every wake, so creating a schedule there can add a new one
@@ -73,7 +80,14 @@ compared.
 
 Cron and interval schedules are idempotent by default. One-off schedules
 aren't, and the SDK logs a warning when `on_start` creates one without
-`idempotent`. Pass `idempotent=True` to reuse a match:
+`idempotent`:
+
+```text
+Scheduling 'warm_cache' during startup (e.g. in on_start) without idempotent=True creates a new schedule on every wake, ...
+```
+
+Pass `idempotent=True` to reuse a match, or `idempotent=False` to keep adding
+schedules and silence the warning:
 
 ```python
 class Feeds(Agent):
@@ -117,11 +131,13 @@ The callback receives the payload and the `QueueItem`. `queue` returns the
 item's id.
 
 Pass `id=` to give an item a stable id. Queuing the same id again replaces the
-pending item, which is useful for debouncing:
+pending item, so only the last payload runs. Use it to debounce:
 
 ```python
 await self.queue(self.rebuild_index, None, id="rebuild-index")
 ```
+
+A blank `id` or an unknown callback raises `ValueError`.
 
 To inspect or cancel items:
 
@@ -135,9 +151,11 @@ To inspect or cancel items:
 
 ## Retries and failures
 
-A callback that raises is retried. By default the SDK makes 3 attempts and
-waits a random time between them, growing from 0.1 seconds up to at most
-3 seconds. Change the default for every schedule and queue item on the class:
+A callback that raises is retried. By default the SDK makes 3 attempts.
+Before each retry it waits a random time up to
+`min(base_delay * 2 ** attempt, max_delay)`, where `base_delay` is
+0.1 seconds, `max_delay` is 3 seconds and `attempt` is the attempt that just
+failed. Change the default for every schedule and queue item on the class:
 
 ```python
 from agents import Agent, AgentOptions, RetryOptions
@@ -153,8 +171,18 @@ Or for one call:
 await self.queue(self.send_email, payload, retry=RetryOptions(max_attempts=10))
 ```
 
-After the last attempt fails, the SDK logs the error and calls
-`on_error(None, error)`. The queue then moves on to the next item.
+After the last attempt fails, the SDK logs an error with the traceback and
+calls `on_error(None, error)`:
+
+```text
+Queue callback 'send_email' failed after 10 attempts
+```
+
+A schedule logs `Schedule callback '<name>' failed after <n> attempts`
+instead. The queue then moves on to the next item. A cron or interval
+schedule still runs at its next time, and a one-off schedule is removed.
+`on_error` can't keep the item. To see this locally, queue a callback that
+raises, and watch the `pywrangler dev` output.
 
 For multi-step work where each step should run only once, even across
 retries, use a [durable task](tasks.md).

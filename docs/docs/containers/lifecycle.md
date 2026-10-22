@@ -21,13 +21,13 @@ state: State = await container.get_state()
 # {"status": "stopped_with_code", "last_change": 1791100000000, "exit_code": 1}
 ```
 
-| `status`              | Meaning                                                                              |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| `"stopped"`           | Not running. Every instance starts here.                                             |
-| `"running"`           | Started, but the SDK hasn't confirmed the ports are ready. `start()` leaves it here. |
-| `"healthy"`           | Started, and every port the SDK waited for accepts connections.                      |
-| `"stopping"`          | Part of the type, but the SDK doesn't set it today.                                  |
-| `"stopped_with_code"` | Exited with a known exit code, stored in `exit_code`.                                |
+| `status`              | How it gets here                                                                                                   | What to do                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `"stopped"`           | No state stored yet, a start ran out of attempts, or `on_stop()` returned.                                          | Nothing. The next request starts the container.                  |
+| `"running"`           | The SDK called the runtime's start. `start()` ends here, and so does a start whose port check timed out.            | Call `start_and_wait_for_ports()` or send a request to reach `healthy`. |
+| `"healthy"`           | `start_and_wait_for_ports()` got a response from every port it waited for.                                          | Send requests. `fetch()` skips the start path in this state.     |
+| `"stopping"`          | Never. The type includes it, but the SDK doesn't set it.                                                            | Nothing.                                                         |
+| `"stopped_with_code"` | The process exited and the runtime reported a code, stored in `exit_code`. A clean exit records `0`.                | Wait for `on_stop()`, which runs next and moves the state to `stopped`. |
 
 `last_change` is a Unix timestamp in milliseconds. The SDK keeps the state in
 Durable Object storage, so it survives the Durable Object leaving memory.
@@ -65,11 +65,43 @@ replace the class attributes of the same name for that start. These apply only
 when the call starts the container. If it's already running, the SDK ignores
 them.
 
-By default the SDK waits up to 8 seconds for an instance, then up to 20 seconds
-for ports, polling every 300 milliseconds. Requests that arrive while a
-container is starting wait for the same start, so the SDK never starts one
-container twice. See [Start and stop](container-class.md#start-and-stop) for
-every option.
+Requests that arrive while a container is starting wait for the same start, so
+the SDK never starts one container twice. See
+[Start and stop](container-class.md#start-and-stop) for every option.
+
+### Timeouts
+
+The SDK counts timeouts in attempts, polling every 300 milliseconds
+(`wait_interval`). Each attempt sends one readiness request that times out
+after 5,000 milliseconds.
+
+| Phase                 | Default budget                              | Option                    |
+| --------------------- | ------------------------------------------- | ------------------------- |
+| Get an instance       | 8,000 ms, so 27 attempts                    | `instance_get_timeout_ms` |
+| Wait for the ports    | 20,000 ms, so 67 attempts, including the attempts the instance phase used | `port_ready_timeout_ms` |
+
+### When a start fails or times out
+
+Check `await container.get_state()` to see where a failed start left the
+container:
+
+| What happened                                 | What the call raises                                                                                                                    | State afterwards                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| No instance answered within the instance budget | `RuntimeError: there is no container instance that can be provided to this durable object`                                              | `"stopped"`                        |
+| The process exited before the instance answered | `RuntimeError: Container exited before we could determine the container health, exit code: <n>`, or the runtime's own exit error       | `"stopped_with_code"` or `"stopped"` |
+| The process exited while the SDK waited for a port | The last connection error. `on_error()` receives `Container crashed while checking for ports, ...`                                  | `"running"` until the SDK next checks the state, then `on_stop()` runs |
+| A port didn't answer within the budget        | The last connection error. `on_error()` receives `Failed to verify port <port> is available after <n>ms, last error: ...`               | `"running"`                        |
+| `abort` was set                               | `RuntimeError: Aborted waiting for container to start as we received a cancellation signal`, or `RuntimeError: Container request aborted.` while it waits for ports | `"running"`                        |
+
+After a port timeout the container keeps running. The next request or
+`start_and_wait_for_ports()` call waits for the port again without restarting
+it. Call `stop()` or `destroy()` if you want it gone instead. `fetch()` and
+`container_fetch()` turn these errors into responses, listed in
+[Troubleshooting](troubleshooting.md#responses-from-fetch).
+
+To see each case locally with `pywrangler dev`, set `default_port` to a port
+your server doesn't listen on for a port timeout, or make the image's `CMD`
+exit with `["sh", "-c", "exit 1"]` for an exit during start.
 
 ## Run code on lifecycle events
 
@@ -98,7 +130,9 @@ class MyContainer(Container):
 
 Runs after a successful `start()` or `start_and_wait_for_ports()`, including
 the start inside `fetch()`. An explicit start call runs it even when the
-container was already running, so make it safe to run twice.
+container was already running, so make it safe to run twice. For example,
+check `list_schedules()` before you schedule a task from it, or each call adds
+another copy.
 
 It runs inside
 [`block_concurrency_while`](https://developers.cloudflare.com/durable-objects/api/state/#blockconcurrencywhile).
@@ -107,15 +141,22 @@ short.
 
 ### `on_stop(*, exit_code, reason)`
 
-Runs once the SDK sees the container process exit, whatever the cause.
-`exit_code` is `0` for a clean exit. `destroy()` usually reports `137`
-(128 + `SIGKILL`). `reason` is `"exit"` or `"runtime_signal"`.
+Runs after the container process exits, whatever the cause. The SDK calls it
+when it next checks the state: on the next alarm, or on the next `stop()` or
+`start_and_wait_for_ports()` call. `exit_code` is `0` for a clean exit.
+`destroy()` usually reports `137` (128 + `SIGKILL`). `reason` is always
+`"exit"` in this version, as in the TypeScript SDK. The type also allows
+`"runtime_signal"`, but the SDK never passes it.
+
+If `on_stop()` raises, the state doesn't move to `stopped`, and the SDK calls
+the hook again on its next check.
 
 ### `on_error(error)`
 
-Runs when starting the container or waiting for a port fails. The default
-logs `error` and re-raises it. If your override raises a different error, the
-SDK ignores it and raises the original one.
+Runs when starting the container or waiting for a port fails, and when the
+runtime reports a container failure that has no exit code. The default logs
+`error` and re-raises it. If your override raises a different error, the SDK
+ignores it and raises the original one.
 
 ### `on_activity_expired()`
 

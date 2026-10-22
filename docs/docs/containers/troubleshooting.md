@@ -13,7 +13,7 @@ they can't reach the container. Check the status first:
 
 | Status | Body starts with                                    | Cause                                                      |
 | ------ | --------------------------------------------------- | ---------------------------------------------------------- |
-| `503`  | `There is no Container instance available`          | No instance is free. See below.                            |
+| `503`  | `There is no Container instance available`          | No instance answered in time. See below.                   |
 | `429`  | `you are requesting too many containers per second` | The account is starting containers too fast. Retry later.  |
 | `500`  | `Failed to start container:`                        | The container didn't start. The rest of the body says why. |
 | `500`  | `Container suddenly disconnected, try again`        | The container exited or crashed while serving the request. |
@@ -21,7 +21,12 @@ they can't reach the container. Check the status first:
 
 ## `There is no Container instance available at this time`
 
-**Cause.** One of these:
+`start()` and `start_and_wait_for_ports()` raise the same condition as
+`RuntimeError: there is no container instance that can be provided to this
+durable object`.
+
+**Cause.** The SDK got no answer from an instance within
+`instance_get_timeout_ms`, 8,000 milliseconds by default. Common reasons:
 
 - The first deploy is still provisioning. This takes a few minutes.
 - Every instance up to `max_instances` is already running.
@@ -35,6 +40,8 @@ they can't reach the container. Check the status first:
    at or below `max_instances`.
 3. Raise `max_instances`, or lower `sleep_after` so idle instances stop
    sooner.
+4. For large images, pass a longer `instance_get_timeout_ms` to
+   `start_and_wait_for_ports()`.
 
 ## `RuntimeError: Containers have not been enabled for this Durable Object class`
 
@@ -53,8 +60,11 @@ subclass:
 The full message is `RuntimeError: ctx.exports.ContainerProxy is undefined,
 import ContainerProxy from the containers package in your worker entrypoint`.
 
-**Cause.** The class sets `enable_internet = False`, a host list or an outbound
-handler, and the entry module doesn't export `ContainerProxy`.
+**Cause.** The class sets a host list or an outbound handler, or a runtime
+method such as `allow_host()` changed the rules, and the entry module doesn't
+export `ContainerProxy`. `enable_internet = False` on its own doesn't need it.
+The container doesn't start, and `fetch()` returns a `500` that starts with
+`Failed to start container:`. A runtime method raises the error directly.
 
 **Fix.** Import it in `src/entry.py`, even though you never call it:
 
@@ -90,19 +100,28 @@ the class doesn't set `default_port`.
 **Fix.** Set `default_port` on the class, or pick the port per request with
 `container.fetch(switch_port(request, port))`.
 
-## `Container did not start after <n>ms`
+## `Failed to verify port <port> is available after <n>ms`
 
-**Cause.** The platform didn't assign an instance within
-`instance_get_timeout_ms`, 8,000 milliseconds by default.
+This line comes from the default `on_error()` log. `fetch()` returns a `500`
+that starts with `Failed to start container:`.
 
-**Fix.** Check `npx wrangler containers list` for a deploy in progress. For
-large images, pass a longer `instance_get_timeout_ms` to
-`start_and_wait_for_ports()`.
+**Cause.** The container is running, but nothing answered on the port within
+`port_ready_timeout_ms`, 20,000 milliseconds by default. The container stays
+in the `running` state, and the next request waits for the port again.
+
+**Fix.**
+
+1. Check that your server listens on the port in `default_port` or
+   `required_ports`, on `0.0.0.0`, not `127.0.0.1`.
+2. If the server needs longer to boot, call `start_and_wait_for_ports()` with
+   a larger `port_ready_timeout_ms` before you send requests.
 
 ## `Container exited before we could determine the container health`
 
-**Cause.** The container process exited while the SDK waited for its port. The
-message ends with the exit code.
+**Cause.** The container process exited before the SDK could reach it. The
+message ends with the exit code. If the process exits after that, while the
+SDK waits for a port, the log says `Container crashed while checking for
+ports` instead.
 
 **Fix.** Run the image locally with `docker run -p 8080:8080 <image>` and read
 its output. A common cause is a server that listens on `127.0.0.1` instead of

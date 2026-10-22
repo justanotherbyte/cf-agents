@@ -23,8 +23,9 @@ if you never reference it:
 from containers import Container, ContainerProxy, get_container  # noqa: F401
 ```
 
-If it's missing, containers with any outbound configuration fail to start, with
-`RuntimeError: ctx.exports.ContainerProxy is undefined`.
+If it's missing, containers with outbound handlers or host lists fail to
+start, with `RuntimeError: ctx.exports.ContainerProxy is undefined`.
+`enable_internet = False` on its own doesn't need `ContainerProxy`.
 
 ## Block internet access
 
@@ -54,8 +55,9 @@ class Sandbox(Container):
 ```
 
 The SDK matches patterns against the hostname. `*` matches any run of characters,
-so `*.example.com`, `api.*.com` and `goo*gle` are all valid. A trailing dot on
-the hostname is ignored. Blocked requests get a `520` response with the body
+so `*.example.com`, `api.*.com` and `goo*gle` are all valid.
+`*.example.com` doesn't match `example.com` itself, so list both if the
+container needs both. A trailing dot on the hostname is ignored. Blocked requests get a `520` response with the body
 `Origin is disallowed`.
 
 > **Note**

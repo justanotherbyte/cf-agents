@@ -101,7 +101,11 @@ class Default(WorkerEntrypoint):
 A [Cron Trigger](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
 can start a container that does its work and exits. `start()` returns as soon
 as the instance is up, without waiting for any port, so the image doesn't need
-to serve HTTP:
+to serve HTTP.
+
+Set `sleep_after` longer than the job's longest run. The SDK sees no requests
+to a job like this, so after `sleep_after` it calls `on_activity_expired()`,
+which sends `SIGTERM` and stops the job partway:
 
 ```python
 from datetime import date
@@ -114,6 +118,7 @@ from workers import WorkerEntrypoint
 class NightlyReport(Container):
     entrypoint = ["python", "report.py"]
     enable_internet = False
+    sleep_after = "2h"  # longer than the report takes
 
     async def on_stop(self, *, exit_code: int, reason: str) -> None:
         if exit_code != 0:

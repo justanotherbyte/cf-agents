@@ -5,7 +5,11 @@ description: "Run an ASGI app such as FastAPI or a WSGI app such as Flask as a P
 
 crosswind-workers has two adapters that turn a Worker request into a call to
 your app. `workers.asgi` serves ASGI apps such as FastAPI and Starlette, and
-`workers.wsgi` serves WSGI apps such as Flask.
+`workers.wsgi` serves WSGI apps such as Flask. For a new app, use FastAPI
+with `workers.asgi`. It runs `async` routes, supports WebSockets and keeps
+background work alive through `ctx`. Use `workers.wsgi` to bring an existing
+Flask app across. A WSGI app runs synchronously, so a slow route blocks the
+Worker, and the adapter has no WebSocket support.
 
 ## FastAPI
 
@@ -74,6 +78,15 @@ streaming body or a `BackgroundTask`. Without `ctx`, it falls back to the
 module-level `wait_until`. That function doesn't keep the Worker alive under
 `wynd dev`, so that work can stop partway.
 
+The adapter differs from a server such as Uvicorn in three ways:
+
+- It runs the app's lifespan startup before every request and the shutdown
+  after it, because a Worker has no long-lived process. Keep startup work
+  short.
+- It reads the whole request body before your route runs.
+- The ASGI scope has no `client`, `server` or `root_path` keys, so
+  `request.client` is `None` in FastAPI.
+
 ### Read bindings in a route
 
 `asgi.env` is a FastAPI dependency that returns the Worker's `env`, as in the
@@ -133,6 +146,11 @@ Use the same `wrangler.jsonc` with its name changed to `flask-worker`. Then
 
 The WSGI environ holds the Worker's env under `workers.env`. `wsgi.entrypoint(app)`
 returns the same `Default` class.
+
+On Python 3.13 and later, `request.get_data()` and other reads of
+`wsgi.input` stream the body as Flask reads it. Python 3.12 lacks the
+`run_sync` call that streaming needs, so there the adapter reads the whole
+body into memory before Flask runs.
 
 ## Compressed responses
 

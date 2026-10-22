@@ -100,6 +100,9 @@ value, not both:
 - Typed chunks from `agents.chat.chunks`. Use these for reasoning, tool calls,
   sources, files, custom data or metadata.
 
+Mixing them fails the turn with `TypeError: on_chat_message yielded a str
+after chunks`, or `... yielded a chunk after str text`.
+
 ```python
 from agents.chat import chunks
 
@@ -144,8 +147,10 @@ def to_model_messages(messages: Sequence[UIMessage]) -> list[dict[str, str]]:
 ```
 
 Keep API keys in
-[Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
-and read them from `self.env`.
+[Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/),
+set with `npx wrangler secret put <NAME>`, and read them from `self.env.<NAME>`.
+For `pywrangler dev`, put `<NAME>=...` in a `.dev.vars` file and keep that
+file out of git.
 
 `ChatMessageOptions` carries the turn's details:
 
@@ -159,7 +164,14 @@ and read them from `self.env`.
 ## Handle errors and stops
 
 - An exception, or a yielded `chunks.Error(error_text=...)`, ends the turn as
-  failed. The client shows the error and the partial reply is saved.
+  failed. The client shows the error and the partial reply is saved. The SDK
+  passes the exception, or a `ChatStreamError` for an `Error` chunk, to
+  `on_error(None, error)`.
+- The client receives the exception's message as the error text. Don't put
+  secrets or provider responses you haven't checked in exception messages.
+  To trigger this path locally, raise `RuntimeError("model unavailable")`
+  in `on_chat_message`. The client shows `model unavailable`, and
+  `on_chat_response` gets `status == "error"`.
 - When the user presses stop, the SDK cancels the turn. Your generator gets
   `asyncio.CancelledError` at its next `await`, and the partial reply is saved.
 - `self.abort_request(request_id)` stops one turn from server code, and
@@ -220,7 +232,10 @@ class Assistant(AIChatAgent):
 | `"latest"`          | Answers only the newest send. The others are still stored.                |
 | `"merge"`           | Combines the overlapping sends into one user message and answers it once. |
 | `"drop"`            | Rejects overlapping sends. The client removes them.                       |
-| `Debounce(seconds)` | Like `"latest"`, after no new send for `seconds`.                         |
+| `Debounce(seconds)` | Like `"latest"`, after no new send for `seconds`. The default is 0.75.    |
+
+The policy applies only to user sends. Regenerations and turns from
+`save_messages` always queue.
 
 ## Limit stored history
 
@@ -236,7 +251,10 @@ Both go in `AIChatAgentOptions`. What you send to the model is up to
 ## Not ported yet
 
 - Client-side tools and tool approvals. `client_tools` reaches
-  `on_chat_message`, but results and approvals from the client aren't handled.
+  `on_chat_message`, but the SDK doesn't handle tool results or approvals
+  from the client. Those frames reach `on_message` instead.
 - Recovery of a turn whose isolate stopped mid-reply. The SDK doesn't resume
   or retry that turn.
+- `chatStreamStallTimeoutMs`, the watchdog that aborts a turn when chunks stop
+  arriving.
 - MCP tools.

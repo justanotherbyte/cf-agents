@@ -1,6 +1,6 @@
 ---
 title: "Troubleshoot crosswind-workers errors"
-description: "Causes and fixes for crosswind-workers errors: the stock SDK conflict, a missing env module, RPC argument errors, unknown binding methods, threads and JavaScript imports."
+description: "Causes and fixes for crosswind-workers errors: the stock SDK conflict, a missing env module, RPC argument errors, unknown binding methods, queue handler arguments, threads and JavaScript imports."
 ---
 
 Each heading is the text you see in `wynd dev` output or in a traceback.
@@ -34,6 +34,10 @@ pywrangler directly skips that.
 **Cause.** You called an RPC method with keyword arguments, as in
 `await room.post(author="ada", text="hello")`. JavaScript RPC has no keyword
 arguments, so the keywords arrive as one dictionary in the first parameter.
+The caller sees `pyodide.ffi.JsException` wrapping the `TypeError`. When the
+method has one parameter, nothing is missing, and the error comes later from
+the dictionary, such as `unsupported operand type(s) for +: 'int' and
+'JsDict'`.
 
 **Fix.** Pass the arguments by position:
 
@@ -52,7 +56,8 @@ such as `KVNamespace.put` take keywords.
 
 **Cause.** An RPC argument or return value contains a `tuple` or a
 `bytearray`, which have no JavaScript equivalent. An instance of your own class
-fails with a `DataCloneError` for the same reason.
+fails for the same reason with `JsException: DataCloneError: Proxy could not
+be serialized because it is not a valid RPC receiver type.`
 
 **Fix.** Convert the value before sending it: a `tuple` to a `list`, a
 `bytearray` to `bytes`, an object to a `dict`.
@@ -69,11 +74,30 @@ method isn't there, call it by its JavaScript name, such as
 
 ## `OSError: Body already used`
 
-**Cause.** You read a request or response body twice, for example `text()`
-after `json()`.
+**Cause.** You read a request body twice, for example `text()` after
+`json()`. A response body read twice raises
+`pyodide.http.BodyUsedError: Response body is already used`, also an
+`OSError`.
 
 **Fix.** Read it once and keep the result. To read it twice, call `clone()`
 before the first read.
+
+## `TypeError: Default.queue() takes 2 positional arguments but 4 were given`
+
+**Cause.** The runtime calls a queue consumer as `queue(batch, env, ctx)`, and
+your method takes only `batch`. Every batch fails, and the runtime delivers it
+again.
+
+**Fix.** Accept all three, and keep using `self.env` and `self.ctx`, because
+the `env` and `ctx` arguments arrive as `None`:
+
+```python
+async def queue(self, batch, env, ctx):
+    for message in batch.messages:
+        message.ack()
+```
+
+`scheduled` takes the same three arguments: `scheduled(self, controller, env, ctx)`.
 
 ## `RuntimeError: can't start new thread`
 
@@ -124,7 +148,9 @@ if (request.headers.get("upgrade") or "").lower() != "websocket":
 **Cause.** A coroutine or Python function went to a JavaScript method through
 its camelCase name, such as `self.ctx.waitUntil(coro)` in a Durable Object.
 JavaScript kept a reference to it after the call returned, and Pyodide had
-already freed it.
+already freed it. The call itself returns without an error. The message
+appears only in the `wynd dev` log, and the coroutine never runs, so the log
+also shows `RuntimeWarning: coroutine ... was never awaited`.
 
 **Fix.** Use the typed method, which keeps the coroutine alive until it
 finishes:

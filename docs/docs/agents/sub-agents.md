@@ -13,8 +13,9 @@ be defined in, or imported into, the Worker's entry module under its own name.
 
 ## Create and call a sub-agent
 
-`self.dynamic_agents.get(cls, name)` returns a stub for the sub-agent, and
-creates it the first time. Await methods on the stub to call them:
+`self.dynamic_agents.get(cls, name)` returns a stub for the sub-agent. The
+first call creates it and runs its `on_start`. Await methods on the stub to
+call them:
 
 ```python
 from workers import Request, Response
@@ -52,10 +53,10 @@ stub follow the same rules as
 
 | Call                                           | What it does                                                            |
 | ---------------------------------------------- | ----------------------------------------------------------------------- |
-| `self.dynamic_agents.list(cls=None)`           | Sub-agents this agent created, oldest first, as `SubAgentInfo` records. |
-| `self.dynamic_agents.has(cls, name)`           | Whether this agent created that sub-agent.                              |
-| `await self.dynamic_agents.delete(cls, name)`  | Deletes the sub-agent, its storage and its own sub-agents.              |
-| `self.dynamic_agents.abort(cls, name, reason)` | Stops it now. The next `get` restarts it with its storage.              |
+| `self.dynamic_agents.list(cls=None)`                | Sub-agents this agent created, oldest first, as `SubAgentInfo` records with `class_name`, `name` and `created_at`. |
+| `self.dynamic_agents.has(cls, name)`                | Whether this agent created that sub-agent. `cls` can be the class or its name.                             |
+| `await self.dynamic_agents.delete(cls, name)`       | Deletes the sub-agent, its storage and its own sub-agents.                                                 |
+| `self.dynamic_agents.abort(cls, name, reason=None)` | Stops it and its sub-agents now. Pending calls raise `reason`, by default `SubAgentAbortedError`. The next `get` restarts it with its storage. |
 
 Deleting a sub-agent disconnects its clients and cancels its schedules, queued
 items and task runs. Deleting one that doesn't exist does nothing.
@@ -80,7 +81,8 @@ when the class doesn't match the parent's. `self.parent_path` and
 ## Route clients to a sub-agent
 
 Clients reach a sub-agent through its parent's URL, with
-`/sub/{class}/{name}` appended:
+`/sub/{class}/{name}` appended. `{class}` is the class name in kebab case, as
+for bindings:
 
 ```text
 /agents/inbox/alice/sub/thread/t1
@@ -121,12 +123,14 @@ thread = await get_sub_agent_by_name(inbox, Thread, "t1")
 count = await thread.add("hello")
 ```
 
-This path skips `on_before_sub_agent`, and the stub supports method calls only,
-not `fetch`.
+This path skips `on_before_sub_agent`, so check access in your Worker code
+before you call it. The stub supports method calls only, not `fetch`, and
+each call makes one extra hop through the parent.
 
 ## Limits
 
 - Schedules, queue items and tasks on a sub-agent run through the root agent's
   alarm, because a sub-agent has no alarm of its own.
 - A sub-agent's class name can't convert to `sub` in kebab case, and its
-  instance name can't contain a NUL character. Both raise `ValueError`.
+  instance name can't contain a NUL character. Both raise `ValueError`, as
+  does a class that isn't in the entry module under its own name.

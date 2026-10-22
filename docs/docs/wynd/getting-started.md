@@ -5,8 +5,9 @@ description: "Move a pywrangler project to Wynd: declare the runtime SDK, run it
 
 This guide moves an existing pywrangler project to Wynd without changing its
 code. By the end, `uvx wynd dev` serves the Worker and `uvx wynd deploy`
-uploads it. To start a new project with crosswind-workers instead, follow
-[Build a typed Python Worker](../workers/getting-started.md).
+uploads it. To start a new project instead, run `uvx wynd init`, which
+[writes a crosswind-workers project](python-config.md#create-a-project), or
+follow [Build a typed Python Worker](../workers/getting-started.md).
 
 ## Prerequisites
 
@@ -69,7 +70,8 @@ Send the requests you normally test with. They behave as they did under
 pywrangler.
 
 The next `wynd dev` skips the install unless `pyproject.toml`,
-`pylock.toml`, the compatibility date or the compatibility flags changed.
+`pylock.toml`, the compatibility date, the compatibility flags or
+[another input](commands.md#when-packages-reinstall) changed.
 
 ## 5. Check the upload
 
@@ -78,12 +80,13 @@ uvx wynd deploy --dry-run
 ```
 
 Wynd prints the size of `python_modules/` before and after pruning, then
-Wrangler's dry-run output:
+Wrangler's dry-run output. For a Worker whose only dependency is
+`workers-runtime-sdk`, on a 2026-09-08 compatibility date:
 
 ```text
-wynd: python_modules is 110,098 bytes, 78,238 after pruning (31,860 fewer). Each file's decision is in .wynd/shake.txt.
+wynd: python_modules is 113,809 bytes, 62,897 after pruning (50,912 fewer). Each file's decision is in .wynd/shake.txt.
 ...
-Total Upload: 76.56 KiB / gzip: 21.28 KiB
+Total Upload: 61.79 KiB / gzip: 15.50 KiB
 ```
 
 `.wynd/shake.txt` lists every file with `kept` or `dropped` and the reason. If
@@ -125,3 +128,5 @@ replace `uv run pywrangler` with `uvx wynd` in scripts and CI:
 - [Commands and configuration](commands.md) lists every command and setting.
 - [Migrate from workers-runtime-sdk](../workers/migrate.md) adds typed
   bindings.
+- [Write config in Python](python-config.md#move-a-wrangler-config-to-python)
+  replaces `wrangler.jsonc` with a `cloudflare.config.py`.

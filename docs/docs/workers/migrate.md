@@ -65,8 +65,9 @@ the typed methods. Change them one at a time:
 | `self.ctx.acceptWebSocket(ws)`                   | `self.ctx.accept_web_socket(ws)`                    |
 
 Change `waitUntil` first in a Durable Object. There, `self.ctx.waitUntil(coro)`
-fails with `This borrowed proxy was automatically destroyed at the end of a
-function call`, and only `self.ctx.wait_until(coro)` accepts a coroutine.
+returns without an error, but the coroutine never runs. The `wynd dev` log
+shows `Uncaught Error: This borrowed proxy was automatically destroyed at the
+end of a function call`. Only `self.ctx.wait_until(coro)` accepts a coroutine.
 
 Bindings with no typed class keep their JavaScript names. See
 [Use bindings](bindings.md#keyword-options-and-javascript-names).
@@ -103,25 +104,30 @@ class Agent(DurableObject, Generic[S]): ...
 
 ## Differences from the stock SDK
 
-Each row is a stock SDK bug that crosswind fixes. Code that hit one of the
-first nine got an exception, so working code doesn't depend on them.
+Each row is a stock SDK bug that crosswind fixes. The first ten raised an
+exception on the stock SDK, so working code doesn't depend on them. The last
+four changed a value or a body without an error, so check code that touches
+them.
 
 | Case                                                        | Stock SDK                         | crosswind-workers                             |
 | ----------------------------------------------------------- | --------------------------------- | --------------------------------------------- |
 | `File(js_file)` for a JavaScript `File` received over RPC   | Raises                            | Wraps it, keeping its name and time            |
-| `len(form_data)`                                            | `TypeError`                       | The number of keys                            |
-| `form_data["missing"]`                                      | Returns JavaScript `null`         | `KeyError`                                    |
+| `len(form_data)`                                            | `TypeError`                       | The number of entries                         |
 | `Response(blob)`                                            | `TypeError`                       | A response with the blob as its body          |
 | `request.method` for a non-standard method such as `PURGE`  | `KeyError`                        | The method as a `str`                         |
 | A `memoryview` or `bytearray` as a `Blob` part              | Raises                            | Accepted                                      |
 | A non-JavaScript exception inside `step.do`                 | `AttributeError`                  | The original exception                        |
-| A Workflow step named `"ctx-step"` as a dependency          | Can't be named                    | Named by its function's name                  |
+| A Workflow step named `"ctx-step"` as a dependency          | Can't be named, so `TypeError`    | Named by its function's name                  |
 | `env` or a Durable Object namespace sent over RPC           | Raises                            | Sent as its JavaScript object                 |
 | `with patch_env(...)`                                       | `AttributeError`                  | `NotImplementedError` that explains why       |
+| A request body read through `wsgi.input` on Python 3.12, which has no `run_sync` | `ImportError` | The adapter reads the body up front |
+| `form_data["missing"]`                                      | Returns JavaScript `null`         | `KeyError`                                    |
 | `Response.redirect(url)`                                    | A raw JavaScript `Response`       | A crosswind `Response`                        |
 | A binding attribute that changes, such as a D1 cursor count | First value cached                | Read again on every access                    |
-| WSGI request with no body stream                            | Buffered fallback skipped         | Buffered fallback runs                        |
 | `Content-Encoding` set by the app in the ASGI or WSGI adapter | Body compressed a second time   | Body sent as the app encoded it               |
+
+Code that used the raw JavaScript object from `Response.redirect` keeps
+working, because camelCase names pass through and `js_object` returns it.
 
 `patch_env` swapped `env` inside a `with` block. It relied on a runtime helper
 that workerd removed on 2026-06-30, so it fails on both SDKs. Pass the values

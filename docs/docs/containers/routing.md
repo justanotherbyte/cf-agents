@@ -89,6 +89,7 @@ arguments are the same as `workers.Request` (`method`, `headers`, `body` and so
 on), and relative URLs are fine:
 
 ```python
+import json
 from http import HTTPMethod
 
 response = await container.container_fetch(
@@ -183,6 +184,12 @@ the container. Forward with `self.container_fetch`, not `self.fetch`, or the
 call recurses:
 
 ```python
+from urllib.parse import urlparse
+
+from containers import Container
+from workers import Request, Response
+
+
 class MyContainer(Container):
     default_port = 8080
 

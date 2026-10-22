@@ -89,8 +89,9 @@ class Room(Agent):
         return ["admin"] if query.get("role") == ["admin"] else []
 ```
 
-A connection can have at most 9 tags. `connection.tags` lists them, with the
-connection id first.
+A connection can have at most 9 tags, each a non-empty string of up to 256
+characters. More raise `ValueError`, and the WebSocket upgrade fails.
+`connection.tags` lists them, with the connection id first.
 
 ## Store data on a connection
 
@@ -124,20 +125,27 @@ class Document(Agent):
 ```
 
 A `setState` from a readonly client is rejected, and the client's
-`onStateUpdateError` callback receives the error. A `@callable` method that
-calls `set_state()` while serving a readonly connection raises
-`ReadonlyConnectionError`.
+`onStateUpdateError` callback receives `Connection is readonly`. A
+`@callable` method that calls `set_state()` while serving a readonly
+connection raises `ReadonlyConnectionError`, so the client's call rejects with the same
+`Connection is readonly` message. Changes made from server code that isn't serving
+that connection, such as a schedule, still apply.
 
 ## Plain WebSocket clients
 
 On connect, the SDK sends protocol frames that the `agents` npm package reads:
-the agent's identity, its state and an MCP status frame. A client that doesn't
-use that package gets them too:
+the agent's identity, its state if it has any, and an MCP status frame. A
+client that doesn't use that package gets them too. For the `Room` instance
+`lobby`, which has no state, they are:
 
 ```text
-{"type": "cf_agent_identity", "name": "room", "agent": "room"}
+{"type": "cf_agent_identity", "name": "lobby", "agent": "room"}
 {"type":"cf_agent_mcp_servers","mcp":{"servers":{},"tools":[],"prompts":[],"resources":[]}}
 ```
+
+When the agent has state, the identity frame also carries
+`"stateFollows": true`, and a `{"type": "cf_agent_state", "state": ...}`
+frame comes before the MCP frame.
 
 To turn them off for such clients, return `False` from
 `should_send_protocol_messages`. Those connections then get no state updates:
@@ -156,8 +164,7 @@ To keep the frames but leave out the identity frame, set
 ## Errors in hooks
 
 When `on_connect` or `on_message` raises, the SDK calls
-`on_error(None, error)`. The default re-raises. Override it and return
-normally to keep the connection open:
+`on_error(None, error)`. The default re-raises. Override it and return normally to keep the connection open:
 
 ```python
 from agents import get_current_agent

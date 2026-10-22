@@ -72,10 +72,10 @@ hide:
 
 > **Warning**
 >
-> Every Crosswind package is in alpha. APIs change between releases, some
-> features are unfinished, and things will break. Pin exact versions, test
-> each upgrade before you deploy it, and expect to change your code when you
-> upgrade. See [Status](#status).
+> Every Crosswind package is in alpha. A minor release can rename or remove
+> an API, so an unpinned dependency can break a deploy that worked yesterday.
+> Pin exact versions, test each upgrade before you deploy it, and expect to
+> change your code when you upgrade. See [Status](#status).
 
 ## What Crosswind is
 
@@ -90,28 +90,32 @@ makes the JavaScript calls.
 
 ## Packages
 
-| Project                               | Package             | What it does                                                                                 | Version                                                               |
-| ------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [Agents](agents/overview.md)          | `cf-agents`         | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat.         | ![cf-agents on PyPI](https://img.shields.io/pypi/v/cf-agents)         |
-| [Containers](containers/overview.md)  | `containers-py`     | Start, stop and route requests to Cloudflare Containers, and filter their outbound traffic.  | ![containers-py on PyPI](https://img.shields.io/pypi/v/containers-py) |
-| [Workers](workers/overview.md)        | `crosswind-workers` | Drop-in replacement for the official `workers` package, with typed, idiomatic APIs.          | ![crosswind-workers on PyPI](https://img.shields.io/pypi/v/crosswind-workers) |
-| [Wynd](wynd/overview.md)              | `wynd`              | Replaces pywrangler. It drops vendored files your Worker never imports before each upload.   | ![wynd on PyPI](https://img.shields.io/pypi/v/wynd)                   |
+| Project                               | Package             | What it does                                                                                 | Start here | Version                                                               |
+| ------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------- |
+| [Agents](agents/overview.md)          | `cf-agents`         | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat.         | [Build an agent](agents/getting-started.md) | ![cf-agents on PyPI](https://img.shields.io/pypi/v/cf-agents)         |
+| [Containers](containers/overview.md)  | `containers-py`     | Start, stop and route requests to Cloudflare Containers, and filter their outbound traffic.  | [Run a container](containers/getting-started.md) | ![containers-py on PyPI](https://img.shields.io/pypi/v/containers-py) |
+| [Workers](workers/overview.md)        | `crosswind-workers` | Drop-in replacement for the official `workers` package, with type hints on bindings, requests and Durable Objects. | [Write a Worker](workers/getting-started.md) | ![crosswind-workers on PyPI](https://img.shields.io/pypi/v/crosswind-workers) |
+| [Wynd](wynd/overview.md)              | `wynd`              | Replaces pywrangler. It drops vendored files your Worker never imports before each upload.   | [Switch from pywrangler](wynd/getting-started.md) | ![wynd on PyPI](https://img.shields.io/pypi/v/wynd)                   |
+
+For a new Python Worker that doesn't need an agent or a container, use
+`crosswind-workers` and deploy it with Wynd. `containers-py` depends on the
+official `workers-runtime-sdk`, so its guides use that package instead.
 
 ## Why Crosswind
 
 <div class="grid cards" markdown>
 
--   **Pythonic, all the way**
+-   **Python APIs, not translated TypeScript**
 
-    Typed, `async`-first APIs. Crosswind opts for Pythonic APIs rather than literal translations of TypeScript code.
+    You subclass a class and override `async` methods. Bindings and state carry type hints, so a type checker flags a misspelled method before you deploy.
 
 -   **Same behaviour as TypeScript**
 
     Each SDK keeps the defaults and behaviour of the TypeScript SDK it ports, so the TypeScript docs still describe what your code does.
 
--   **Python framework integrations**
+-   **Python web frameworks**
 
-    Planned: integrations with FastAPI, Starlette, Django and other Python web frameworks. None exist yet.
+    `crosswind-workers` serves ASGI apps such as FastAPI and Starlette, and WSGI apps such as Flask. See [Serve FastAPI or Flask](workers/web-frameworks.md).
 
 -   **Works with the TypeScript ecosystem**
 
@@ -143,7 +147,12 @@ written with `cf-agents`.
 ## Status
 
 The published packages are alpha and pre-1.0. Expect breaking changes in
-minor releases, and pin exact versions, such as `crosswind-workers==0.1.0`.
+minor releases, and pin exact versions:
+
+```sh
+uv add "crosswind-workers==0.2.0"
+```
+
 Each SDK's overview lists the features it doesn't port yet. Crosswind is an
 independent community project. It isn't affiliated with or endorsed by
 Cloudflare.
