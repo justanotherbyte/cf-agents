@@ -2,7 +2,9 @@ import re
 from importlib.metadata import version
 from pathlib import Path
 
-from .project import CONFIG_NAMES, PYTHON_CONFIG, WyndError, load_project
+from .errors import WyndError
+from .project import load_project
+from .sources import PythonConfigParser, WranglerConfigParser
 from .targets import TARGETS
 from .typegen import write_env
 
@@ -43,7 +45,7 @@ class Default(WorkerEntrypoint[Env]):
         return Response("Hello from Python!")
 """
 
-IGNORED = (".venv/", "python_modules/", ".wynd/", ".wynd.*wrangler.json")
+IGNORED = (".venv/", ".wynd/")
 
 
 def scaffold(directory: Path) -> None:
@@ -56,11 +58,11 @@ def scaffold(directory: Path) -> None:
         "pyproject.toml": PYPROJECT.format(name=name, wynd=version("wynd")),
         # uv sync builds the editor's .venv on the target's Python.
         ".python-version": f"{target.version}\n",
-        PYTHON_CONFIG: CONFIG.format(name=name, date=target.since),
+        PythonConfigParser.names[0]: CONFIG.format(name=name, date=target.since),
         "src/main.py": MAIN,
     }
 
-    paths = [*files, *CONFIG_NAMES, "src/env.py"]
+    paths = [*files, *WranglerConfigParser.names, "src/env.py"]
     existing = [path for path in dict.fromkeys(paths) if (directory / path).exists()]
     if existing:
         raise WyndError(

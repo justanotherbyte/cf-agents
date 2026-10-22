@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from .project import Project, WyndError
+from .errors import WyndError
+from .wrangler_config import WranglerConfig
 
 __all__ = ("Target", "select_target")
 
@@ -44,19 +45,19 @@ TARGETS = (
 )
 
 
-def select_target(project: Project) -> Target:
-    flags = project.compatibility_flags
+def select_target(config: WranglerConfig) -> Target:
+    flags = config.compatibility_flags
     found = (
-        f"{project.config_path.name} has compatibility_date "
-        f"{project.compatibility_date!r} and compatibility_flags {list(flags)}"
+        f"{config.source.name} has compatibility_date "
+        f"{config.compatibility_date!r} and compatibility_flags {list(flags)}"
     )
 
-    if project.compatibility_date is None:
+    if config.compatibility_date is None:
         raise WyndError(f"{found}. Set a compatibility_date.")
     if "python_workers" not in flags:
         raise WyndError(f"{found}. Add python_workers to compatibility_flags.")
     try:
-        day = datetime.strptime(project.compatibility_date, "%Y-%m-%d").date()
+        day = datetime.strptime(config.compatibility_date, "%Y-%m-%d").date()
     except ValueError:
         raise WyndError(f"{found}. Write the date as YYYY-MM-DD.") from None
 

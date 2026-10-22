@@ -15,7 +15,15 @@ with open(os.environ["WYND_TEST_LOG"], "a") as log:
 """
 
 FAKE_NPX = """
-import signal
+import signal, time
+if os.environ.get("WYND_TEST_EDIT"):
+    # [path, text]: overwrite a file mid-run. "--config" names the config given.
+    path, text = json.loads(os.environ["WYND_TEST_EDIT"])
+    if path == "--config":
+        path = sys.argv[sys.argv.index("--config") + 1]
+    with open(path, "w") as file:
+        file.write(text)
+    time.sleep(float(os.environ.get("WYND_TEST_SLEEP", "0")))
 if os.environ.get("WYND_TEST_SIGNAL"):
     os.kill(os.getpid(), getattr(signal, "SIG" + os.environ["WYND_TEST_SIGNAL"]))
 sys.exit(int(os.environ.get("WYND_TEST_EXIT", "0")))

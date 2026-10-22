@@ -1,10 +1,12 @@
 import keyword
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .project import Project, WyndError
+from .errors import WyndError
+from .project import Project
 from .sync import select_sdk
+from .wrangler_config import JSON, BindingRef
 
 __all__ = ("render_env", "write_env")
 
@@ -26,23 +28,6 @@ CLASSES = {
     "ratelimits": "RateLimit",
 }
 
-BINDINGS_SUBKEY = {
-    "queues": "producers",
-    "durable_objects": "bindings",
-    "logfwdr": "bindings",
-    "unsafe": "bindings",
-}
-
-KEYED_BY_NAME = {
-    "durable_objects.bindings",
-    "logfwdr.bindings",
-    "unsafe.bindings",
-    "ratelimits",
-    "send_email",
-}
-
-NOT_BINDINGS = {"vars", "define", "env", "previews"}
-
 DEV_VARS_KEY = re.compile(r"^\s*(?:export\s+)?([A-Za-z_]\w*)\s*=", re.MULTILINE)
 
 
@@ -55,17 +40,22 @@ def write_env(project: Project, check: bool = False) -> None:
             "workers.bindings."
         )
 
-    main = _entry_module(project)
-    dev_vars = project.config_path.parent / ".dev.vars"
+    config = project.config
+    dev_vars = config.source.parent / ".dev.vars"
     secrets = DEV_VARS_KEY.findall(dev_vars.read_text()) if dev_vars.is_file() else []
-    text = render_env(project.environment, secrets, main)
+    text = render_env(
+        config.bindings,
+        config.vars,
+        [*config.required_secrets, *secrets],
+        config.entry_module,
+    )
 
-    path = project.source_dir / "env.py"
+    path = config.source_dir / "env.py"
     current = path.read_text() if path.is_file() else None
     if current == text:
         return
 
-    name = path.relative_to(project.root.resolve())
+    name = path.relative_to(project.root)
     if check:
         raise WyndError(f"{name} is out of date. Run `wynd types` and commit it.")
     if current is not None and not current.startswith(GENERATED_PREFIX):
@@ -78,13 +68,18 @@ def write_env(project: Project, check: bool = False) -> None:
     print(f"wynd: wrote {name}", flush=True)
 
 
-def render_env(settings: dict[str, Any], secrets: Iterable[str], main: str) -> str:
-    """The text of env.py for a config's effective settings.
+def render_env(
+    bindings: Iterable[BindingRef],
+    variables: Mapping[str, JSON],
+    secrets: Iterable[str],
+    main: str,
+) -> str:
+    """The text of env.py for a config's bindings, vars and secret names.
 
-    `secrets` are the names in .dev.vars and `main` is the entry module's
-    dotted name, which defines the project's Durable Object classes.
+    `main` is the entry module's dotted name, which defines the project's
+    Durable Object classes.
     """
-    attributes, durable_classes = _attributes(settings, secrets)
+    attributes, durable_classes = _attributes(bindings, variables, secrets)
     used = {
         word
         for annotation in attributes.values()
@@ -102,41 +97,30 @@ def render_env(settings: dict[str, Any], secrets: Iterable[str], main: str) -> s
     return "\n".join(lines) + "\n"
 
 
-def _entry_module(project: Project) -> str:
-    """The entry module's dotted name below the source directory."""
-    source = project.source_dir
-    main = (project.config_path.parent / (project.main or "")).resolve()
-    try:
-        entry_path = main.relative_to(source)
-    except ValueError:
-        raise WyndError(f"main {project.main} is outside {source}") from None
-
-    return ".".join(entry_path.with_suffix("").parts)
-
-
 def _attributes(
-    settings: dict[str, Any], secrets: Iterable[str]
+    bindings: Iterable[BindingRef],
+    variables: Mapping[str, JSON],
+    secrets: Iterable[str],
 ) -> tuple[dict[str, str], set[str]]:
     """Each Env attribute's annotation, and the Durable Object classes named."""
     attributes: dict[str, str] = {}
     durable_classes: set[str] = set()
-    for section, name, entry in _bindings(settings):
-        annotation = CLASSES.get(section, "Binding")
-        class_name = entry.get("class_name")
-        if section == "version_metadata":
+    for binding in bindings:
+        annotation = CLASSES.get(binding.section, "Binding")
+        class_name = binding.class_name
+        if binding.section == "version_metadata":
             annotation = "JsDict"
         elif (
             annotation == "DurableObjectNamespace"
-            and "script_name" not in entry
-            and isinstance(class_name, str)
+            and binding.script_name is None
+            and class_name is not None
             and class_name.isidentifier()
         ):
             annotation = f"{annotation}[{class_name}]"
             durable_classes.add(class_name)
-        attributes[name] = annotation
+        attributes[binding.name] = annotation
 
-    variables = settings.get("vars")
-    for name, value in variables.items() if isinstance(variables, dict) else ():
+    for name, value in variables.items():
         attributes[name] = _json_type(value)
 
     # A secret replaces a var of the same name, in dev and in production.
@@ -173,23 +157,6 @@ def _import_lines(used: set[str], durable_classes: set[str], main: str) -> list[
         lines += ["if TYPE_CHECKING:", _import(main, durable_classes, "    "), ""]
 
     return lines
-
-
-def _bindings(settings: dict[str, Any]) -> Iterator[tuple[str, str, dict[str, Any]]]:
-    """Each binding as (section, name, entry), in config order."""
-    for key, value in settings.items():
-        if key in NOT_BINDINGS:
-            continue
-
-        section = key
-        if key in BINDINGS_SUBKEY and isinstance(value, dict):
-            section = f"{key}.{BINDINGS_SUBKEY[key]}"
-            value = value.get(BINDINGS_SUBKEY[key])
-
-        field = "name" if section in KEYED_BY_NAME else "binding"
-        for entry in value if isinstance(value, list) else [value]:
-            if isinstance(entry, dict) and isinstance(entry.get(field), str):
-                yield section, entry[field], entry
 
 
 def _json_type(value: Any) -> str:

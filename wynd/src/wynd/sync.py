@@ -8,7 +8,8 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from .project import Project, WyndError
+from .errors import WyndError
+from .project import Project
 from .targets import Target
 
 __all__ = ("select_sdk", "sync")
@@ -20,7 +21,7 @@ MIN_UV_TEXT = ".".join(map(str, MIN_UV))
 
 def sync(project: Project, target: Target) -> None:
     """Install the project's packages for `target` into python_modules/."""
-    token_path = project.wynd_dir / "synced"
+    token_path = project.run_dir / "synced"
     if (
         project.python_modules.is_dir()
         and _text(token_path) == _token(project, target)
@@ -42,6 +43,7 @@ def sync(project: Project, target: Target) -> None:
     (staging / ".lock").unlink(missing_ok=True)
 
     shutil.rmtree(project.python_modules, ignore_errors=True)
+    project.run_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(staging, project.python_modules)
     token_path.write_text(_token(project, target))
 
@@ -73,12 +75,12 @@ def _name(requirement: str) -> str:
 
 def _token(project: Project, target: Target) -> str:
     inputs = [
-        str(project.config_path),
+        str(project.source.path),
         _text(project.root / "pyproject.toml"),
         _text(project.root / "pylock.toml"),
         target.version,
-        project.compatibility_date,
-        project.compatibility_flags,
+        project.config.compatibility_date,
+        project.config.compatibility_flags,
         version("wynd"),
     ]
 

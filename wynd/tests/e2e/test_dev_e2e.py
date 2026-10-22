@@ -78,9 +78,35 @@ def test_sync_drops_the_sdk_a_library_pulls_in(tmp_path: Path) -> None:
     lock = tomllib.loads((project / "pylock.toml").read_text())
     names = sorted(package["name"] for package in lock["packages"])
     assert names == ["crosswind-workers", "libdep"]
-    installed = {path.name for path in (project / "python_modules").iterdir()}
+    modules = project / ".wynd" / "run" / "python_modules"
+    installed = {path.name for path in modules.iterdir()}
     assert "libdep" in installed
     assert not any(name.startswith("workers_runtime_sdk") for name in installed)
+
+
+def test_d1_migrations_apply_locally_into_the_run_directory(tmp_path: Path) -> None:
+    shutil.copytree(FIXTURE, tmp_path, dirs_exist_ok=True)
+    database = {"binding": "DB", "database_name": "db", "database_id": "1"}
+    config = {
+        "main": "src/entry.py",
+        "compatibility_date": "2025-06-01",
+        "compatibility_flags": ["python_workers"],
+        "d1_databases": [database],
+    }
+    (tmp_path / "wrangler.json").write_text(json.dumps(config))
+    (tmp_path / "migrations").mkdir()
+    (tmp_path / "migrations" / "0001_init.sql").write_text("CREATE TABLE t (id INT);\n")
+
+    subprocess.run(
+        [str(WYND), "d1", "migrations", "apply", "DB", "--local"],
+        cwd=tmp_path,
+        check=True,
+        env={**os.environ, "CI": "1"},
+    )
+
+    assert (tmp_path / ".wynd" / "run" / ".wrangler" / "state" / "v3" / "d1").is_dir()
+    # Wrangler's cf.json cache still follows the working directory.
+    assert not (tmp_path / ".wrangler" / "state").exists()
 
 
 def serve(project: Path, command: list[str]) -> str:

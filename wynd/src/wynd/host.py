@@ -18,10 +18,11 @@ def warn_on_venv_mismatch(project: Project, target: Target) -> None:
     if match is None or match.group(1) == target.version:
         return
 
-    flags = ", ".join(f for f in project.compatibility_flags if "python_workers" in f)
+    config = project.config
+    flags = ", ".join(f for f in config.compatibility_flags if "python_workers" in f)
     print(
-        f"warning: .venv is Python {match.group(1)} but {project.config_path.name}"
-        f" targets {target.version} ({flags}, {project.compatibility_date}).\n"
+        f"warning: .venv is Python {match.group(1)} but {config.source.name}"
+        f" targets {target.version} ({flags}, {config.compatibility_date}).\n"
         "Editor types may differ from production."
         f" To match: uv venv --python {target.version} && uv sync",
         file=sys.stderr,

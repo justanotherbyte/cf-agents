@@ -230,13 +230,14 @@ def test_dev_renders_the_mode_and_runs_wrangler_on_it(
 
     assert main(["dev", "--port", "8788"]) == 0
 
-    rendered = project / ".wynd.staging.wrangler.json"
+    rendered = project / ".wynd" / "run" / "cloudflare.config.py.staging.json"
     assert tools.wrangler() == [["dev", "--port", "8788", "--config", str(rendered)]]
     assert [call["cloudflare_env"] for call in tools.calls("npx")] == [None]
     compiled = json.loads(rendered.read_text())
     assert compiled["name"] == "w-staging"
     assert compiled["vars"] == {"DEBUG": "1"}
-    assert (project / "python_modules" / "workers").is_dir()
+    assert compiled["main"] == "../../src/entry.py"
+    assert (project / ".wynd" / "run" / "python_modules" / "workers").is_dir()
     env = (project / "src" / "env.py").read_text()
     assert "    DATABASE: D1Database\n" in env
     assert "    COUNTER: DurableObjectNamespace[Counter]\n" in env
@@ -249,7 +250,7 @@ def test_passthrough_runs_on_the_rendered_file_without_the_mode(
 
     assert main(["-c", "cloudflare.config.py", *args]) == 0
 
-    rendered = str(project / ".wynd.staging.wrangler.json")
+    rendered = str(project / ".wynd" / "run" / "cloudflare.config.py.staging.json")
     assert tools.wrangler() == [
         ["d1", "migrations", "apply", "DATABASE", "--local", "--config", rendered]
     ]
@@ -261,19 +262,37 @@ def test_deploy_stages_the_compiled_config(tools: Tools, project: Path) -> None:
     staged = project / ".wynd" / "build" / "wrangler.json"
     assert tools.wrangler() == [["deploy", "--config", str(staged)]]
     assert json.loads(staged.read_text())["d1_databases"] == [
-        {"binding": "DATABASE", "database_name": "db-staging", "database_id": "1"}
+        {
+            "binding": "DATABASE",
+            "database_name": "db-staging",
+            "database_id": "1",
+            "migrations_dir": str(project / "migrations"),
+        }
     ]
 
 
 def test_an_unchanged_config_leaves_the_rendered_file_alone(
     tools: Tools, project: Path
 ) -> None:
-    assert main(["types"]) == 0
-    rendered = project / ".wynd.wrangler.json"
+    assert main(["whoami"]) == 0
+    rendered = project / ".wynd" / "run" / "cloudflare.config.py.json"
     os.utime(rendered, ns=(0, 0))
 
-    assert main(["types"]) == 0
+    assert main(["whoami"]) == 0
     assert rendered.stat().st_mtime_ns == 0
+
+
+def test_required_secrets_are_typed(
+    tools: Tools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text = CONFIG.replace(
+        '"COUNTER":', '"API_KEY": bindings.Secret(),\n                "COUNTER":'
+    )
+    monkeypatch.chdir(python_project(tmp_path / "worker", text))
+
+    assert main(["types"]) == 0
+
+    assert "    API_KEY: str\n" in (Path.cwd() / "src" / "env.py").read_text()
 
 
 def test_a_bad_value_names_the_config_line(

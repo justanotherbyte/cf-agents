@@ -1,14 +1,15 @@
 import argparse
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from . import wrangler
+from .errors import ProjectNotFoundError, WyndError
 from .host import warn_on_venv_mismatch
-from .project import Project, WyndError, find_config, load_project
+from .project import load_project
 from .scaffold import scaffold
-from .shake import ShakePlan
-from .stage import stage
+from .stage import stage_run, stage_upload
 from .sync import select_sdk, sync
 from .targets import select_target
 from .typegen import write_env
@@ -37,19 +38,10 @@ SUBCOMMANDS = {
     "preview": {"delete", "settings", "secret", "base-config"},
 }
 
-_config_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-_config_parser.add_argument("-c", "--config")
-
-# A Python config's rendered file has no environments, so -e only picks the
-# mode. Wrangler would also add it to the Worker's name.
-_mode_parser = argparse.ArgumentParser(
-    add_help=False, allow_abbrev=False, parents=[_config_parser]
-)
-_mode_parser.add_argument("-e", "--env")
-
 
 def main(argv: list[str] | None = None) -> int:
-    """Run a `wynd` command line. Commands Wynd doesn't own go to Wrangler."""
+    """Run a `wynd` command line. Commands Wynd doesn't own go to Wrangler,
+    on the config Wynd stages in .wynd/."""
     args = sys.argv[1:] if argv is None else argv
     options, rest = _parser.parse_known_args(args)
     flow = _flow(rest)
@@ -65,43 +57,61 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
+    mode = options.env or os.environ.get("CLOUDFLARE_ENV")
     try:
-        cwd = Path.cwd() / options.cwd if options.cwd else Path.cwd()
-        if flow == "passthrough" and not _uses_python_config(cwd, options.config):
-            return wrangler.run(args)
         if flow == "init":
             words = [arg for arg in rest if not arg.startswith("-")]
             scaffold(cwd / words[1] if len(words) > 1 else cwd)
             return 0
-        env = options.env or os.environ.get("CLOUDFLARE_ENV")
-        project = load_project(cwd, options.config, env)
-        if flow == "passthrough":
-            return _run_wrangler(args, project)
+        try:
+            project = load_project(cwd, options.config, mode)
+        except ProjectNotFoundError:
+            if flow != "passthrough":
+                raise
+            # `wynd login` outside any project.
+            return wrangler.run(args)
+
         if flow == "types":
             write_env(project, check="--check" in rest)
             return 0
-        target = select_target(project)
-        sync(project, target)
-        if flow != "sync" and select_sdk(project.dependencies) == "crosswind-workers":
-            write_env(project)
-        staged = stage(project) if flow == "upload" else None
+        if flow != "passthrough":
+            target = select_target(project.config)
+            sync(project, target)
+            if (
+                flow != "sync"
+                and select_sdk(project.dependencies) == "crosswind-workers"
+            ):
+                write_env(project)
+            if flow == "dev":
+                warn_on_venv_mismatch(project, target)
+        if flow == "sync":
+            return 0
+
+        if flow == "upload":
+            staged, plan = stage_upload(project)
+            if "--dry-run" in rest:
+                # Flushed, so it comes before Wrangler's output in a pipe.
+                report = plan.size_report(staged.path.parent / "python_modules")
+                print(f"wynd: {report}", flush=True)
+        else:
+            staged = stage_run(project)
     except WyndError as error:
         print(f"wynd: error: {error}", file=sys.stderr)
         return 1
 
-    if flow == "sync":
-        return 0
-    if staged is not None:
-        return _upload(args, rest, project, *staged)
+    argv, environ = project.source.wrangler_args(args, staged.path)
+    if flow == "dev":
+        return wrangler.run(
+            argv,
+            environ=environ,
+            watch=project.source.path,
+            restage=lambda: _restage(cwd, options.config, mode),
+        )
 
-    warn_on_venv_mismatch(project, target)
-    return _run_wrangler(args, project)
-
-
-def _uses_python_config(cwd: Path, config: str | None) -> bool:
-    """Whether a passthrough command needs Wynd to render the config first."""
-    path = Path(config) if config else find_config(cwd)
-    return path is not None and path.suffix == ".py"
+    code = wrangler.run(argv, environ=environ)
+    staged.warn_if_edited(project.source.path)
+    return code
 
 
 def _flow(rest: list[str]) -> str:
@@ -120,30 +130,16 @@ def _flow(rest: list[str]) -> str:
     return command if command in ("dev", "sync", "types", "init") else "passthrough"
 
 
-def _upload(
-    args: list[str], rest: list[str], project: Project, path: Path, plan: ShakePlan
-) -> int:
-    """Run Wrangler on the staged config in place of the project's."""
-    if "--dry-run" in rest:
-        # Flushed, so it comes before Wrangler's output in a pipe.
-        print(f"wynd: {plan.size_report(path.parent / 'python_modules')}", flush=True)
+def _restage(cwd: Path, config: str | None, mode: str | None) -> None:
+    """Stage an edited config again, so the running wrangler dev reloads.
 
-    return _run_wrangler(args, project, path)
-
-
-def _run_wrangler(args: list[str], project: Project, config: Path | None = None) -> int:
-    """Run Wrangler on `config` in place of the user's config flag.
-
-    A Python config always runs on a rendered file, without its mode. Without
-    `config`, a Wrangler config runs on the user's own command line.
+    A broken edit is reported and dev keeps serving the last good config.
     """
-    if not project.python_config:
-        if config is None:
-            return wrangler.run(args)
-        _, rest = _config_parser.parse_known_args(args)
-        return wrangler.run([*rest, "--config", str(config)])
-
-    _, rest = _mode_parser.parse_known_args(args)
-    config = config or project.config_path
-    environ = {k: v for k, v in os.environ.items() if k != "CLOUDFLARE_ENV"}
-    return wrangler.run([*rest, "--config", str(config)], environ=environ)
+    try:
+        stage_run(load_project(cwd, config, mode))
+    except WyndError as error:
+        print(f"wynd: error: {error}", file=sys.stderr)
+    # Dev outlives a typo in cloudflare.config.py's own code, which keeps its
+    # traceback.
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()

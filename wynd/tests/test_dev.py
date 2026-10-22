@@ -43,6 +43,14 @@ def config(date: str = "2025-06-01", *flags: str) -> dict[str, Any]:
     }
 
 
+def run_dir(root: Path) -> Path:
+    return root / ".wynd" / "run"
+
+
+def staged_path(root: Path, name: str = "wrangler.jsonc.json") -> str:
+    return str(run_dir(root) / name)
+
+
 def interpreter(tools: Tools) -> str:
     (compile_args,) = tools.uv("pip", "compile")
     return compile_args[compile_args.index("--python") + 1]
@@ -60,8 +68,10 @@ def test_dev_installs_the_full_tree_then_runs_wrangler_dev(
 ) -> None:
     assert main(["dev", "--port", "8788"]) == 0
 
-    assert tools.wrangler() == [["dev", "--port", "8788"]]
-    modules = project / "python_modules"
+    assert tools.wrangler() == [
+        ["dev", "--port", "8788", "--config", staged_path(project)]
+    ]
+    modules = run_dir(project) / "python_modules"
     assert (modules / "workers" / "__init__.py").is_file()
     # uv --target extras: console scripts with host paths, and its lock file.
     assert not (modules / "bin").exists()
@@ -182,7 +192,7 @@ def test_a_second_dev_skips_sync(tools: Tools, project: Path) -> None:
             '[project]\nname = "w"\ndependencies = ["workers-runtime-sdk", "attrs"]\n'
         ),
         lambda root: (root / "pylock.toml").write_text("# edited\n"),
-        lambda root: __import__("shutil").rmtree(root / "python_modules"),
+        lambda root: __import__("shutil").rmtree(run_dir(root) / "python_modules"),
     ],
     ids=["date", "pyproject", "pylock", "python_modules"],
 )
@@ -203,7 +213,7 @@ def test_env_flag_chooses_the_environments_target(tools: Tools, project: Path) -
 
     assert main(["dev", "--env=next"]) == 0
     assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
-    assert tools.wrangler() == [["dev", "--env=next"]]
+    assert tools.wrangler() == [["dev", "--env=next", "--config", staged_path(project)]]
 
 
 def test_an_unknown_env_fails(
@@ -244,7 +254,7 @@ def test_wrangler_value_flags_are_not_taken_for_the_command(
 
     assert main(args) == 0
     assert tools.uv("pip", "compile") != []
-    assert tools.wrangler() == [args]
+    assert tools.wrangler() == [[*args, "--config", staged_path(project)]]
 
 
 def test_cwd_flag_moves_config_discovery(
@@ -255,7 +265,7 @@ def test_cwd_flag_moves_config_discovery(
 
     assert main(["dev", "--cwd", "w"]) == 0
     assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
-    assert (tmp_path / "w" / "python_modules" / "workers").is_dir()
+    assert (run_dir(tmp_path / "w") / "python_modules" / "workers").is_dir()
 
 
 def test_config_flag_chooses_the_file(tools: Tools, project: Path) -> None:
@@ -265,17 +275,19 @@ def test_config_flag_chooses_the_file(tools: Tools, project: Path) -> None:
 
     assert main(["-c", "other.toml", "dev"]) == 0
     assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
-    assert tools.wrangler() == [["-c", "other.toml", "dev"]]
+    assert tools.wrangler() == [
+        ["dev", "--config", staged_path(project, "other.toml.json")]
+    ]
 
 
 def test_discovery_tries_each_name_up_the_tree_before_the_next(
     tools: Tools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Wrangler finds the parent's wrangler.json before the cwd's wrangler.toml.
-    parent = tmp_path / "parent"
-    (parent / "child").mkdir(parents=True)
+    parent = make_project(tmp_path / "parent")
     (parent / "wrangler.json").write_text(json.dumps(config("2026-09-08")))
-    child = make_project(parent / "child")
+    child = parent / "child"
+    child.mkdir()
     (child / "wrangler.toml").write_text(
         'compatibility_date = "2025-06-01"\ncompatibility_flags = ["python_workers"]\n'
     )
@@ -283,8 +295,9 @@ def test_discovery_tries_each_name_up_the_tree_before_the_next(
 
     assert main(["dev"]) == 0
     assert interpreter(tools) == "cpython-3.14.2-emscripten-wasm32-musl"
-    # python_modules sits beside the config Wrangler reads.
-    assert (parent / "python_modules" / "workers").is_dir()
+    assert tools.wrangler() == [
+        ["dev", "--config", staged_path(parent, "wrangler.json.json")]
+    ]
 
 
 @pytest.mark.parametrize(
@@ -324,7 +337,7 @@ def test_a_uv_failure_stops_before_wrangler(
     assert main(["dev"]) == 1
     assert "no solution found" in capsys.readouterr().err
     assert tools.wrangler() == []
-    assert (project / "python_modules" / "workers").is_dir()
+    assert (run_dir(project) / "python_modules" / "workers").is_dir()
 
 
 def test_an_old_uv_stops_before_any_uv_work(
@@ -394,13 +407,14 @@ def test_warns_when_the_venv_python_differs_from_the_target(
 def test_sync_installs_without_running_wrangler(tools: Tools, project: Path) -> None:
     assert main(["sync"]) == 0
 
-    assert (project / "python_modules" / "workers").is_dir()
+    assert (run_dir(project) / "python_modules" / "workers").is_dir()
     assert tools.wrangler() == []
 
 
 def test_a_resync_replaces_python_modules(tools: Tools, project: Path) -> None:
+    modules = run_dir(project) / "python_modules"
     main(["dev"])
-    (project / "python_modules" / "dropped.py").write_text("")
+    (modules / "dropped.py").write_text("")
     (project / "wrangler.jsonc").write_text(json.dumps(config("2026-09-08")))
     main(["dev"])
 
@@ -409,8 +423,8 @@ def test_a_resync_replaces_python_modules(tools: Tools, project: Path) -> None:
         "cpython-3.12.7-emscripten-wasm32-musl",
         "cpython-3.14.2-emscripten-wasm32-musl",
     ]
-    assert not (project / "python_modules" / "dropped.py").exists()
-    assert (project / "python_modules" / "workers").is_dir()
+    assert not (modules / "dropped.py").exists()
+    assert (modules / "workers").is_dir()
 
 
 @pytest.mark.parametrize(

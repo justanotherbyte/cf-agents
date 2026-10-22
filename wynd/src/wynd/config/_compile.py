@@ -1,4 +1,3 @@
-import json
 import re
 import runpy
 import sys
@@ -15,35 +14,21 @@ from .bindings import Binding
 from .exports import Export
 from .triggers import Trigger
 
-__all__ = ("load", "render", "to_wrangler")
+__all__ = ("load", "run", "to_wrangler")
 
-# The mode becomes part of the rendered file's name.
+# The mode becomes part of the staged file's name.
 MODE = re.compile(r"[A-Za-z0-9_-]+")
 
 
-def render(path: Path, mode: str | None) -> Path:
-    """Compile cloudflare.config.py for `mode` into the Wrangler file beside it.
+def run(path: Path, mode: str | None) -> dict[str, Any]:
+    """Compile cloudflare.config.py for `mode` into its Wrangler dict.
 
-    The file is written only when its text changes, so a running `wrangler dev`
-    doesn't reload for nothing. Returns the rendered file's path. Raises
-    WyndError for a mode that can't be part of a file name, and as `load` and
-    `to_wrangler` do.
+    Raises WyndError for a mode that can't be part of a file name, and as
+    `load` and `to_wrangler` do.
     """
     if mode is not None and not MODE.fullmatch(mode):
         raise WyndError(f"mode {mode!r} may hold only letters, digits, _ and -")
-
-    try:
-        text = json.dumps(to_wrangler(load(path, mode)), indent=2) + "\n"
-    except TypeError as error:
-        raise WyndError(
-            f"{path.name} holds a value JSON can't encode: {error}"
-        ) from None
-
-    name = ".wynd.wrangler.json" if mode is None else f".wynd.{mode}.wrangler.json"
-    rendered = path.parent / name
-    if not rendered.is_file() or rendered.read_text() != text:
-        rendered.write_text(text)
-    return rendered
+    return to_wrangler(load(path, mode))
 
 
 def load(path: Path, mode: str | None) -> Config:
@@ -76,9 +61,9 @@ def load(path: Path, mode: str | None) -> Config:
 def to_wrangler(config: Config) -> dict[str, Any]:
     """The Wrangler 4.129 dict for one mode, with no env blocks.
 
-    Paths stay as written, because the rendered file sits beside
-    cloudflare.config.py. Raises one WyndError listing every rule that spans
-    objects and fails.
+    Paths stay as written, relative to cloudflare.config.py. WranglerConfig
+    points them back at the project when it stages the file. Raises one
+    WyndError listing every rule that spans objects and fails.
     """
     return _Compiler(config).run()
 

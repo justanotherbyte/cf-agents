@@ -195,11 +195,13 @@ def test_an_entry_beside_the_config_fails(
     assert tools.wrangler() == []
 
 
-def test_a_source_directory_holding_the_project_fails(
+@pytest.mark.parametrize("command", [["deploy"], ["whoami"]])
+def test_a_config_outside_the_project_fails(
     tools: Tools,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    command: list[str],
 ) -> None:
     child = worker(tmp_path / "child", {})
     (child / "wrangler.jsonc").unlink()
@@ -207,8 +209,8 @@ def test_a_source_directory_holding_the_project_fails(
     (tmp_path / "wrangler.json").write_text(json.dumps(settings))
     monkeypatch.chdir(child)
 
-    assert main(["deploy"]) == 1
-    assert "subdirectory" in capsys.readouterr().err
+    assert main(command) == 1
+    assert "is outside" in capsys.readouterr().err
     assert tools.wrangler() == []
 
 
@@ -262,7 +264,10 @@ def test_commands_that_upload_no_code_pass_through(
 ) -> None:
     assert main(command) == 0
 
-    assert tools.wrangler() == [command]
+    # The staged config replaces the user's config flag.
+    forwarded = [arg for arg in command if arg not in ("-c", "wrangler.jsonc")]
+    staged_config = project / ".wynd" / "run" / "wrangler.jsonc.json"
+    assert tools.wrangler() == [[*forwarded, "--config", str(staged_config)]]
     assert tools.uv() == []
     assert not (project / ".wynd" / "build").exists()
 
