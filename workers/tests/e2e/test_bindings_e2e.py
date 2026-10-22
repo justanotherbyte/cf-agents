@@ -22,6 +22,11 @@ BINDINGS = {
     "services": [{"binding": "OTHER", "service": "fixture", "entrypoint": "Other"}],
     "workflows": [{"name": "flow", "binding": "FLOW", "class_name": "Flow"}],
     "version_metadata": {"binding": "VERSION"},
+    "analytics_engine_datasets": [{"binding": "EVENTS", "dataset": "events"}],
+    "images": {"binding": "IMAGES"},
+    "ratelimits": [
+        {"name": "LIMITER", "namespace_id": "1", "simple": {"limit": 9, "period": 60}}
+    ],
     "vars": {"TEXT": "hello", "FLAGS": {"beta": True}},
 }
 
@@ -42,5 +47,5 @@ def test_bindings_in_workerd(tmp_path: Path, date: str, version: str) -> None:
         _, body = server.get("/")
 
     result = json.loads(body)
-    assert len(result["ran"]) == 9
+    assert len(result["ran"]) == 12
     assert result["failures"] == {}, "\n".join(result["failures"].values())

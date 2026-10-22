@@ -5,15 +5,19 @@ from typing import Any
 
 from .._js import js_name
 from ..rpc import python_from_rpc
+from .analytics import AnalyticsEngineDataset
 from .base import Binding
 from .d1 import D1Database
+from .images import ImagesBinding
 from .kv import KVNamespace
 from .queues import Queue
 from .r2 import R2Bucket
+from .ratelimit import RateLimit
 from .services import DurableObjectNamespace, Fetcher
+from .vectorize import Vectorize
 from .workflow import Workflow
 
-__all__: list[str] = []
+__all__ = ()
 
 _CLASS_FOR_JS: dict[str, Callable[[Any], Any]] = {
     "Fetcher": Fetcher,
@@ -23,6 +27,12 @@ _CLASS_FOR_JS: dict[str, Callable[[Any], Any]] = {
     "R2Bucket": R2Bucket,
     "D1Database": D1Database,
     "WorkerQueue": Queue,
+    "VectorizeIndexImpl": Vectorize,
+    "AnalyticsEngine": AnalyticsEngineDataset,
+    "AnalyticsEngineDataset": AnalyticsEngineDataset,
+    "LocalAnalyticsEngineDataset": AnalyticsEngineDataset,
+    "ImagesBindingImpl": ImagesBinding,
+    "Ratelimit": RateLimit,
 }
 
 

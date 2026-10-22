@@ -28,6 +28,9 @@ BINDINGS = {
     "workflows": [{"name": "flow", "binding": "FLOW", "class_name": "Flow"}],
     "ai": {"binding": "AI"},
     "ratelimits": [{"name": "LIMITER", "namespace_id": "1"}],
+    "vectorize": [{"binding": "INDEX", "index_name": "docs"}],
+    "analytics_engine_datasets": [{"binding": "EVENTS", "dataset": "events"}],
+    "images": {"binding": "IMAGES"},
     "version_metadata": {"binding": "VERSION"},
     "containers": [{"name": "box", "class_name": "Box", "image": "./Dockerfile"}],
     "vars": {"GREETING": "hi", "FLAGS": {"beta": True}, "SIZES": [1, 2]},
@@ -40,13 +43,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from workers.bindings import (
+    AnalyticsEngineDataset,
     Binding,
     D1Database,
     DurableObjectNamespace,
     Fetcher,
+    ImagesBinding,
     KVNamespace,
     Queue,
     R2Bucket,
+    RateLimit,
+    Vectorize,
     Workflow,
 )
 from workers.rpc import JsDict
@@ -66,7 +73,10 @@ class Env(Protocol):
     ASSETS: Fetcher
     FLOW: Workflow
     AI: Binding
-    LIMITER: Binding
+    LIMITER: RateLimit
+    INDEX: Vectorize
+    EVENTS: AnalyticsEngineDataset
+    IMAGES: ImagesBinding
     VERSION: JsDict
     GREETING: str
     FLAGS: dict[str, bool]

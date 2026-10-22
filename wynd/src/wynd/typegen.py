@@ -20,6 +20,10 @@ CLASSES = {
     "services": "Fetcher",
     "assets": "Fetcher",
     "workflows": "Workflow",
+    "vectorize": "Vectorize",
+    "analytics_engine_datasets": "AnalyticsEngineDataset",
+    "images": "ImagesBinding",
+    "ratelimits": "RateLimit",
 }
 
 BINDINGS_SUBKEY = {

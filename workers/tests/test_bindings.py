@@ -1,17 +1,22 @@
 from typing import Any, Generic, TypeVar
 
 import pytest
-from fake_js import JsBinding, JsValue, jsnull, run
+from fake_js import JsBinding, JsValue, js_response, jsnull, run
 
-from workers import DurableObject, WorkerEntrypoint, python_to_rpc
+from workers import DurableObject, Response, WorkerEntrypoint, python_to_rpc
 from workers.bindings import (
+    AnalyticsEngineDataset,
     Binding,
     D1Database,
     DurableObjectNamespace,
     Fetcher,
+    ImagesBinding,
+    ImageTransformer,
     KVNamespace,
     Queue,
     R2Bucket,
+    RateLimit,
+    Vectorize,
     Workflow,
     WorkflowInstance,
 )
@@ -31,6 +36,11 @@ def test_env_wraps_each_binding_by_its_js_class() -> None:
         COUNTER=JsBinding("DurableObjectNamespace"),
         OTHER=JsBinding("Fetcher"),
         FLOW=JsBinding("WorkflowImpl"),
+        INDEX=JsBinding("VectorizeIndexImpl"),
+        EVENTS=JsBinding("AnalyticsEngineDataset"),
+        LOCAL_EVENTS=JsBinding("LocalAnalyticsEngineDataset"),
+        IMAGES=JsBinding("ImagesBindingImpl"),
+        LIMITER=JsBinding("Ratelimit"),
         AI=JsBinding("Ai"),
         HYPERDRIVE=JsBinding("Hyperdrive"),
         TEXT="hello",
@@ -44,6 +54,11 @@ def test_env_wraps_each_binding_by_its_js_class() -> None:
     assert isinstance(env.COUNTER, DurableObjectNamespace)
     assert isinstance(env.OTHER, Fetcher)
     assert isinstance(env.FLOW, Workflow)
+    assert isinstance(env.INDEX, Vectorize)
+    assert isinstance(env.EVENTS, AnalyticsEngineDataset)
+    assert isinstance(env.LOCAL_EVENTS, AnalyticsEngineDataset)
+    assert isinstance(env.IMAGES, ImagesBinding)
+    assert isinstance(env.LIMITER, RateLimit)
     assert type(env.AI) is Binding
     assert type(env.HYPERDRIVE) is Binding
     assert env.TEXT == "hello"
@@ -141,6 +156,77 @@ def test_workflow_create_and_send_event() -> None:
     assert js_workflow.calls == [("create", ({"id": "abc", "params": {"p": 1}},))]
     assert js_instance.calls == [
         ("sendEvent", ({"type": "ready", "payload": {"n": jsnull}},))
+    ]
+
+
+def test_vectorize_sends_camel_case_query_options_and_lists() -> None:
+    matches = JsValue("Object", {"count": 0, "matches": JsValue("Array", [])})
+    js_index = JsBinding("VectorizeIndexImpl", returns=matches)
+    index = Vectorize(js_index)
+
+    result = run(index.query((0.5, 1.0), top_k=3, return_metadata="all"))
+    run(index.upsert(iter([{"id": "a", "values": [0.5]}])))
+    run(index.delete_by_ids("doc-1"))
+
+    assert result == {"count": 0, "matches": []}
+    assert js_index.calls == [
+        ("query", ([0.5, 1.0], {"topK": 3, "returnMetadata": "all"})),
+        ("upsert", ([{"id": "a", "values": [0.5]}],)),
+        ("deleteByIds", (["doc-1"],)),
+    ]
+
+
+def test_analytics_engine_writes_a_data_point_synchronously() -> None:
+    js_dataset = JsBinding("AnalyticsEngineDataset", sync={"writeDataPoint": None})
+
+    AnalyticsEngineDataset(js_dataset).write_data_point(
+        indexes=["user"], blobs=("path", None), doubles=[1.5]
+    )
+
+    assert js_dataset.calls == [
+        (
+            "writeDataPoint",
+            ({"indexes": ["user"], "doubles": [1.5], "blobs": ["path", jsnull]},),
+        )
+    ]
+
+
+def test_analytics_engine_refuses_a_string_where_a_list_belongs() -> None:
+    dataset = AnalyticsEngineDataset(JsBinding("AnalyticsEngineDataset"))
+
+    with pytest.raises(TypeError, match="blobs must be a list, not str"):
+        dataset.write_data_point(blobs="/home")
+
+
+def test_rate_limit_returns_the_outcome_as_a_dict() -> None:
+    js_limiter = JsBinding("Ratelimit", returns=JsValue("Object", {"success": True}))
+
+    assert run(RateLimit(js_limiter).limit(key="user")) == {"success": True}
+    assert js_limiter.calls == [("limit", ({"key": "user"},))]
+
+
+def test_images_chain_transforms_and_returns_a_python_response() -> None:
+    js_result = JsBinding(
+        "ImageTransformationResult",
+        sync={"contentType": "image/avif", "response": js_response("img")},
+    )
+    js_transformer = JsBinding("ImageTransformer", returns=js_result)
+    js_transformer.sync.update(transform=js_transformer, draw=js_transformer)
+    js_images = JsBinding("ImagesBindingImpl", sync={"input": js_transformer})
+    js_overlay = JsBinding("ImageTransformer")
+    stream = JsValue("ReadableStream")
+
+    transformer = ImagesBinding(js_images).input(stream).transform(width=100)
+    overlay = ImageTransformer(js_overlay)
+    result = run(transformer.draw(overlay, opacity=0.5).output(format="image/avif"))
+
+    assert result.content_type() == "image/avif"
+    assert isinstance(result.response(), Response)
+    assert js_images.calls == [("input", (stream, {}))]
+    assert js_transformer.calls == [
+        ("transform", ({"width": 100},)),
+        ("draw", (js_overlay, {"opacity": 0.5})),
+        ("output", ({"format": "image/avif"},)),
     ]
 
 

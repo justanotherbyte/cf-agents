@@ -1,18 +1,27 @@
 """Each test gets the Default entrypoint's env, wrapped by crosswind."""
 
 import asyncio
+import base64
 
 from workers import Response
 from workers.bindings import (
+    AnalyticsEngineDataset,
     Binding,
     D1Database,
     DurableObjectNamespace,
     Fetcher,
+    ImagesBinding,
     KVNamespace,
     Queue,
     R2Bucket,
     R2ObjectBody,
+    RateLimit,
     Workflow,
+)
+
+# A 1x1 transparent PNG.
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 )
 
 
@@ -24,6 +33,9 @@ async def test_env_classes(env):
     assert isinstance(env.COUNTER, DurableObjectNamespace)
     assert isinstance(env.OTHER, Fetcher)
     assert isinstance(env.FLOW, Workflow)
+    assert isinstance(env.EVENTS, AnalyticsEngineDataset)
+    assert isinstance(env.IMAGES, ImagesBinding)
+    assert isinstance(env.LIMITER, RateLimit)
     assert env.TEXT == "hello"
     assert env.FLAGS == {"beta": True}
     assert env.FLAGS["beta"] is True
@@ -124,3 +136,19 @@ async def test_unknown_binding_passes_through(env):
     metadata = env.VERSION
     assert isinstance(metadata, (Binding, dict)), type(metadata)
     assert metadata["id"] is not None
+
+
+async def test_analytics_engine(env):
+    assert env.EVENTS.write_data_point(indexes=["i"], blobs=["b", None]) is None
+
+
+async def test_rate_limit(env):
+    assert await env.LIMITER.limit(key="user") == {"success": True}
+
+
+async def test_images(env):
+    info = await env.IMAGES.info(Response(PNG).body)
+    assert info["width"] == 1, info
+    result = await env.IMAGES.input(Response(PNG).body).output(format="image/png")
+    assert result.content_type() == "image/png"
+    assert isinstance(result.response(), Response)
