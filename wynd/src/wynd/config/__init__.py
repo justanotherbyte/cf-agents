@@ -8,6 +8,7 @@ from ._model import (
     Limits,
     Observability,
     Placement,
+    Rule,
     TailConsumer,
     Worker,
 )
@@ -19,6 +20,7 @@ __all__ = (
     "Limits",
     "Observability",
     "Placement",
+    "Rule",
     "TailConsumer",
     "Worker",
     "bindings",

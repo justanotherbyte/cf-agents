@@ -116,6 +116,7 @@ class _Compiler:
                 {"pattern": domain, "custom_domain": True} for domain in worker.domains
             ]
             or None,
+            "rules": [to_table(rule) for rule in worker.rules] or None,
         }
         self._out.update((k, v) for k, v in settings.items() if v is not None)
 

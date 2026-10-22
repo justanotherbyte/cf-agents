@@ -9,7 +9,16 @@ from conftest import Tools
 from test_dev import make_project
 
 from wynd.cli import main
-from wynd.config import Assets, Config, Container, Worker, bindings, exports, triggers
+from wynd.config import (
+    Assets,
+    Config,
+    Container,
+    Rule,
+    Worker,
+    bindings,
+    exports,
+    triggers,
+)
 from wynd.config._compile import to_wrangler
 from wynd.errors import WyndError
 
@@ -64,6 +73,7 @@ def test_a_config_compiles_to_the_wrangler_dict() -> None:
             compatibility_flags=["python_workers", "nodejs_compat"],
             assets=Assets(directory="./public", not_found_handling="404-page"),
             domains=["images.example.com"],
+            rules=[Rule(type="Data", globs=["**/*.onnx"], fallthrough=True)],
             env={
                 "GREETING": bindings.Text("hello"),
                 "FEATURES": bindings.Json({"resize": True}),
@@ -110,6 +120,7 @@ def test_a_config_compiles_to_the_wrangler_dict() -> None:
             {"pattern": "images.example.com", "custom_domain": True},
             {"pattern": "example.com/*", "zone_name": "example.com"},
         ],
+        "rules": [{"type": "Data", "globs": ["**/*.onnx"], "fallthrough": True}],
         "exports": {
             "ImageProcessor": {
                 "type": "durable-object",

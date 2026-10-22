@@ -20,6 +20,7 @@ __all__ = (
     "Limits",
     "Observability",
     "Placement",
+    "Rule",
     "TailConsumer",
     "Worker",
 )
@@ -108,6 +109,24 @@ class Limits:
 
 
 @dataclass(frozen=True, kw_only=True)
+class Rule:
+    """Module type for files under base_dir that match `globs`. Each field is
+    the Wrangler `rules[]` key of the same name."""
+
+    type: Literal[
+        "ESModule",
+        "CommonJS",
+        "CompiledWasm",
+        "Text",
+        "Data",
+        "PythonModule",
+        "PythonRequirement",
+    ]
+    globs: Sequence[str]
+    fallthrough: bool | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class TailConsumer:
     worker: str
 
@@ -142,6 +161,7 @@ class Worker:
     workers_dev: bool | None = None
     preview_urls: bool | None = None
     tail_consumers: Sequence[TailConsumer] = ()
+    rules: Sequence[Rule] = ()
 
     def __post_init__(self) -> None:
         if not _is_date(self.compatibility_date):
