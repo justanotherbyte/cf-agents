@@ -30,6 +30,44 @@
       <img class="cw-hero__mascot" src="{{ 'assets/hero-img.png' | url }}" alt="" width="720" height="360">
     </div>
   </section>
+  {#- javascripts/system.js draws and animates the SVG #}
+  <section class="cw-system-section">
+    <div class="md-grid">
+      <figure class="cw-system">
+        <figcaption class="cw-system__head">
+          <span>Fig. 1 · How the packages fit together</span>
+          <span class="cw-system__clock" aria-hidden="true"></span>
+          <span class="cw-system__sr">Python sits at the centre of Crosswind. Agents, Containers, Wynd and Workers connect to it. Wynd drops the dependencies a Worker never imports, packs the rest into a bundle and deploys it to Workers. Select a package in the diagram to open its docs.</span>
+        </figcaption>
+        <div class="cw-system__messages" aria-hidden="true">
+          <p class="cw-system__message">Python deserves the full power of the edge.</p>
+          <p class="cw-system__message">One core. Four packages.</p>
+          <p class="cw-system__message">Each package does one job.</p>
+          <p class="cw-system__message">More of the edge. In Python.</p>
+        </div>
+        <svg role="group" aria-label="Crosswind packages"></svg>
+        <div class="cw-system__tip" hidden>
+          <p><strong class="cw-system__tip-name"></strong> <code class="cw-system__tip-pkg"></code></p>
+          <p class="cw-system__tip-desc"></p>
+          <p class="cw-system__tip-more">Select to open the docs</p>
+        </div>
+        <div class="cw-system__foot">
+          <ol class="cw-system__stages" aria-label="Stages">
+            <li><button type="button" data-stage="0"><span>01</span> <span class="cw-system__stage-name">Python</span></button></li>
+            <li><button type="button" data-stage="1"><span>02</span> <span class="cw-system__stage-name">Ecosystem</span></button></li>
+            <li><button type="button" data-stage="2"><span>03</span> <span class="cw-system__stage-name">Capabilities</span></button></li>
+            <li><button type="button" data-stage="3"><span>04</span> <span class="cw-system__stage-name">Together</span></button></li>
+          </ol>
+          <button class="cw-system__replay" type="button">Replay</button>
+        </div>
+      </figure>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ 'javascripts/system.js' | url }}"></script>
 {% endblock %}
 
 {# The hero has the page heading, so skip the h1 Material adds from the title #}
