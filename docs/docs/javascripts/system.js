@@ -6,7 +6,8 @@
   const figure = document.querySelector(".cw-system");
   if (!figure) return;
 
-  const svg = figure.querySelector("svg");
+  const scene = figure.querySelector(".cw-system__scene");
+  const svgs = [...scene.querySelectorAll("svg")];
   const tip = figure.querySelector(".cw-system__tip");
   const clock = figure.querySelector(".cw-system__clock");
   const messages = figure.querySelectorAll(".cw-system__message");
@@ -85,7 +86,7 @@
   ];
   const EYES = [[40.42, 13.34], [70.58, 98.4]];
   const LOGO = (() => {
-    const probe = make(svg, "path");
+    const probe = make(svgs[0], "path");
     const snakes = SNAKES.map((d) => {
       probe.setAttribute("d", d);
       const len = probe.getTotalLength();
@@ -107,9 +108,11 @@
   function build(isCompact) {
     compact = isCompact;
     tracks = [];
-    svg.replaceChildren();
     figure.classList.toggle("is-compact", compact);
-    svg.setAttribute("viewBox", compact ? "-330 -240 660 480" : "-500 -280 1000 560");
+    for (const s of svgs) {
+      s.replaceChildren();
+      s.setAttribute("viewBox", compact ? "-330 -240 660 480" : "-500 -280 1000 560");
+    }
 
     const on = (fn) => tracks.push(fn);
     const draw = (e, start, dur, out) => {
@@ -178,26 +181,23 @@
     const ROUTE_AT = { agents: 3.0, workers: 3.15, containers: 3.3, wynd: 3.45 };
     const ASSEMBLE_AT = (key) => ROUTE_AT[key] + 0.45;
 
-    // Defs, camera and layers, back to front
-    const defs = make(svg, "defs");
-    const gradient = make(defs, "radialGradient", { id: "cw-system-fade" });
-    make(gradient, "stop", { offset: "0.35", "stop-color": "#fff" });
-    make(gradient, "stop", { offset: "1", "stop-color": "#fff", "stop-opacity": "0" });
-    const mask = make(defs, "mask", { id: "cw-system-mask" });
-    make(mask, "rect", { x: -720, y: -420, width: 1440, height: 840, fill: "url(#cw-system-fade)" });
+    // Each SVG in the scene holds one layer under the camera transform. Only the
+    // modules layer, which holds the links, is exposed to assistive tech.
+    const camTargets = svgs.map((s) => group(s));
+    const [floor, behind, modLayer, logoLayer, fxLayer] = camTargets;
+    fxLayer.classList.add("fx");
 
-    // Three groups share the camera transform. Only the middle one, which holds
-    // the module links, is exposed to assistive tech.
-    const behind = group(svg, { "aria-hidden": "true" });
-    const modLayer = group(svg);
-    const inFront = group(svg, { "aria-hidden": "true", class: "fx" });
-    const camTargets = [behind, modLayer, inFront];
-    const gridLayer = group(behind, { class: "grid", mask: "url(#cw-system-mask)" });
+    // The grid fades out under a rect that goes from clear to the background colour,
+    // which looks the same as a mask but costs no offscreen buffer on every repaint
+    const defs = make(svgs[0], "defs");
+    const gradient = make(defs, "radialGradient", { id: "cw-system-fade" });
+    make(gradient, "stop", { offset: "0.35", class: "fade", "stop-opacity": "0" });
+    make(gradient, "stop", { offset: "1", class: "fade" });
+    const gridLayer = group(floor, { class: "grid" });
+    make(floor, "rect", { x: -720, y: -420, width: 1440, height: 840, fill: "url(#cw-system-fade)" });
     const annoLayer = group(behind);
     const routeLayer = group(behind);
     const underLayer = group(behind); // packets that pass under the core and behind modules
-    const logoLayer = group(inFront);
-    const fxLayer = group(inFront);
 
     // Floor grid, rippling out from the centre
     const R = 390;
@@ -214,7 +214,7 @@
 
     // Axis key, outside the camera so it stays put
     if (!compact) {
-      const key = group(svg, { class: "gizmo", transform: "translate(-462 248)", "aria-hidden": "true" });
+      const key = group(svgs[4], { class: "gizmo", transform: "translate(-462 248)" });
       for (const [p, name] of [[[20, 0, 0], "x"], [[0, 20, 0], "y"], [[0, 0, 20], "z"]]) {
         edge(key, [[0, 0, 0], p], "l2");
         label(key, p.map((v) => v * 1.35), name, "m s");
@@ -416,7 +416,7 @@
         const ring = busy ? clamp(Math.min(c - 1.1, 2.5 - c) * 6) : 0;
         for (const r of [ringBack, ringFront]) {
           set(r, "opacity", r3(ring));
-          set(r, "stroke-dashoffset", r1(-t * 30));
+          if (ring) set(r, "stroke-dashoffset", r1(-t * 30)); // spinning an invisible ring still repaints
         }
         for (const e of eyes) toggle(e, "on", c >= 1.05 && c < 2.75);
         toggle(led, "on", busy && Math.floor(t * 6) % 2 === 0);
@@ -663,7 +663,7 @@
   // Hover and focus: dim the other modules and show a short description
   function hover(link) {
     const key = link?.dataset.mod;
-    svg.querySelectorAll("[data-mod]").forEach((e) => {
+    scene.querySelectorAll("[data-mod]").forEach((e) => {
       e.classList.toggle("is-dim", Boolean(key) && e.dataset.mod !== key);
       e.classList.toggle("is-hot", e.dataset.mod === key);
     });
@@ -693,17 +693,23 @@
     frame.flash = 0;
     for (const fn of tracks) fn(time);
     const stage = STAGES.findLastIndex((s) => time >= s);
-    messages.forEach((m, i) => m.classList.toggle("is-on", i === Math.min(stage, 3)));
+    messages.forEach((m, i) => toggle(m, "is-on", i === Math.min(stage, 3)));
     stageButtons.forEach((b, i) => {
-      b.style.setProperty("--p", clamp((time - STAGES[i]) / (STAGES[i + 1] - STAGES[i])).toFixed(3));
-      if (i === Math.min(stage, 3)) b.setAttribute("aria-current", "step");
-      else b.removeAttribute("aria-current");
+      const p = clamp((time - STAGES[i]) / (STAGES[i + 1] - STAGES[i])).toFixed(3);
+      if (b._p !== p) b.style.setProperty("--p", (b._p = p));
+      const current = i === Math.min(stage, 3);
+      if (b._current !== current) {
+        b._current = current;
+        if (current) b.setAttribute("aria-current", "step");
+        else b.removeAttribute("aria-current");
+      }
     });
     write(clock, `t+${Math.min(time, 99.99).toFixed(2).padStart(5, "0")}s`);
   }
 
   function tick(now) {
-    if (last !== null) t += Math.min(0.05, (now - last) / 1000);
+    // The cap only stops a jump after the tab was hidden; a low cap would play slow phones in slow motion
+    if (last !== null) t += Math.min(0.25, (now - last) / 1000);
     last = now;
     render(t);
     raf = requestAnimationFrame(tick);

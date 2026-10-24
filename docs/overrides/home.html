@@ -45,7 +45,14 @@
           <p class="cw-system__message">Each package does one job.</p>
           <p class="cw-system__message">More of the edge. In Python.</p>
         </div>
-        <svg role="group" aria-label="Crosswind packages"></svg>
+        {#- Stacked layers, back to front (grid, routes, packages, logo, moving parts), so a frame only repaints the layers that changed #}
+        <div class="cw-system__scene">
+          <svg aria-hidden="true"></svg>
+          <svg aria-hidden="true"></svg>
+          <svg role="group" aria-label="Crosswind packages"></svg>
+          <svg aria-hidden="true"></svg>
+          <svg aria-hidden="true"></svg>
+        </div>
         <div class="cw-system__tip" hidden>
           <p><strong class="cw-system__tip-name"></strong> <code class="cw-system__tip-pkg"></code></p>
           <p class="cw-system__tip-desc"></p>

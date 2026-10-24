@@ -226,6 +226,7 @@
   position: absolute;
   top: 2.6rem;
   left: 0.9rem;
+  z-index: 1; /* above the positioned scene layers that follow it */
   max-width: 17rem;
   pointer-events: none;
 }
@@ -249,11 +250,29 @@
   transition: opacity 500ms var(--cw-ease-out) 250ms, transform 500ms var(--cw-ease-out) 250ms;
 }
 
+/* Positioned, so each layer keeps its own paint record and an unchanged layer is
+   not repainted when another one moves */
 .cw-system svg {
   display: block;
+  position: relative;
   width: 100%;
   height: auto;
   transition: opacity 250ms;
+}
+
+.cw-system__scene svg + svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Only the packages layer and the layers under it take the pointer */
+.cw-system__scene svg:nth-child(n + 4) {
+  pointer-events: none;
+}
+
+.cw-system__scene {
+  position: relative;
 }
 
 .cw-system.is-rewinding svg {
@@ -386,6 +405,10 @@
 }
 
 /* SVG strokes, faces and text */
+.cw-system .fade {
+  stop-color: var(--sx-bg);
+}
+
 .cw-system .g {
   stroke: var(--sx-grid);
   stroke-width: 1;
