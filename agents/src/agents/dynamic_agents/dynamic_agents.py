@@ -37,7 +37,11 @@ from .connections import (
     apply_forwarded_state,
     forwarded_state,
 )
-from .errors import SubAgentAbortedError
+from .errors import (
+    InvalidSubAgentNameError,
+    SubAgentAbortedError,
+    UnknownSubAgentClassError,
+)
 from .paths import (
     SUB_PREFIX,
     identity_name,
@@ -226,12 +230,12 @@ class SubAgentsEngine(LifecycleCapability):
                 "the reserved URL separator; rename it (e.g. SubThing)"
             )
         if class_name not in _ffi.export_names(ctx):
-            raise ValueError(
+            raise UnknownSubAgentClassError(
                 f"Sub-agent class {class_name!r} isn't exported from the Worker "
                 "module under that name"
             )
         if "\0" in name:
-            raise ValueError("Sub-agent names can't contain NUL (\\0)")
+            raise InvalidSubAgentNameError("Sub-agent names can't contain NUL (\\0)")
         root_class = self._root_class()
         child_path = [*self.self_path, AgentPathStep(class_name=class_name, name=name)]
         existing = self.registry.identity(class_name, name)
@@ -439,13 +443,12 @@ class SubAgentsEngine(LifecycleCapability):
             return await self._host.lifecycle.fetch(accepted)
         try:
             stub = await self.resolve(match.child_class, match.child_name)
-        except ValueError as error:
+        except InvalidSubAgentNameError as error:
             _log.error("Sub-agent route failed: %s", error)
-            reserved = "NUL" in str(error) or "reserved" in str(error)
-            return Response(
-                "Bad Request" if reserved else "Not Found",
-                status=400 if reserved else 404,
-            )
+            return Response("Bad Request", status=400)
+        except UnknownSubAgentClassError as error:
+            _log.error("Sub-agent route failed: %s", error)
+            return Response("Not Found", status=404)
         forwarded = _ffi.request_with(
             forward, url=rewrite_pathname(forward.url, match.remaining_path)
         )

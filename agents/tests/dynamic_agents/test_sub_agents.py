@@ -315,6 +315,24 @@ def test_http_requests_reach_the_sub_agent_through_the_gate() -> None:
     assert refused.status == 403
 
 
+def test_route_status_follows_the_error_type_not_its_message() -> None:
+    world, inbox = make_world()
+
+    class Sub(Agent): ...
+
+    world.export(Sub, bound=False)
+
+    async def scenario() -> list[int]:
+        responses = [
+            await inbox.fetch(Request(f"https://x.dev/agents/inbox/alice{path}"))
+            for path in ("/sub/chat/a%00b", "/sub/sub/x")
+        ]
+        return [response.status for response in responses]
+
+    # A NUL name is the client's fault; a class named Sub is the server's.
+    assert asyncio.run(scenario()) == [400, 500]
+
+
 # WebSockets: the root keeps the socket
 
 

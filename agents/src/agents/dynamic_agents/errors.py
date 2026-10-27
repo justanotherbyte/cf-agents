@@ -2,7 +2,11 @@
 
 from ..core.errors import AgentsException
 
-__all__ = ("SubAgentAbortedError",)
+__all__ = (
+    "InvalidSubAgentNameError",
+    "SubAgentAbortedError",
+    "UnknownSubAgentClassError",
+)
 
 
 class SubAgentAbortedError(AgentsException):
@@ -10,3 +14,11 @@ class SubAgentAbortedError(AgentsException):
 
     The default reason ``abort`` raises in pending callers.
     """
+
+
+class InvalidSubAgentNameError(ValueError):
+    """A sub-agent name can't be used (it contains NUL)."""
+
+
+class UnknownSubAgentClassError(ValueError):
+    """A sub-agent class isn't exported from the Worker under that name."""
