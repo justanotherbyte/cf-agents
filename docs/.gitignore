@@ -8,4 +8,4 @@ PRODUCT.md
 site/
 __pycache__/
 
-.claude/
+.claude/*.egg-info/
