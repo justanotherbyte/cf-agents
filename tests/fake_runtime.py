@@ -46,7 +46,9 @@ class FakeStorage:
     async def put(self, key: str, value: Any) -> None:
         self.kv[key] = value
 
-    async def delete(self, key: str) -> bool:
+    async def delete(self, key: str | list[str]) -> Any:
+        if isinstance(key, list):  # like storage.delete([...]): the count deleted
+            return sum(self.kv.pop(item, None) is not None for item in key)
         return self.kv.pop(key, None) is not None
 
     async def setAlarm(self, time: int) -> None:  # noqa: N802

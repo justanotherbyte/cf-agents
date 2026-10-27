@@ -1,9 +1,14 @@
-# MCP (planning; nothing implemented)
+# MCP (planning record)
 
-> The API and internals are now proposed in [mcp_api.md](./mcp_api.md) and
-> [mcp_engine.md](./mcp_engine.md). Where §4 below differs from them, those
-> docs win. §4.4 is closed by mcp_api.md §1, which opts in through
-> `AgentOptions(mcp=MCPOptions())`.
+> **Decided (2026-10-26): the client doesn't use the MCP SDK.** The bundle
+> measurement in §5.3.1 showed `mcp` adds 15 to 19 MiB, mostly native code
+> the client never runs, and limits MCP to 3.14 Workers. `agents.mcp` is
+> now our own client with no dependency beyond cf-agents, so it runs on
+> every Workers Python version. Only server hosting (`agents.mcp.server`)
+> uses the SDK, through the `cf-agents[mcp-server]` extra. The client is
+> built: see [mcp_api.md](./mcp_api.md) and [mcp_engine.md](./mcp_engine.md),
+> which win wherever this doc differs. This doc's SDK analysis (§2, §3) now
+> applies to the server extra only.
 
 Plan for porting upstream's MCP support (`../agents/packages/agents/src/mcp/`,
 `agents` v0.28.1, built on `@modelcontextprotocol/client` and
@@ -251,11 +256,44 @@ compat date for this:
    decide whether the deferred `FetchTransport` (§6.1 of that doc) becomes
    an `httpx2` transport that the client passes to `mcp.client.Client`.
 2. **Deploy size and cold start:** the Worker's bundle size with
-   `cf-agents[mcp]`, compared with the plan limits (Cloudflare's own Python
-   FastMCP demo needs the paid plan), and the first-request time with
-   `mcp` imported at top level so the memory snapshot can hold it.
+   `cf-agents[mcp]`, compared with the plan limits, and the first-request
+   time with `mcp` imported at top level so the memory snapshot can hold
+   it. Size is measured (§5.3.1). Production startup time isn't.
 3. **The ASGI bridge** for `create_mcp_handler`: one stateless
    `tools/call` round trip in each protocol era.
+
+#### 5.3.1 Bundle size (measured 2026-10-26)
+
+Wrangler 4.129.0, Pyodide 314.0.7, `mcp` 2.3.0, cf-agents 0.1.3. "Upload"
+is wrangler's `Total Upload`, which is the uncompressed size the limit
+applies to.
+
+| Worker | pywrangler upload | Wynd upload |
+| --- | --- | --- |
+| cf-agents only | 1.1 MiB | 0.8 MiB |
+| + `mcp`, client imports only | 19.7 MiB | 16.0 MiB |
+| + `mcp`, client and server | 19.7 MiB | 16.0 MiB |
+
+- **The limits fit.** Since the 2026-10-12 limits page, both plans allow
+  64 MiB uncompressed and have no compressed limit, so MCP isn't a
+  paid-plan feature. Global scope must still run within 1 s, which isn't
+  measured: locally, `wrangler dev` reached "Ready" about 3 s later with
+  `mcp` (2 s with Wynd), without a memory snapshot.
+- **Client-only costs the same as client and server.** `mcp/__init__.py`
+  imports `mcp.client.client`, which imports `mcp.server` and
+  `mcp.server.mcpserver`. `mcp.server.request_state` imports `cryptography`
+  at module level. Any `import mcp.*` loads the server, starlette and
+  cryptography.
+- **Native code is most of it.** The `.so` files are 11.6 MiB of Wynd's
+  16.0: cryptography's `_rust` 6.1 MiB, `_pydantic_core` 4.5 MiB, `rpds`
+  0.4 MiB, `_cffi_backend` 0.1 MiB. Wynd keeps a `.so` whole. Its 3.8 MiB
+  saving is half dropped files (cffi, pycparser, pyjwt and unused
+  submodules) and half stripped comments and docstrings.
+- **Wynd needs `keep = ["_cffi_backend"]`.** cryptography's `_rust.abi3.so`
+  imports it from native code, so the shaker can't see it, and the shaken
+  Worker fails at startup with `ModuleNotFoundError`. `wynd dev` serves the
+  unshaken tree and doesn't catch this. Run
+  `wrangler dev -c .wynd/build/wrangler.json` after `wynd deploy --dry-run`.
 
 ### 5.4 Already in place
 
@@ -284,5 +322,5 @@ connect), and the `mcp:` → `mcp` observability channel prefix.
 - Whether facets can host MCP clients. Upstream's OAuth callback is routed
   to the agent's own URL, which for a facet is a `/sub/` path.
 - Whether to accept SSE-only servers in the first client pass (§4.1).
-- The deploy size limit (§5.3 item 2) may make MCP a paid-plan feature in
-  practice. If so, it needs saying up front.
+- Whether a Worker that imports `mcp` at top level stays under the 1 s
+  startup limit on a real deploy (§5.3.1).
