@@ -237,8 +237,8 @@ class OAuthFlow:
         return resource
 
     async def _refresh(self, discovery: _Discovery, resource: str | None) -> bool:
+        info = await self._client(discovery)
         tokens = await self.provider.tokens()
-        info = await self.provider.client_information()
         if not tokens or "refresh_token" not in tokens or info is None:
             return False
         data = {
