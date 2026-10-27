@@ -228,6 +228,22 @@ def test_client_leaving_mid_stream_stops_the_request() -> None:
     assert running == 0
 
 
+def test_app_failing_mid_stream_ends_the_stream_with_its_error() -> None:
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"a", "more_body": True})
+        raise ValueError("boom")
+
+    async def scenario() -> str:
+        response = await asgi.serve(app, BodyRequest())
+        first = await anext(response.body)
+        with pytest.raises(ValueError, match="boom"):
+            await asyncio.wait_for(anext(response.body), 1)
+        return first
+
+    assert asyncio.run(scenario()) == "a"
+
+
 def test_modern_json_mode_answers_with_the_result_only() -> None:
     handler = create_mcp_handler(build_server(), json_response=True)
     request = modern_request("tools/call", call("count", n=3), progress_token="p1")

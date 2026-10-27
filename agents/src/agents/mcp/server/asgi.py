@@ -124,6 +124,9 @@ class _Exchange:
     async def stream(self, task: asyncio.Task[None]) -> AsyncIterator[str]:
         """Yield the body as it's sent; stop the app if the client goes away."""
         decoder = codecs.getincrementaldecoder("utf-8")()
+        # An app that fails mid-stream never sends the last chunk; end the
+        # stream anyway so `await task` below raises its error.
+        task.add_done_callback(lambda _: self._chunks.put_nowait(None))
         try:
             while (chunk := await self._chunks.get()) is not None:
                 yield decoder.decode(chunk)
