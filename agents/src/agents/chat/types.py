@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from ..agent.types import AgentOptions
+from ..core.types import Duration
 from .messages import UIMessage
 
 __all__ = (
@@ -66,11 +67,16 @@ class AIChatAgentOptions(AgentOptions):
         How many bytes of the newest stored messages ``self.messages`` holds
         after a wake (``None``: all of them). The full history stays stored
         and is what ``get-messages`` serves.
+    wait_for_mcp_connections
+        Before each ``on_chat_message``, wait for MCP servers that are still
+        connecting after a wake: ``True`` waits as long as it takes, a
+        duration bounds the wait. Needs ``mcp=MCPOptions()``.
     """
 
     message_concurrency: MessageConcurrency = "queue"
     max_persisted_messages: int | None = None
     hydration_byte_budget: int | None = 32 * 1024 * 1024
+    wait_for_mcp_connections: bool | Duration = False
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

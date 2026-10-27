@@ -80,6 +80,8 @@ __all__ = (
     "LifecycleServices",
     "LifecycleStatus",
     "LoggingObservability",
+    "MCPNotEnabledError",
+    "MCPOptions",
     "MemoryLimitContext",
     "MessageConcurrency",
     "MissingTaskDefinitionError",

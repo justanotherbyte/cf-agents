@@ -818,6 +818,7 @@ class AIChatAgent(Agent[S]):
         self._consuming[request_id] = current
         source: Any = None
         try:
+            await self._wait_for_mcp()
             source = self.on_chat_message(options)
             if inspect.isawaitable(source):
                 source = await source
@@ -852,6 +853,13 @@ class AIChatAgent(Agent[S]):
             self._consuming.pop(request_id, None)
             if inspect.isasyncgen(source):
                 await source.aclose()
+
+    async def _wait_for_mcp(self) -> None:
+        # Inside the cancellable stretch, so a stop request ends the wait too.
+        wait = type(self).options.wait_for_mcp_connections
+        if wait is False or self._mcp is None:
+            return
+        await self._mcp.wait_for_connections(timeout=None if wait is True else wait)
 
     def _end_aborted(self, turn: _Turn) -> _ReplyResult:
         if turn.mode == "text":

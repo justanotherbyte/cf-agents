@@ -20,12 +20,42 @@ __all__ = (
     "AgentOptions",
     "BeforeHook",
     "CurrentAgent",
+    "MCPOptions",
     "RoutingRetry",
     "RoutingRetryEvent",
     "RoutingRetryOptions",
 )
 
 A = TypeVar("A", bound="Agent", default="Agent")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MCPOptions:
+    """Turns on the MCP client (``AgentOptions(mcp=MCPOptions())``).
+
+    Parameters
+    ----------
+    client_name
+        Sent to servers as the client's name. ``None`` uses the agent's
+        class name.
+    client_version
+        Sent to servers as the client's version. ``None`` uses the
+        cf-agents version.
+    discovery_timeout
+        How long listing a server's tools, prompts and resources may take
+        after it connects.
+    oauth_success_redirect
+        Where the OAuth callback redirects after a successful authorization,
+        resolved against the request's origin.
+    oauth_error_redirect
+        Where it redirects after a failed one, with ``?error=<message>``.
+    """
+
+    client_name: str | None = None
+    client_version: str | None = None
+    discovery_timeout: Duration = 15
+    oauth_success_redirect: str | None = None
+    oauth_error_redirect: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -60,6 +90,9 @@ class AgentOptions:
     expose_error_details
         Send an unhandled error's traceback to the client (local development
         only: tracebacks can reveal code and data).
+    mcp
+        Installs the MCP client (``self.mcp``, ``add_mcp_server``). ``None``
+        leaves it out; an agent with stored servers needs it to restore them.
     """
 
     send_identity_on_connect: bool = True
@@ -71,6 +104,7 @@ class AgentOptions:
     fiber_recovery_max_age: Duration | None = timedelta(hours=24)
     max_alarm_memory_limit_strikes: int = 3
     expose_error_details: bool = False
+    mcp: MCPOptions | None = None
 
 
 @dataclass(slots=True, kw_only=True)

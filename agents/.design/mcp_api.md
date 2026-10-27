@@ -1,4 +1,4 @@
-# MCP: public API (proposed)
+# MCP: public API (decided)
 
 The Python API for MCP clients on agents and for hosting MCP servers on
 Workers. Upstream: `../agents/packages/agents/src/mcp/` and the MCP members
@@ -25,21 +25,21 @@ class MyAgent(Agent):
 - **`AgentOptions.mcp: MCPOptions | None = None`.** `None` (the default)
   means the MCP capability isn't installed and `mcp` is never imported.
   `AIChatAgentOptions` inherits the field.
-- **Why opt-in rather than upstream's "always installed":** `mcp` is an
-  optional dependency that costs at least 0.5 s to import, so an agent that
-  doesn't use it shouldn't pay for it. It has to be a class-level setting
+- **Why opt-in rather than upstream's "always installed":** an agent that
+  doesn't use MCP shouldn't import or start the client. It has to be a class-level setting
   rather than "install on first `add_mcp_server`": an agent that wakes with
   servers in `cf_agents_mcp_servers` must restore them during startup, and
   capabilities can't be added after startup ([agent_api.md](./agent_api.md)
   §2.3). This closes [mcp.md](./mcp.md) §4.4 in favour of option 2.
-- **`MCPOptions` lives in `agents.agent.types`** and imports nothing from
-  `mcp`. That's why `from agents import MCPOptions` is free.
+- **`MCPOptions` lives in `agents.agent.types`**, so `from agents import
+  MCPOptions` doesn't import the client. `agents.mcp` is imported only by an
+  agent whose options turn it on, and it never imports the `mcp` SDK.
 
 ```python
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MCPOptions:
     client_name: str | None = None         # sent in the MCP handshake; default: the agent class name
-    client_version: str = __version__      # default: the cf-agents version
+    client_version: str | None = None      # default: the cf-agents version
     discovery_timeout: Duration = 15       # per-server list_* round after connecting
     oauth_success_redirect: str | None = None
     oauth_error_redirect: str | None = None  # gets ?error=<message>
@@ -77,7 +77,7 @@ async def add_mcp_server(
     *,
     id: str | None = None,
     headers: Mapping[str, str] | None = None,
-    transport: Literal["auto", "streamable-http", "sse"] = "auto",
+    transport: Literal["auto", "streamable-http"] = "auto",
     callback_host: str | None = None,
     callback_path: str | None = None,
     agents_prefix: str = "agents",
@@ -160,8 +160,8 @@ class MyChatAgent(AIChatAgent):
 The SDK doesn't convert MCP tools into any model provider's format. This
 matches `on_chat_message` being provider-agnostic
 ([scope.md](./scope.md) §2.4.1), so upstream's `getAITools` isn't ported.
-`ServerTool.tool` is the SDK's own `mcp_types.Tool`, so `input_schema` is
-plain JSON Schema that any provider adapter can use.
+`ServerTool.tool` is `agents.mcp.Tool`, whose `input_schema` is plain JSON
+Schema that any provider adapter can use.
 
 `AIChatAgentOptions.wait_for_mcp_connections` (`bool | Duration`, default
 `False`) makes each chat turn wait for restoring servers before
@@ -243,9 +243,11 @@ class MCPClientManager(LifecycleCapability):
         oauth_success_redirect: str | None = None,
         oauth_error_redirect: str | None = None,
         discovery_timeout: Duration = 15,
+        keep_alive: Callable[[], Awaitable[Disposable]] | None = None,  # leases for background connects
+        http: HttpTransport | None = None,           # default: FetchTransport (tests pass their own)
     ) -> None: ...
 
-    on_server_state_changed: Emitter[None]          # core/events.py; .subscribe(listener)
+    on_server_state_changed                          # = Emitter[None].subscribe
 
     # servers
     async def add_server(self, name: str, url: str, *, id: str | None = None,
@@ -280,9 +282,11 @@ class MCPClientManager(LifecycleCapability):
 - **The filters** are upstream's `MCPServerFilter`, as keyword arguments; all
   given filters must match. The `**filters` above is shorthand for the same
   three keywords.
-- **The result types** (`CallToolResult`, …) are `mcp_types`' own pydantic
-  models. They aren't re-wrapped: they're the SDK's public API, and wrapping
-  them would only lag behind it.
+- **The result types** (`CallToolResult`, `GetPromptResult`,
+  `ReadResourceResult`, the content blocks) are dataclasses in
+  `agents.mcp.models`, with `mcp_types`' field names in snake_case. Unknown
+  keys are ignored and an unknown content block is `UnknownContent`, so a
+  newer server never fails to decode.
 - **`call_tool` on a server that isn't ready** raises `MCPServerNotReadyError`.
   A tool that reports `is_error=True` isn't an exception; it's returned as
   is, as upstream.
@@ -302,7 +306,7 @@ class MCPConnectionState(StrEnum):
     AUTHENTICATING = "authenticating"; CONNECTING = "connecting"; CONNECTED = "connected"
     DISCOVERING = "discovering"; READY = "ready"; FAILED = "failed"
 
-type TransportType = Literal["auto", "streamable-http", "sse"]
+type TransportType = Literal["auto", "streamable-http"]   # the legacy SSE transport is deferred
 
 @dataclass(slots=True, kw_only=True)
 class AddMcpServerResult:
@@ -318,7 +322,7 @@ class MCPServerRecord:        # one cf_agents_mcp_servers row, decoded
 @dataclass(slots=True, kw_only=True)
 class ServerTool:             # likewise ServerPrompt, ServerResource, ServerResourceTemplate
     server_id: str
-    tool: mcp_types.Tool
+    tool: Tool                # agents.mcp.models
 
 @dataclass(slots=True, kw_only=True)
 class MCPOAuthResult:
@@ -328,14 +332,26 @@ class MCPOAuthResult:
 ```
 
 `MCPServersState` and `MCPServerInfo` are the frame's shape (§2.5), as
-dataclasses with `wire()` field names
-([utilities.md](./utilities.md) §5).
+dataclasses ([utilities.md](./utilities.md) §5). Their field names are
+already the wire names, and the catalog lists hold the servers' own JSON
+objects with `serverId` added.
+
+The OAuth shapes (`OAuthTokens`, `OAuthClientMetadata`,
+`OAuthClientInformation`) are `TypedDict`s of the RFC 6749 and RFC 7591 JSON,
+because they're stored verbatim and must round-trip with rows a TypeScript
+agent wrote. `MCPOAuthProvider` is the abstract base an override of
+`create_mcp_oauth_provider` returns; `DurableObjectOAuthProvider` is the
+default.
 
 ### 3.2 Errors (`agents/mcp/errors.py`)
 
 All of them subclass `MCPError(AgentsException)`: `MCPConnectionError`,
 `MCPServerIdConflictError`, `MCPBlockedUrlError`, `MCPServerNotFoundError`,
-`MCPServerNotReadyError`, `MCPOAuthError`. `MCPNotEnabledError` is in
+`MCPServerNotReadyError`, `MCPOAuthError`, and from the protocol layer
+`MCPTransportError` (the request couldn't be sent), `MCPRpcError(code,
+message, data)` (a JSON-RPC error, -32001 for a timeout), `MCPProtocolError`
+(a server broke the protocol or asked for elicitation) and
+`MCPAuthorizationRequiredError(auth_url)`. `MCPNotEnabledError` is in
 `agents/agent/errors.py` instead, because `Agent` raises it without
 importing `agents.mcp`.
 
@@ -382,7 +398,8 @@ The Workers-specific handling lives in the handler instead:
   its subscription bus. (Which SDK hook does this is checked in step 5.)
 - **The SDK's transport security settings aren't used**; the handler's own
   Host / Origin checks replace them.
-- `lifespan` isn't run: there's no long-running process.
+- `lifespan` runs once per request: `StreamableHTTPSessionManager.run()`
+  enters it, and the handler builds a manager per request.
 
 
 ```python
@@ -472,8 +489,8 @@ transport (`mcp/rpc.ts`).
 | Import | What it costs |
 | --- | --- |
 | `from agents import Agent, AgentOptions, MCPOptions` | Nothing from `mcp` |
-| `from agents.mcp import MCPClientManager, MCPConnectionState, ServerTool, ...` | Imports `mcp` (the client side) |
-| `from agents.mcp.server import create_mcp_handler, get_mcp_auth_context` | Imports `mcp` (the server side) |
+| `from agents.mcp import MCPClientManager, MCPConnectionState, ServerTool, ...` | The client; nothing from `mcp` |
+| `from agents.mcp.server import create_mcp_handler, get_mcp_auth_context` | Imports `mcp` (needs `cf-agents[mcp-server]`) |
 
-Importing `agents.mcp` without the extra raises an `ImportError` that names
-`cf-agents[mcp]` and the Python 3.14 Workers requirement.
+Importing `agents.mcp.server` without the extra raises an `ImportError` that
+names `cf-agents[mcp-server]` and the Python 3.14 Workers requirement.

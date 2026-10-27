@@ -444,7 +444,7 @@ CREATE INDEX IF NOT EXISTS idx_fibers_status_completed
 
 | Table(s) | Owner | Why not |
 | --- | --- | --- |
-| `cf_agents_mcp_servers` | MCP client | MCP out of scope. `cf_agent_mcp_servers` is sent as an empty state. |
+| `cf_agents_mcp_servers` | MCP client | Now created, but only when `AgentOptions(mcp=...)` is set: upstream's exact table, KV key `cf_agents:mcp_schema_version` = 1, and the OAuth KV keys ([mcp_engine.md](./mcp_engine.md) §6.2, §7.1). Without MCP, `cf_agent_mcp_servers` is sent as an empty state. |
 | `cf_agents_workflows` | Workflows | Out of scope |
 | `cf_agent_tool_runs`, `cf_ai_chat_agent_tool_runs`, `cf_ai_chat_agent_tool_milestones` | Agents as tools | Out of scope |
 | `cf_agents_session_compactions`, `cf_agents_session_config`, `cf_agents_session_attachment_meta` / `_chunks` / `_refs`, `cf_agents_session_fts` | Sessions | Deferred ([sessions_api.md](./sessions_api.md) §7) |

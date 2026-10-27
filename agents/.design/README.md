@@ -31,10 +31,10 @@ design evolves. This index lists where to look.
 | [utilities.md](./utilities.md) | SDK-wide principles (exceptions, durations, timestamps), method lookup, the FFI module, the dataclass convention, typed SQL, `retry()` |
 | [core_disposable_store.md](./core_disposable_store.md) | Upstream `core/`: `DisposableStore` → `AsyncExitStack`, `Emitter` |
 | [`[NICE_TO_HAVE_DO_NOT_INCLUDE_YET]_asgi_and_django_integrations.md`](./%5BNICE_TO_HAVE_DO_NOT_INCLUDE_YET%5D_asgi_and_django_integrations.md) | **Not in scope yet.** Ideas for agents alongside FastAPI / Starlette / Django (ASGI and WSGI) |
-| [mcp.md](./mcp.md) | **Planning, not in scope yet.** MCP client and server: the Python SDK's dependencies and Workers support, version policy, core work first |
-| [mcp_api.md](./mcp_api.md) | **Proposed.** MCP's public API: `MCPOptions`, `add_mcp_server` and the other `Agent` members, `MCPClientManager`, `create_mcp_handler` |
+| [mcp.md](./mcp.md) | **Planning record.** Why the client doesn't use the MCP SDK (bundle size, 3.14-only), the SDK's dependencies and Workers support, the measured bundle sizes |
+| [mcp_api.md](./mcp_api.md) | **Decided.** MCP's public API: `MCPOptions`, `add_mcp_server` and the other `Agent` members, `MCPClientManager`, `create_mcp_handler` |
 | [mcp_upstream_usage.md](./mcp_upstream_usage.md) | **Reference.** Cloudflare's recommended MCP usage in the TypeScript Agents SDK (client, OAuth, elicitation, `createMcpHandler`), and where our plan differs |
-| [mcp_engine.md](./mcp_engine.md) | **Proposed.** MCP internals: module layout, the connection task, restore, storage, the OAuth split across requests, the stateless server handler, tests, build order |
+| [mcp_engine.md](./mcp_engine.md) | **Decided; built.** MCP internals: our own Streamable HTTP client in both protocol eras, the connection state machine, restore, storage, the OAuth flow split across requests, the SDK-backed server handler, tests |
 | [platform_verification.md](./platform_verification.md) | Results of running the "to verify" items on the Python Workers runtime |
 | [observability.md](./observability.md) | Structured events: upstream pipeline, in-scope events, Python design |
 
@@ -51,6 +51,10 @@ No design decision is open. What remains:
 - typed stubs for `get_agent_by_name` ([agent_api.md](./agent_api.md) §1.14);
 - an httpx transport that aborts on cancellation, and testing aiohttp
   ([platform_verification.md](./platform_verification.md) §6);
+- MCP's deferred pieces: the legacy SSE transport, handshake-session
+  resumption, elicitation, scope step-up ([mcp_engine.md](./mcp_engine.md) §12);
+- running MCP on `workerd` in the verification Worker
+  ([mcp_engine.md](./mcp_engine.md) §13);
 - ASGI / Django integrations (the `[NICE_TO_HAVE_DO_NOT_INCLUDE_YET]` doc).
 
 **Accepted limitations:**
