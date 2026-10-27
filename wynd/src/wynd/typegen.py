@@ -3,6 +3,7 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from .console import info
 from .errors import WyndError
 from .project import Project
 from .sync import select_sdk
@@ -65,7 +66,7 @@ def write_env(project: Project, check: bool = False) -> None:
         )
 
     path.write_text(text)
-    print(f"wynd: wrote {name}", flush=True)
+    info(f"wrote {name}")
 
 
 def render_env(
@@ -79,7 +80,7 @@ def render_env(
     `main` is the entry module's dotted name, which defines the project's
     Durable Object classes.
     """
-    attributes, durable_classes = _attributes(bindings, variables, secrets)
+    attributes, durable_classes = env_attributes(bindings, variables, secrets)
     used = {
         word
         for annotation in attributes.values()
@@ -88,7 +89,7 @@ def render_env(
     durable_classes &= used
 
     lines = [HEADER, "from __future__ import annotations", ""]
-    lines += _import_lines(used, durable_classes, main)
+    lines += import_lines(used, durable_classes, main)
     lines += ["", "class Env(Protocol):"]
     lines += [f"    {name}: {annotation}" for name, annotation in attributes.items()]
     if not attributes:
@@ -97,7 +98,7 @@ def render_env(
     return "\n".join(lines) + "\n"
 
 
-def _attributes(
+def env_attributes(
     bindings: Iterable[BindingRef],
     variables: Mapping[str, JSON],
     secrets: Iterable[str],
@@ -121,7 +122,7 @@ def _attributes(
         attributes[binding.name] = annotation
 
     for name, value in variables.items():
-        attributes[name] = _json_type(value)
+        attributes[name] = json_type(value)
 
     # A secret replaces a var of the same name, in dev and in production.
     for name in secrets:
@@ -135,7 +136,7 @@ def _attributes(
     return valid, durable_classes
 
 
-def _import_lines(used: set[str], durable_classes: set[str], main: str) -> list[str]:
+def import_lines(used: set[str], durable_classes: set[str], main: str) -> list[str]:
     """The import block for the names the annotations use, as ruff writes it."""
     typing_names = {"Protocol", *used & {"Any"}}
     if durable_classes:
@@ -159,22 +160,22 @@ def _import_lines(used: set[str], durable_classes: set[str], main: str) -> list[
     return lines
 
 
-def _json_type(value: Any) -> str:
+def json_type(value: Any) -> str:
     """The annotation for a var's value as Python receives it."""
     if value is None:
         return "None"
     if isinstance(value, list):
-        return f"list[{_common_type(value)}]"
+        return f"list[{common_type(value)}]"
     if isinstance(value, dict):
-        return f"dict[str, {_common_type(value.values())}]"
+        return f"dict[str, {common_type(value.values())}]"
 
     return {bool: "bool", int: "int", float: "float", str: "str"}.get(
         type(value), "Any"
     )
 
 
-def _common_type(values: Iterable[Any]) -> str:
-    types = {_json_type(value) for value in values}
+def common_type(values: Iterable[Any]) -> str:
+    types = {json_type(value) for value in values}
     return types.pop() if len(types) == 1 else "Any"
 
 

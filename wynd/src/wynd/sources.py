@@ -19,13 +19,13 @@ __all__ = (
     "read",
 )
 
-_config_flag = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-_config_flag.add_argument("-c", "--config")
+config_flag = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+config_flag.add_argument("-c", "--config")
 
-_env_flag = argparse.ArgumentParser(
-    add_help=False, allow_abbrev=False, parents=[_config_flag]
+env_flag = argparse.ArgumentParser(
+    add_help=False, allow_abbrev=False, parents=[config_flag]
 )
-_env_flag.add_argument("-e", "--env")
+env_flag.add_argument("-e", "--env")
 
 
 class ConfigParser(ABC):
@@ -46,13 +46,13 @@ class ConfigParser(ABC):
         return f"<{type(self).__name__} path={str(self.path)!r}>"
 
     @abstractmethod
-    def _payload(self, mode: str | None) -> dict[str, Any]:
+    def payload(self, mode: str | None) -> dict[str, Any]:
         """The Wrangler dict, with paths relative to path.parent."""
 
     def parse(self, mode: str | None) -> WranglerConfig:
         """The config for `mode`. Raises WyndError as reading the file does."""
         env = mode if self.passes_env else None
-        return WranglerConfig(self.path, env, self._payload(mode))
+        return WranglerConfig(self.path, env, self.payload(mode))
 
     def staged_name(self, mode: str | None) -> str:
         """wrangler.jsonc.json, or cloudflare.config.py.staging.json for a mode.
@@ -74,10 +74,10 @@ class ConfigParser(ABC):
         None means Wynd's own.
         """
         if self.passes_env:
-            _, rest = _config_flag.parse_known_args(args)
+            _, rest = config_flag.parse_known_args(args)
             return [*rest, "--config", str(staged)], None
 
-        _, rest = _env_flag.parse_known_args(args)
+        _, rest = env_flag.parse_known_args(args)
         environ = {k: v for k, v in os.environ.items() if k != "CLOUDFLARE_ENV"}
         return [*rest, "--config", str(staged)], environ
 
@@ -94,7 +94,7 @@ class ConfigParser(ABC):
             path = cwd / config
             if not path.is_file():
                 raise ProjectNotFoundError(f"no config at {path}")
-            return _parser_for(path)
+            return parser_for(path)
 
         found = (
             directory / name
@@ -122,7 +122,7 @@ class WranglerConfigParser(ConfigParser):
     names = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")
     passes_env = True
 
-    def _payload(self, mode: str | None) -> dict[str, Any]:
+    def payload(self, mode: str | None) -> dict[str, Any]:
         # The file as written, env blocks included. Wrangler applies -e itself.
         return read(self.path)
 
@@ -131,12 +131,12 @@ class PythonConfigParser(ConfigParser):
     names = ("cloudflare.config.py",)
     passes_env = False
 
-    def _payload(self, mode: str | None) -> dict[str, Any]:
+    def payload(self, mode: str | None) -> dict[str, Any]:
         # The mode applies while the config runs, so there are no env blocks.
         return run(self.path, mode)
 
 
-def _parser_for(path: Path) -> ConfigParser:
+def parser_for(path: Path) -> ConfigParser:
     if path.suffix == ".py":
         return PythonConfigParser(path)
     return WranglerConfigParser(path)

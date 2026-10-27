@@ -2,6 +2,7 @@ import re
 from importlib.metadata import version
 from pathlib import Path
 
+from .console import info
 from .errors import WyndError
 from .project import load_project
 from .sources import PythonConfigParser, WranglerConfigParser
@@ -17,7 +18,7 @@ PYPROJECT = """\
 name = "{name}"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["crosswind-workers"]
+dependencies = [{dependencies}]
 
 [dependency-groups]
 dev = ["wynd>={wynd}"]
@@ -45,21 +46,40 @@ class Default(WorkerEntrypoint[Env]):
         return Response("Hello from Python!")
 """
 
+# workers-runtime-sdk has no workers.bindings, so there is no generated Env.
+STOCK_MAIN = """\
+from workers import Response, WorkerEntrypoint
+
+
+class Default(WorkerEntrypoint):
+    async def fetch(self, request):
+        return Response("Hello from Python!")
+"""
+
+# The add-on SDKs `wynd init` offers, by their distribution names.
+ADDONS = {"containers": "containers-py", "agents": "cf-agents"}
+
 IGNORED = (".venv/", ".wynd/")
 
 
-def scaffold(directory: Path) -> None:
-    """Write a new crosswind-workers project into `directory`."""
+def scaffold(
+    directory: Path, sdk: str = "crosswind-workers", addons: tuple[str, ...] = ()
+) -> None:
+    """Write a new project on `sdk`, plus the `addons` from ADDONS, into
+    `directory`."""
     name = re.sub(r"[^a-z0-9]+", "-", directory.resolve().name.lower()).strip("-")
     name = name or "worker"
     # The newest target's date, because the pinned Wrangler rejects later ones.
     target = TARGETS[0]
+    dependencies = ", ".join(f'"{dist}"' for dist in [sdk, *map(ADDONS.get, addons)])
     files = {
-        "pyproject.toml": PYPROJECT.format(name=name, wynd=version("wynd")),
+        "pyproject.toml": PYPROJECT.format(
+            name=name, dependencies=dependencies, wynd=version("wynd")
+        ),
         # uv sync builds the editor's .venv on the target's Python.
         ".python-version": f"{target.version}\n",
         PythonConfigParser.names[0]: CONFIG.format(name=name, date=target.since),
-        "src/main.py": MAIN,
+        "src/main.py": MAIN if sdk == "crosswind-workers" else STOCK_MAIN,
     }
 
     paths = [*files, *WranglerConfigParser.names, "src/env.py"]
@@ -73,12 +93,13 @@ def scaffold(directory: Path) -> None:
     for path, text in files.items():
         (directory / path).parent.mkdir(parents=True, exist_ok=True)
         (directory / path).write_text(text)
-    _ignore(directory / ".gitignore")
-    write_env(load_project(directory, None, None))
-    print(f"wynd: created {name}. Run `wynd dev` in {directory} to serve it.")
+    ignore(directory / ".gitignore")
+    if sdk == "crosswind-workers":
+        write_env(load_project(directory, None, None))
+    info(f"created {name}. Run `wynd dev` in {directory} to serve it.")
 
 
-def _ignore(path: Path) -> None:
+def ignore(path: Path) -> None:
     """Add the ignore lines a .gitignore lacks, keeping what it has."""
     text = path.read_text() if path.is_file() else ""
     missing = [line for line in IGNORED if line not in text.splitlines()]

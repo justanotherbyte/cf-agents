@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
-from ._utils import to_table
+from .utils import to_table
 
 if TYPE_CHECKING:
     from .bindings import JSON, Binding
@@ -58,7 +58,7 @@ class Container:
                 "which need dockerfile="
             )
 
-    def _entry(self, class_name: str) -> dict[str, Any]:
+    def entry(self, class_name: str) -> dict[str, Any]:
         """The containers[] entry for the export named `class_name`."""
         keys = {
             "dockerfile": "image",
@@ -164,7 +164,7 @@ class Worker:
     rules: Sequence[Rule] = ()
 
     def __post_init__(self) -> None:
-        if not _is_date(self.compatibility_date):
+        if not is_date(self.compatibility_date):
             raise ValueError(
                 f"compatibility_date {self.compatibility_date!r} isn't a "
                 "YYYY-MM-DD date"
@@ -181,7 +181,7 @@ class Config:
     compliance_region: Literal["public", "fedramp-high"] | None = None
 
 
-def _is_date(text: str) -> bool:
+def is_date(text: str) -> bool:
     # fromisoformat alone also takes 20260908 and week dates.
     if not DATE.fullmatch(text):
         return False

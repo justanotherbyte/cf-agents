@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import KW_ONLY, dataclass
 from typing import Any
 
-from ._utils import to_table
+from .utils import to_table
 
 __all__ = ("Cron", "Fetch", "Queue", "Trigger")
 
@@ -11,7 +11,7 @@ class Trigger(ABC):
     """One value of Worker.triggers, compiled into its Wrangler section."""
 
     @abstractmethod
-    def _emit(self, out: dict[str, Any]) -> None:
+    def emit(self, out: dict[str, Any]) -> None:
         """Add this trigger to the Wrangler dict `out`."""
 
 
@@ -19,7 +19,7 @@ class Trigger(ABC):
 class Cron(Trigger):
     schedule: str
 
-    def _emit(self, out: dict[str, Any]) -> None:
+    def emit(self, out: dict[str, Any]) -> None:
         out.setdefault("triggers", {}).setdefault("crons", []).append(self.schedule)
 
 
@@ -31,7 +31,7 @@ class Fetch(Trigger):
     _: KW_ONLY
     zone: str | None = None
 
-    def _emit(self, out: dict[str, Any]) -> None:
+    def emit(self, out: dict[str, Any]) -> None:
         route = to_table(self, {"zone": "zone_name"})
         out.setdefault("routes", []).append(route)
 
@@ -49,6 +49,6 @@ class Queue(Trigger):
     retry_delay: int | None = None
     dead_letter_queue: str | None = None
 
-    def _emit(self, out: dict[str, Any]) -> None:
+    def emit(self, out: dict[str, Any]) -> None:
         consumer = to_table(self, {"name": "queue"})
         out.setdefault("queues", {}).setdefault("consumers", []).append(consumer)

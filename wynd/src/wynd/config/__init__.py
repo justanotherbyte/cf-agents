@@ -1,7 +1,7 @@
 """The types cloudflare.config.py builds its Config from."""
 
 from . import bindings, exports, triggers
-from ._model import (
+from .model import (
     Assets,
     Config,
     Container,

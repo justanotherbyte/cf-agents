@@ -1,9 +1,10 @@
 import shutil
 import signal
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
+
+from .console import error
 
 __all__ = ("VERSION", "run")
 
@@ -26,10 +27,7 @@ def run(
     # which() also finds npx.cmd on Windows, which Popen can't find by name.
     npx = shutil.which("npx")
     if npx is None:
-        print(
-            "wynd: npx not found on PATH. Install Node.js, which provides npx.",
-            file=sys.stderr,
-        )
+        error("npx not found on PATH. Install Node.js, which provides npx.")
         return 1
 
     process = subprocess.Popen(
@@ -39,7 +37,7 @@ def run(
     # shuts down in its own time instead of being killed by subprocess.
     previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        code = _wait(process, watch, restage)
+        code = wait(process, watch, restage)
     finally:
         signal.signal(signal.SIGINT, previous)
 
@@ -47,7 +45,7 @@ def run(
     return 128 - code if code < 0 else code
 
 
-def _wait(
+def wait(
     process: subprocess.Popen[bytes],
     watch: Path | None,
     restage: Callable[[], object] | None,
@@ -55,18 +53,18 @@ def _wait(
     if watch is None or restage is None:
         return process.wait()
 
-    seen = _mtime(watch)
+    seen = mtime_of(watch)
     while True:
         try:
             return process.wait(timeout=1)
         except subprocess.TimeoutExpired:
             pass
-        if (mtime := _mtime(watch)) != seen:
+        if (mtime := mtime_of(watch)) != seen:
             seen = mtime
             restage()
 
 
-def _mtime(path: Path) -> int | None:
+def mtime_of(path: Path) -> int | None:
     try:
         return path.stat().st_mtime_ns
     except FileNotFoundError:
