@@ -47,7 +47,21 @@ wynd: created hello. Run `wynd dev` in /home/you/hello to serve it.
 
 `wynd init [directory]` writes into `directory`, or into the current
 directory without one. The Worker's name is the directory name in lowercase,
-with each run of other characters replaced by `-`. It writes:
+with each run of other characters replaced by `-`.
+
+In a terminal, `wynd init` asks which Workers SDK to build on and which add-on
+SDKs to add. Flags answer the same questions, and it asks only about the ones you
+leave out. Without a terminal it uses the defaults: crosswind-workers and no
+add-ons.
+
+| Flag                                  | Adds to `dependencies`                       |
+| ------------------------------------- | -------------------------------------------- |
+| `--sdk crosswind-workers` (default)   | `crosswind-workers`                          |
+| `--sdk workers-runtime-sdk`           | `workers-runtime-sdk`, with no `src/env.py` |
+| `--containers` / `--no-containers`    | `containers-py`                              |
+| `--agents` / `--no-agents`            | `cf-agents`                                  |
+
+It writes:
 
 | File                   | Contents                                                                 |
 | ---------------------- | ------------------------------------------------------------------------ |

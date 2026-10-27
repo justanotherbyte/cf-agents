@@ -58,3 +58,31 @@ def test_init_adds_only_missing_lines_to_a_gitignore(
 
     gitignore = (tmp_path / ".gitignore").read_text()
     assert gitignore == "*.pyc\n.venv/\n.wynd/\n"
+
+
+def test_init_flags_pick_the_sdk_and_addons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["init", "--sdk", "workers-runtime-sdk", "--agents"]) == 0
+
+    project = load_project(tmp_path, None, None)
+    assert project.dependencies == ("workers-runtime-sdk", "cf-agents")
+    assert "from env" not in (tmp_path / "src" / "main.py").read_text()
+    assert not (tmp_path / "src" / "env.py").exists()
+
+
+def test_init_asks_for_choices_its_flags_leave_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    answers = iter(["", "3", "1"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    # --no-agents leaves only containers to ask about; "3" is out of range.
+    assert main(["init", "--no-agents"]) == 0
+
+    project = load_project(tmp_path, None, None)
+    assert project.dependencies == ("crosswind-workers", "containers-py")
