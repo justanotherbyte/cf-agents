@@ -1,3 +1,4 @@
+import io
 import json
 import tomllib
 from importlib.metadata import version
@@ -76,12 +77,15 @@ def test_init_flags_pick_the_sdk_and_addons(
 def test_init_asks_for_choices_its_flags_leave_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    answers = iter(["", "3", "1"])
-    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    class Terminal(io.StringIO):
+        def isatty(self) -> bool:
+            return True
 
-    # --no-agents leaves only containers to ask about; "3" is out of range.
+    monkeypatch.chdir(tmp_path)
+    # Enter for the SDK, then an out-of-range number before a valid one.
+    monkeypatch.setattr("sys.stdin", Terminal("\n3\n1\n"))
+
+    # --no-agents leaves only containers to ask about.
     assert main(["init", "--no-agents"]) == 0
 
     project = load_project(tmp_path, None, None)

@@ -1,11 +1,11 @@
 import json
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import jsonc
 
+from .console import warn
 from .errors import WyndError
 from .project import Project
 from .shake import ShakePlan, shake
@@ -43,11 +43,10 @@ class StagedFile:
             if isinstance(after, dict)
             else []
         )
-        print(
-            f"wynd: Wrangler changed {', '.join(keys) or 'the config'} in "
+        warn(
+            f"Wrangler changed {', '.join(keys) or 'the config'} in "
             f"{self.path}, which Wynd replaces on its next run. Copy the change "
-            f"into {source.name}.",
-            file=sys.stderr,
+            f"into {source.name}."
         )
 
 
@@ -134,10 +133,9 @@ def _warn_on_old_state(config_dir: Path, run_dir: Path) -> None:
     if not old.is_dir() or new.exists():
         return
 
-    print(
-        f"wynd: local D1, KV and R2 data now lives in {new}. Move the contents "
-        f"of {old} there to keep it.",
-        file=sys.stderr,
+    warn(
+        f"local D1, KV and R2 data now lives in {new}. Move the contents "
+        f"of {old} there to keep it."
     )
     # An empty state directory, so the warning shows once.
     new.mkdir(parents=True)

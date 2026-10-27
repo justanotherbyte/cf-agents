@@ -1,9 +1,10 @@
 import shutil
 import signal
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
+
+from .console import error
 
 __all__ = ("VERSION", "run")
 
@@ -26,10 +27,7 @@ def run(
     # which() also finds npx.cmd on Windows, which Popen can't find by name.
     npx = shutil.which("npx")
     if npx is None:
-        print(
-            "wynd: npx not found on PATH. Install Node.js, which provides npx.",
-            file=sys.stderr,
-        )
+        error("npx not found on PATH. Install Node.js, which provides npx.")
         return 1
 
     process = subprocess.Popen(

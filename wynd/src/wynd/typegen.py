@@ -3,6 +3,7 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from .console import info
 from .errors import WyndError
 from .project import Project
 from .sync import select_sdk
@@ -65,7 +66,7 @@ def write_env(project: Project, check: bool = False) -> None:
         )
 
     path.write_text(text)
-    print(f"wynd: wrote {name}", flush=True)
+    info(f"wrote {name}")
 
 
 def render_env(

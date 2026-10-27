@@ -397,7 +397,7 @@ def test_warns_when_the_venv_python_differs_from_the_target(
     main(["dev"])
 
     assert capsys.readouterr().err == (
-        "warning: .venv is Python 3.13 but wrangler.jsonc targets 3.12"
+        "wynd: warning: .venv is Python 3.13 but wrangler.jsonc targets 3.12"
         " (python_workers, 2025-06-01).\n"
         "Editor types may differ from production."
         " To match: uv venv --python 3.12 && uv sync\n"

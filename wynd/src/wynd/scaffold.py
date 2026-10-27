@@ -2,6 +2,7 @@ import re
 from importlib.metadata import version
 from pathlib import Path
 
+from .console import info
 from .errors import WyndError
 from .project import load_project
 from .sources import PythonConfigParser, WranglerConfigParser
@@ -95,7 +96,7 @@ def scaffold(
     _ignore(directory / ".gitignore")
     if sdk == "crosswind-workers":
         write_env(load_project(directory, None, None))
-    print(f"wynd: created {name}. Run `wynd dev` in {directory} to serve it.")
+    info(f"created {name}. Run `wynd dev` in {directory} to serve it.")
 
 
 def _ignore(path: Path) -> None:

@@ -1,6 +1,6 @@
 import re
-import sys
 
+from .console import warn
 from .project import Project
 from .targets import Target
 
@@ -20,10 +20,9 @@ def warn_on_venv_mismatch(project: Project, target: Target) -> None:
 
     config = project.config
     flags = ", ".join(f for f in config.compatibility_flags if "python_workers" in f)
-    print(
-        f"warning: .venv is Python {match.group(1)} but {config.source.name}"
+    warn(
+        f".venv is Python {match.group(1)} but {config.source.name}"
         f" targets {target.version} ({flags}, {config.compatibility_date}).\n"
         "Editor types may differ from production."
-        f" To match: uv venv --python {target.version} && uv sync",
-        file=sys.stderr,
+        f" To match: uv venv --python {target.version} && uv sync"
     )
