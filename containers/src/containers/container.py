@@ -1459,9 +1459,13 @@ class Container(DurableObject):
         self.ctx.storage.kv.put(
             OUTBOUND_CONFIGURATION_KEY,
             {
-                **configuration,
-                "allowed_hosts": self._allowed_hosts_override,
-                "denied_hosts": self._denied_hosts_override,
+                "outboundByHostOverrides": configuration["outbound_by_host_overrides"],
+                "outboundHandlerOverride": configuration["outbound_handler_override"],
+                "allowedHosts": self._allowed_hosts_override,
+                "deniedHosts": self._denied_hosts_override,
+                "hasInterceptAllRegistration": configuration[
+                    "has_intercept_all_registration"
+                ],
             },
         )
 
@@ -1472,7 +1476,7 @@ class Container(DurableObject):
             return None
 
         self._outbound_handler_override = None
-        outbound_handler_override = configuration.get("outbound_handler_override")
+        outbound_handler_override = configuration.get("outboundHandlerOverride")
         if outbound_handler_override is not None:
             try:
                 self._validate_outbound_handler_method_name(
@@ -1486,7 +1490,7 @@ class Container(DurableObject):
 
         self._outbound_by_host_overrides = {}
         for hostname, override in (
-            configuration.get("outbound_by_host_overrides") or {}
+            configuration.get("outboundByHostOverrides") or {}
         ).items():
             try:
                 self._validate_outbound_handler_method_name(override["method"])
@@ -1499,14 +1503,14 @@ class Container(DurableObject):
                 )
 
         self._has_intercept_all_registration = (
-            configuration.get("has_intercept_all_registration") is True
+            configuration.get("hasInterceptAllRegistration") is True
         )
 
-        if configuration.get("allowed_hosts"):
-            self._allowed_hosts_override = configuration["allowed_hosts"]
+        if configuration.get("allowedHosts"):
+            self._allowed_hosts_override = configuration["allowedHosts"]
 
-        if configuration.get("denied_hosts"):
-            self._denied_hosts_override = configuration["denied_hosts"]
+        if configuration.get("deniedHosts"):
+            self._denied_hosts_override = configuration["deniedHosts"]
 
         return self._get_outbound_configuration()
 

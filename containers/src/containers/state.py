@@ -70,7 +70,12 @@ class ContainerState:
                 }
                 await self._update()
             else:
-                self.status = state
+                self.status = {
+                    "status": state["status"],
+                    "last_change": state["lastChange"],
+                }
+                if state.get("exitCode") is not None:
+                    self.status["exit_code"] = state["exitCode"]
 
         assert self.status is not None
         return self.status
@@ -82,4 +87,10 @@ class ContainerState:
     async def _update(self) -> None:
         if self.status is None:
             raise RuntimeError("status should be init")
-        await self._storage.put(CONTAINER_STATE_KEY, self.status)
+        record = {
+            "status": self.status["status"],
+            "lastChange": self.status["last_change"],
+        }
+        if "exit_code" in self.status:
+            record["exitCode"] = self.status["exit_code"]
+        await self._storage.put(CONTAINER_STATE_KEY, record)

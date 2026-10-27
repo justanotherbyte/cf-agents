@@ -242,7 +242,7 @@ class TestContainer:
     ):
         mock_ctx.storage.get.return_value = {
             "status": "running",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
         mock_ctx.container.running = False
 
@@ -259,7 +259,7 @@ class TestContainer:
     ):
         mock_ctx.storage.get.return_value = {
             "status": "running",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
         mock_ctx.container.running = False
 
@@ -284,7 +284,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch(mock_request)
@@ -301,7 +301,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch("/api/data")
@@ -316,7 +316,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch(
@@ -341,7 +341,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch(
@@ -359,7 +359,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch(
@@ -378,7 +378,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch(
@@ -418,7 +418,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         container_without_port = Container(mock_ctx, {})
@@ -452,7 +452,7 @@ class TestContainer:
             mock_ctx.container.running = True
             mock_ctx.storage.get.return_value = {
                 "status": "healthy",
-                "last_change": int(time.time() * 1000),
+                "lastChange": int(time.time() * 1000),
             }
 
             await container.fetch(mock_request)
@@ -470,7 +470,7 @@ class TestContainer:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         response = await container.container_fetch(mock_request)
@@ -505,7 +505,7 @@ class TestContainer:
             mock_ctx.container.running = True
             mock_ctx.storage.get.return_value = {
                 "status": "healthy",
-                "last_change": int(time.time() * 1000),
+                "lastChange": int(time.time() * 1000),
             }
 
             await container.fetch(mock_request)
@@ -606,7 +606,7 @@ class TestRpcKwargs:
         mock_ctx.container.running = True
         mock_ctx.storage.get.return_value = {
             "status": "healthy",
-            "last_change": int(time.time() * 1000),
+            "lastChange": int(time.time() * 1000),
         }
 
         await container.container_fetch(
@@ -614,3 +614,56 @@ class TestRpcKwargs:
         )
 
         mock_ctx.container.getTcpPort.assert_called_with(9090)
+
+
+class TestStorageFormat:
+    async def test_stores_state_with_upstream_keys(self, mock_ctx, container):
+        await container._state.set_stopped_with_code(1)
+
+        mock_ctx.storage.put.assert_called_with(
+            STATE_KEY, {"status": "stopped_with_code", "lastChange": ANY, "exitCode": 1}
+        )
+
+    async def test_reads_state_with_upstream_keys(self, mock_ctx, container):
+        mock_ctx.storage.get.return_value = {
+            "status": "stopped_with_code",
+            "lastChange": 123,
+            "exitCode": 2,
+        }
+
+        assert await container.get_state() == {
+            "status": "stopped_with_code",
+            "last_change": 123,
+            "exit_code": 2,
+        }
+
+    async def test_stores_outbound_configuration_with_upstream_keys(
+        self, mock_ctx, container
+    ):
+        await container.set_allowed_hosts(["example.com"])
+
+        mock_ctx.storage.kv.put.assert_called_with(
+            "OUTBOUND_CONFIGURATION",
+            {
+                "outboundByHostOverrides": None,
+                "outboundHandlerOverride": None,
+                "allowedHosts": ["example.com"],
+                "deniedHosts": None,
+                "hasInterceptAllRegistration": True,
+            },
+        )
+
+    async def test_restores_outbound_configuration_with_upstream_keys(
+        self, mock_ctx, container
+    ):
+        mock_ctx.storage.kv.get.return_value = {
+            "allowedHosts": ["a.com"],
+            "deniedHosts": ["b.com"],
+            "hasInterceptAllRegistration": True,
+        }
+
+        container._restore_outbound_configuration()
+
+        assert container._allowed_hosts_override == ["a.com"]
+        assert container._denied_hosts_override == ["b.com"]
+        assert container._has_intercept_all_registration is True
