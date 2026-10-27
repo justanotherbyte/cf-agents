@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.8",
 ]
 
 [project.scripts]
