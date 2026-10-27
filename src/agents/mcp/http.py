@@ -12,7 +12,7 @@ from typing import Protocol
 from urllib.parse import urljoin, urlsplit
 
 from .. import _ffi
-from .errors import MCPTransportError
+from .errors import MCPProtocolError, MCPTransportError
 
 __all__ = (
     "FetchTransport",
@@ -24,6 +24,7 @@ __all__ = (
 )
 
 _MAX_REDIRECTS = 3
+_MAX_BODY_SIZE = 1024 * 1024  # bytes; as one SSE event
 
 
 @dataclass(slots=True, kw_only=True)
@@ -112,8 +113,20 @@ class FetchTransport:
 
 
 async def read_body(response: HttpResponse) -> str:
-    """Return the whole body as text (UTF-8, errors replaced)."""
-    parts = [chunk async for chunk in response.chunks()]
+    """Return the whole body as text (UTF-8, errors replaced).
+
+    Raises
+    ------
+    MCPProtocolError
+        If the body is larger than 1 MiB.
+    """
+    parts: list[bytes] = []
+    size = 0
+    async for chunk in response.chunks():
+        size += len(chunk)
+        if size > _MAX_BODY_SIZE:
+            raise MCPProtocolError("Response body is larger than 1 MiB")
+        parts.append(chunk)
     return b"".join(parts).decode("utf-8", errors="replace")
 
 

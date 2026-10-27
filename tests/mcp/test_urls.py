@@ -42,6 +42,7 @@ def test_normalize_server_id(value: str, expected: str) -> None:
         "ftp://example.com/",
         "not a url",
         "http://[zz::1]/",
+        "http://169.254.169.254\\@example.com/",  # fetch() reads the "\\" as "/"
     ],
 )
 def test_blocked(url: str) -> None:
