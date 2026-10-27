@@ -23,3 +23,25 @@ def test_numpy_and_pydantic_import_at_top_level(
     name, value = body.split(" ")
     assert name == "ok"
     assert 0 <= float(value) < 1
+
+
+@TARGETS
+def test_boto3_import_at_top_level(tmp_path: Path, date: str, version: str) -> None:
+    # Before 3.14 the flag hands patching to crosswind's .pth hook, as in
+    # test_fastapi_app_answers.
+    flags = ["python_process_pth_files"] if version != "3.14" else []
+    make_project(
+        tmp_path,
+        Path(__file__).parent / "entropy",
+        {
+            "main": "src/boto3_entry.py",
+            "compatibility_date": date,
+            "compatibility_flags": ["python_workers", *flags],
+        },
+        ("boto3",),
+    )
+
+    with wynd_dev(tmp_path) as server:
+        _, body = server.get("/")
+
+    assert body == "boto3"
