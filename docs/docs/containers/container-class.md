@@ -32,7 +32,7 @@ Set these as class attributes on your subclass. They apply to every instance.
 | ------------------- | ------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `default_port`      | `int \| None`                        | `None`   | Port the container listens on. `fetch()` and `container_fetch()` use it when no port is given.                                               |
 | `required_ports`    | `list[int] \| None`                  | `None`   | Ports that must accept connections before the container counts as ready. `start_and_wait_for_ports()` uses them when called without `ports`. |
-| `sleep_after`       | `str \| int`                         | `"10m"`  | Idle time before `on_activity_expired()` runs. Seconds as an `int`, or a string such as `"30s"`, `"5m"` or `"1h"`.                           |
+| `sleep_after`       | `str \| float`                       | `"10m"`  | Idle time before `on_activity_expired()` runs. Seconds as a number, or a string such as `"30s"`, `"5m"` or `"1h"`.                           |
 | `env_vars`          | `dict[str, str]`                     | `{}`     | Environment variables passed to the container on every start.                                                                                |
 | `entrypoint`        | `list[str] \| None`                  | `None`   | Overrides the image's entrypoint.                                                                                                            |
 | `enable_internet`   | `bool`                               | `True`   | Whether the container can reach the internet. See [Outbound traffic](outbound-traffic.md).                                                |
@@ -515,6 +515,8 @@ async def get_random(
 
 Returns the stub for one of `instances` instances, chosen at random.
 
+`load_balance` is a deprecated alias that also emits a `DeprecationWarning`.
+
 ### `switch_port`
 
 ```python
@@ -537,6 +539,7 @@ Everything public is importable from `containers`:
 | --------------------------------------------- | ----------------------- |
 | `Container`, `ContainerProxy`                 | Classes                 |
 | `get_container`, `get_random`, `switch_port`  | Functions               |
+| `load_balance`                                | Deprecated function     |
 | `State`, `Schedule`                           | `TypedDict`s            |
 | `Signal`, `OutboundHandler`                   | Type aliases            |
 | `OutboundHandlerContext`                      | Class                   |
