@@ -15,7 +15,7 @@ from .targets import Target
 __all__ = ("select_sdk", "sync")
 
 SDKS = ("crosswind-workers", "workers-runtime-sdk")
-MIN_UV = (0, 12, 3)
+MIN_UV = (0, 13, 4)
 MIN_UV_TEXT = ".".join(map(str, MIN_UV))
 
 

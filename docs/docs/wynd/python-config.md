@@ -31,7 +31,7 @@ What the Python file adds:
 
 - Wynd 0.3.0 or later. `uvx wynd` runs the latest release, and
   `uvx wynd@0.3.0` pins it.
-- [uv](https://docs.astral.sh/uv/) 0.12.3 or later. Check with `uv --version`.
+- [uv](https://docs.astral.sh/uv/) 0.13.4 or later. Check with `uv --version`.
 - Node.js on `PATH`, for `npx`. Wynd runs Wrangler 4.129.0 through it.
 
 ## Create a project

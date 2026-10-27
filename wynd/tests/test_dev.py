@@ -346,10 +346,10 @@ def test_an_old_uv_stops_before_any_uv_work(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("WYND_TEST_UV_VERSION", "0.12.2")
+    monkeypatch.setenv("WYND_TEST_UV_VERSION", "0.13.3")
 
     assert main(["dev"]) == 1
-    assert "0.12.3" in capsys.readouterr().err
+    assert "0.13.4" in capsys.readouterr().err
     assert tools.uv() == [["--version"]]
     assert tools.wrangler() == []
 

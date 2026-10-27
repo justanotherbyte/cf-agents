@@ -4,7 +4,7 @@ description: "Every Wynd command including init, the flags Wynd reads, [tool.wyn
 ---
 
 Run Wynd with `uvx wynd <command>`. To pin its version, run
-`uvx wynd@0.3.0 <command>`. Wynd needs uv 0.12.3 or later and Node.js on
+`uvx wynd@0.3.0 <command>`. Wynd needs uv 0.13.4 or later and Node.js on
 `PATH`, and runs Wrangler 4.129.0 through `npx --yes wrangler@4.129.0`.
 
 ## Commands

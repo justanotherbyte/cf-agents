@@ -90,7 +90,7 @@ an existing project.
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/) 0.12.3 or later on `PATH`.
+- [uv](https://docs.astral.sh/uv/) 0.13.4 or later on `PATH`.
 - Node.js on `PATH`, for `npx`.
 - Linux or macOS. Windows is untested.
 

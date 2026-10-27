@@ -91,11 +91,11 @@ date is missing or malformed.
 environment's section, because a `compatibility_flags` key there replaces the
 top-level list.
 
-## `Wynd needs uv 0.12.3 or later`
+## `Wynd needs uv 0.13.4 or later`
 
-**Cause.** The `uv` on `PATH` is older than 0.12.3, the oldest version Wynd
+**Cause.** The `uv` on `PATH` is older than 0.13.4, the oldest version Wynd
 supports. Without any `uv` on `PATH`, the message is
-`uv not found on PATH. Install uv 0.12.3 or later.`
+`uv not found on PATH. Install uv 0.13.4 or later.`
 
 **Fix.** Run `uv self update`, or install uv again from
 [its docs](https://docs.astral.sh/uv/getting-started/installation/).
