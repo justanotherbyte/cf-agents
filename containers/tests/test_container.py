@@ -109,6 +109,26 @@ class TestContainer:
             STATE_KEY, ObjectContaining(status="stopped")
         )
 
+    async def test_start_and_wait_for_ports_should_raise_when_the_container_stops_without_a_monitor(
+        self, mock_ctx, container
+    ):
+        async def stop_then_refuse(*args):
+            mock_ctx.container.running = False
+            raise Exception("the container is not listening")
+
+        mock_ctx.container.monitor.side_effect = None
+        mock_ctx.container.monitor.return_value = None
+        mock_ctx.container.getTcpPort.return_value = SimpleNamespace(
+            fetch=AsyncMock(side_effect=stop_then_refuse)
+        )
+
+        with pytest.raises(RuntimeError, match="has no monitor"):
+            await container.start_and_wait_for_ports(8080, wait_interval=1)
+
+        mock_ctx.storage.put.assert_any_call(
+            STATE_KEY, ObjectContaining(status="stopped")
+        )
+
     async def test_start_and_wait_for_ports_should_abort_the_durable_object_on_final_network_loss(
         self, mock_ctx, container
     ):
