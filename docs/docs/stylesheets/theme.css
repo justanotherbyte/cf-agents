@@ -82,21 +82,12 @@ body {
   background-color: var(--cw-surface);
 }
 
-/* Headings: set apart by size, light weights */
+/* Headings: Material's default weights */
 .md-typeset :is(h1, h2, h3) {
   color: var(--cw-text);
 }
 
-.md-typeset h1 {
-  font-weight: 700;
-}
-
-.md-typeset h2 {
-  font-weight: 600;
-}
-
 .md-typeset h3 {
-  font-weight: 400;
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
