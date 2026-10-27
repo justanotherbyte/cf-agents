@@ -35,6 +35,12 @@ def test_parse_without_a_match() -> None:
     assert match is not None and match.child_class == "Unknown"
 
 
+@pytest.mark.parametrize("name", ["%2E%2E", ".", "a%00b"])
+def test_parse_rejects_names_build_agent_path_cannot_address(name: str) -> None:
+    url = f"https://x.dev/agents/inbox/alice/sub/foo/{name}/sub/bar/b"
+    assert parse_sub_agent_path(url) is None
+
+
 def test_path_keys_and_json_round_trip() -> None:
     assert path_key([INBOX, CHAT]) == "Inbox:alice/ChatRoom:room%201"
     assert path_from_json(path_to_json([INBOX, CHAT])) == [INBOX, CHAT]

@@ -45,6 +45,7 @@ def parse_sub_agent_path(
 
     With ``known_classes``, a class segment must be the kebab case of one of
     them (and resolves to it); without, it's converted back to CamelCase.
+    A child name that `build_agent_path` would reject makes it ``None``.
     """
     parts = [part for part in urlsplit(url).path.split("/") if part]
     known = list(known_classes) if known_classes is not None else None
@@ -54,10 +55,15 @@ def parse_sub_agent_path(
         child_class = _resolve_class(parts[index + 1], known)
         if child_class is None:
             continue
+        child_name = unquote(parts[index + 2])
+        try:
+            _child_segment(child_name)
+        except ValueError:
+            return None
         rest = parts[index + 3 :]
         return SubAgentPathMatch(
             child_class=child_class,
-            child_name=unquote(parts[index + 2]),
+            child_name=child_name,
             remaining_path="/" + "/".join(rest) if rest else "/",
         )
     return None
