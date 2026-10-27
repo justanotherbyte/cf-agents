@@ -10,6 +10,7 @@ from test_fixtures import MockWebSocket, ObjectContaining, wait_for
 from workers import Request, Response
 
 from containers import Container, get_random, load_balance
+from containers.container import ContainerProxy
 from containers.utils import parse_time_expression
 
 STATE_KEY = "__CF_CONTAINER_STATE"
@@ -589,6 +590,58 @@ class TestHttpsInterceptionRuntimeGuard:
         await container.set_allowed_hosts(["example.com"])
 
         mock_ctx.container.interceptOutboundHttps.assert_called_with("*", ANY)
+
+
+class TestSyncCallables:
+    async def test_accepts_a_sync_outbound_handler(self, mock_ctx):
+        class SyncOutboundContainer(Container):
+            @staticmethod
+            def outbound(request, env, ctx):
+                return Response("sync")
+
+        mock_ctx.props = {
+            "class_name": "SyncOutboundContainer",
+            "container_id": "id",
+            "intercept_all": True,
+        }
+
+        response = await ContainerProxy(mock_ctx, {}).fetch(
+            Request("https://example.com")
+        )
+
+        assert await response.text() == "sync"
+
+    async def test_accepts_a_sync_lifecycle_hook(self, mock_ctx):
+        started = []
+
+        class SyncHookContainer(Container):
+            def on_start(self):
+                started.append(True)
+
+        container = SyncHookContainer(mock_ctx, {})
+
+        await container.start_and_wait_for_ports(8080)
+
+        assert started == [True]
+
+    async def test_accepts_a_sync_scheduled_callback(self, mock_ctx, container, caplog):
+        received = []
+        container.tick = lambda payload, schedule: received.append(payload)
+        rows = [{"id": "a", "callback": "tick", "payload": '{"n": 1}', "time": 0}]
+
+        def sql(query, *values):
+            if query.startswith("DELETE"):
+                rows.clear()
+            return list(rows) if query.startswith("SELECT *") else []
+
+        with (
+            patch.object(container, "_sql", side_effect=sql),
+            patch.object(container, "get_schedule", return_value=None),
+        ):
+            await container.alarm()
+
+        assert received == [{"n": 1}]
+        assert "Error executing scheduled callback" not in caplog.text
 
 
 class TestGetRandom:
