@@ -1212,8 +1212,8 @@ def test_interrupted_tool_calls_are_repaired_before_the_next_turn() -> None:
 def test_options_must_be_chat_options() -> None:
     from agents import AgentOptions
 
-    class Misconfigured(Chat):
-        options = AgentOptions()
+    # type() builds the class at runtime, so ty never sees the bad options.
+    Misconfigured = type("Misconfigured", (Chat,), {"options": AgentOptions()})
 
     with pytest.raises(TypeError, match="AIChatAgentOptions"):
         make(Misconfigured)
