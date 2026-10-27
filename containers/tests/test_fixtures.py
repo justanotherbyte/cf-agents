@@ -25,7 +25,7 @@ class MockWebSocket:
         self.send = MagicMock()
         self.close = MagicMock()
 
-    def addEventListener(self, type: str, handler: Callable[[Any], Any]) -> None:  # noqa: N802
+    def addEventListener(self, type: str, handler: Callable[[Any], Any]) -> None:
         self.event_listeners[type].append(handler)
 
 
@@ -103,7 +103,6 @@ def make_mock_ctx() -> MagicMock:
     ctx.storage.kv.delete = MagicMock(return_value=True)
     ctx.storage.sql.exec = MagicMock(return_value=[])
 
-    # Tasks started by blockConcurrencyWhile, kept so they aren't garbage collected
     ctx.block_concurrency_tasks = []
 
     def block_concurrency_while(fn: Callable[[], Any]) -> asyncio.Future[Any]:
@@ -157,7 +156,5 @@ async def mock_ctx(web_socket_pair_spy: MagicMock) -> AsyncIterator[MagicMock]:
 async def container(mock_ctx: MagicMock) -> Container:
     container = Container(mock_ctx, {})
     container.default_port = 8080
-    # Let the constructor's blockConcurrencyWhile callback finish, as the JS
-    # constructor runs it eagerly up to its first await.
     await asyncio.gather(*mock_ctx.block_concurrency_tasks)
     return container

@@ -38,11 +38,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ====================
-# ====================
-#      CONSTANTS
-# ====================
-# ====================
 
 NO_CONTAINER_INSTANCE_ERROR = (
     "there is no container instance that can be provided to this durable object"
@@ -51,35 +46,25 @@ RATE_LIMITED_ERROR = "you are requesting too many containers per second"
 RUNTIME_SIGNALLED_ERROR = "runtime signalled the container to exit:"
 UNEXPECTED_EXIT_ERROR = "container exited with unexpected exit code:"
 NOT_LISTENING_ERROR = "the container is not listening"
+CONNECTION_LOST_ERROR = "network connection lost"
 OUTBOUND_CONFIGURATION_KEY = "OUTBOUND_CONFIGURATION"
 CONTAINER_REQUEST_BASE_URL = "http://container"
 
-# maxRetries before scheduling next alarm is purposely set to 3,
-# as according to DO docs at https://developers.cloudflare.com/durable-objects/api/alarms/
-# the maximum amount for alarm retries is 6.
-MAX_ALARM_RETRIES = 3
+DURABLE_OBJECT_MAX_ALARM_RETRIES = 6
+MAX_ALARM_RETRIES = DURABLE_OBJECT_MAX_ALARM_RETRIES // 2
+MAX_ALARM_INTERVAL_MS = 3 * 60 * 1000
 PING_TIMEOUT_MS = 5000
 
-DEFAULT_SLEEP_AFTER = "10m"  # Default sleep after inactivity time
-INSTANCE_POLL_INTERVAL_MS = 300  # Default interval for polling container state
-
-# Timeout for getting container instance and launching a VM
-# Time to find an instance, attach a DO, call start, but NOT
-# the time for the app the actually start
+DEFAULT_SLEEP_AFTER = "10m"
+INSTANCE_POLL_INTERVAL_MS = 300
 TIMEOUT_TO_GET_CONTAINER_MS = 8_000
-
-# Timeout for getting a container instance and launching
-# the actual application and have it listen for specific ports
-# One day might be configurable by the end user in Container class attribute
 TIMEOUT_TO_GET_PORTS_MS = 20_000
-
-# If user has specified no ports and we need to check one
-# to see if the container is up at all.
 FALLBACK_PORT_TO_CHECK = 33
 
-# TypeVars with defaults mirror the TS `<Params = unknown>` and `<T = string>`
-# generics. Type parameter defaults need Python 3.13 syntax, so these are
-# declared the pre-3.13 way.
+NORMAL_CLOSURE = 1000
+INTERNAL_ERROR_CLOSURE = 1011
+UNSENDABLE_CLOSE_CODES = (1005, 1006)
+
 ParamsT = TypeVar("ParamsT", default=Any)
 PayloadT = TypeVar("PayloadT", default=str)
 
@@ -148,16 +133,7 @@ class _StartConfigOptions(TypedDict, total=False):
     labels: dict[str, str]
 
 
-# class name to Container subclass, used by ContainerProxy to find outbound handlers
 _container_classes: dict[str, type["Container"]] = {}
-
-# =====================
-# =====================
-#   HELPER FUNCTIONS
-# =====================
-# =====================
-
-# ==== Error helpers ====
 
 
 def _is_error_of_type(e: object, matching_string: str) -> bool:
@@ -182,6 +158,10 @@ def _is_not_listening_error(error: object) -> bool:
 
 def _is_container_exit_non_zero_error(error: object) -> bool:
     return _is_error_of_type(error, UNEXPECTED_EXIT_ERROR)
+
+
+def _is_connection_lost_error(error: object) -> bool:
+    return _is_error_of_type(error, CONNECTION_LOST_ERROR)
 
 
 def _get_exit_code_from_error(error: object) -> int | None:
@@ -210,7 +190,6 @@ def _add_timeout_signal(existing_signal: asyncio.Event | None, timeout_ms: int) 
     """
     controller = ffi.AbortController.new()
 
-    # Forward existing signal abort
     if existing_signal is not None and existing_signal.is_set():
         controller.abort()
         return controller.signal
@@ -218,13 +197,11 @@ def _add_timeout_signal(existing_signal: asyncio.Event | None, timeout_ms: int) 
     waiter: asyncio.Future[Any] | None = None
 
     def abort() -> None:
-        # Clean up timeout if signal is aborted early
         timeout_handle.cancel()
         if waiter is not None:
             waiter.cancel()
         controller.abort()
 
-    # Add timeout
     timeout_handle = asyncio.get_running_loop().call_later(timeout_ms / 1000, abort)
 
     if existing_signal is not None:
@@ -232,9 +209,6 @@ def _add_timeout_signal(existing_signal: asyncio.Event | None, timeout_ms: int) 
         waiter.add_done_callback(lambda task: task.cancelled() or abort())
 
     return controller.signal
-
-
-# ==== Glob helpers ====
 
 
 def _simple_glob_match(pattern: str, value: str) -> bool:
@@ -264,8 +238,23 @@ def _matches_host_list(hostname: str, patterns: list[str]) -> bool:
     return any(_simple_glob_match(pattern, hostname) for pattern in patterns)
 
 
+def _match_host[T](by_host: dict[str, T], hostname: str) -> T | None:
+    return by_host.get(hostname) or next(
+        (
+            value
+            for pattern, value in by_host.items()
+            if pattern != hostname and _simple_glob_match(pattern, hostname)
+        ),
+        None,
+    )
+
+
 def _normalize_hostname(hostname: str) -> str:
     return hostname.rstrip(".")
+
+
+def _sendable_close_code(code: int) -> int:
+    return NORMAL_CLOSURE if code in UNSENDABLE_CLOSE_CODES else code
 
 
 class ContainerProxy(WorkerEntrypoint):
@@ -294,30 +283,18 @@ class ContainerProxy(WorkerEntrypoint):
 
         container_class = _container_classes.get(class_name)
 
-        # 1. deniedHosts: overrides everything, blocks unconditionally
         if denied_hosts and _matches_host_list(hostname, denied_hosts):
             return Response("Origin is disallowed", status=520)
 
-        # 2. allowedHosts: when set, acts as a whitelist gate — only matching
-        #    hosts can proceed. This gates everything below, including outboundByHost.
-        #    outboundByHost only maps a handler for a hostname, it does not allow it.
         if allowed_hosts is not None and not _matches_host_list(
             hostname, allowed_hosts
         ):
             return Response("Origin is disallowed", status=520)
 
-        # 3. outboundByHost (runtime override) — exact match then glob
         handlers = container_class.outbound_handlers if container_class else None
 
         if outbound_by_host_overrides and handlers:
-            override = outbound_by_host_overrides.get(hostname) or next(
-                (
-                    value
-                    for pattern, value in outbound_by_host_overrides.items()
-                    if pattern != hostname and _simple_glob_match(pattern, hostname)
-                ),
-                None,
-            )
+            override = _match_host(outbound_by_host_overrides, hostname)
             if override and override["method"] in handlers:
                 return await handlers[override["method"]](
                     request,
@@ -327,32 +304,20 @@ class ContainerProxy(WorkerEntrypoint):
                     ),
                 )
 
-        # 4. outboundByHost (static) — exact match then glob
         handlers_by_host = container_class.outbound_by_host if container_class else None
         if handlers_by_host:
-            handler = handlers_by_host.get(hostname) or next(
-                (
-                    value
-                    for pattern, value in handlers_by_host.items()
-                    if pattern != hostname and _simple_glob_match(pattern, hostname)
-                ),
-                None,
-            )
+            handler = _match_host(handlers_by_host, hostname)
             if handler:
                 return await handler(
                     request, self.env, OutboundHandlerContext(container_id, class_name)
                 )
 
-        # In per-host mode, only specific hosts were intercepted.
-        # If no handler matched above, fall back to direct internet access only
-        # when the container already allows it.
         if not intercept_all:
             if allowed_hosts is not None or enable_internet:
                 return await fetch(request)
 
             return Response("Origin is disallowed", status=520)
 
-        # 5. Runtime catch-all handler override
         if outbound_handler_override and handlers:
             handler = handlers.get(outbound_handler_override["method"])
             if handler:
@@ -366,30 +331,19 @@ class ContainerProxy(WorkerEntrypoint):
                     ),
                 )
 
-        # 6. Default catch-all handler (static outbound)
         default_outbound = container_class.outbound if container_class else None
         if default_outbound is not None:
             return await default_outbound(
                 request, self.env, OutboundHandlerContext(container_id, class_name)
             )
 
-        # 7. If the host was explicitly allowed and no outbound handled it,
-        #    grant internet
         if allowed_hosts is not None:
             return await fetch(request)
 
-        # 8. enableInternet fallback
         if enable_internet:
             return await fetch(request)
 
         return Response("Origin is disallowed", status=520)
-
-
-# ===============================
-# ===============================
-#     MAIN CONTAINER CLASS
-# ===============================
-# ===============================
 
 
 class Container(DurableObject):
@@ -398,68 +352,55 @@ class Container(DurableObject):
 
     Configure it by setting class attributes on a subclass, e.g. ``default_port``
     and ``sleep_after``.
+
+    Attributes
+    ----------
+    default_port
+        Port that requests go to when no port is given.
+    required_ports
+        Ports that must accept connections before the container is ready.
+    sleep_after
+        Inactivity time after which the container gets a SIGTERM, as seconds or
+        a time expression like ``"10m"``.
+    env_vars, entrypoint, enable_internet, labels
+        Start options for the container.
+    intercept_https
+        Intercept outbound HTTPS too. The container must trust
+        ``/etc/cloudflare/certs/cloudflare-containers-ca.crt``.
+    allowed_hosts
+        Hosts the container can reach, even when ``enable_internet`` is False.
+    denied_hosts
+        Hosts the container can never reach, even when ``enable_internet`` is
+        True or an ``outbound`` handler is set.
+    ping_endpoint
+        Host and path of the request that checks the container is ready. The
+        container does not have to serve it.
+    outbound_by_host
+        Maps hostnames to the handler for requests to that host.
+    outbound
+        Handler for hosts that no more specific rule handles.
+    outbound_handlers
+        Named handlers for ``set_outbound_handler`` and ``set_outbound_by_host``.
     """
 
-    # =========================
-    #     Public Attributes
-    # =========================
-
-    # Default port for the container (None means no default port)
     default_port: int | None = None
-
-    # Required ports that should be checked for availability during container startup
-    # Override this in your subclass to specify ports that must be ready
     required_ports: list[int] | None = None
-
-    # Timeout after which the container will sleep if no activity
-    # The signal sent to the container by default is a SIGTERM.
-    # The container won't get a SIGKILL if this threshold is triggered.
     sleep_after: str | int = DEFAULT_SLEEP_AFTER
-
-    # Container configuration properties
-    # Set these properties directly in your container instance
     env_vars: dict[str, str] = {}
     entrypoint: list[str] | None = None
     enable_internet: bool = True
     labels: dict[str, str] = {}
-
-    # When true, outbound HTTPS traffic from the container will be intercepted.
-    # The container must trust /etc/cloudflare/certs/cloudflare-containers-ca.crt
     intercept_https: bool = False
-
-    # Hosts that are allowed to access the internet, even when enable_internet is False.
-    # Useful for allowing specific domains on a per-host basis.
     allowed_hosts: list[str] | None = None
-
-    # Hosts that are denied internet access, even when enable_internet is True.
-    # Also blocks hosts from being handled by the catch-all outbound handler.
     denied_hosts: list[str] | None = None
-
-    # ping_endpoint is the host and path value that the class will use to send a
-    # request to the container and check if the instance is ready.
-    #
-    # The user does not have to implement this route by any means,
-    # but it's still useful if you want to control the path that
-    # the Container class uses to send HTTP requests to.
     ping_endpoint: str = "ping"
-
-    # Map of hostname to handler, for requests to specific hosts
     outbound_by_host: dict[str, OutboundHandler] | None = None
-
-    # Catch-all handler for any host not handled by a more specific rule
     outbound: OutboundHandler | None = None
-
-    # Named handlers that can be referenced at runtime via set_outbound_handler()
-    # or set_outbound_by_host()
     outbound_handlers: dict[str, OutboundHandler] | None = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         _container_classes[cls.__name__] = cls
-
-    # =========================
-    #     PUBLIC INTERFACE
-    # =========================
 
     def __init__(
         self,
@@ -482,18 +423,10 @@ class Container(DurableObject):
                 "https://developers.cloudflare.com/containers/get-started/#configuration"
             )
 
-        # onStopCalled will be true when we are in the middle of an onStop call
         self._on_stop_called = False
         self._state = ContainerState(self.ctx.storage)
         self._monitor: Any = None
 
-        # Coalesces concurrent calls to _start_container_if_not_running so we never
-        # call `self._container.start()` twice. Without this guard, two requests
-        # racing the readiness path can both pass the `if self._container.running`
-        # early-return (each yielding the DO input gate at storage awaits) and
-        # both reach the synchronous workerd `start()`, causing the second to
-        # throw "start() cannot be called on a container that is already running."
-        # See https://github.com/cloudflare/containers/issues/173.
         self._start_in_flight: asyncio.Future[int] | None = None
 
         self._monitored_promise: Any = None
@@ -501,16 +434,12 @@ class Container(DurableObject):
         self._inflight_requests = 0
         self._background_tasks: set[asyncio.Future[Any]] = set()
 
-        # Outbound interception runtime overrides (passed through ContainerProxy props)
         self._outbound_by_host_overrides: dict[str, OutboundHandlerOverride] = {}
         self._outbound_handler_override: OutboundHandlerOverride | None = None
 
-        # Only set when the user calls set_allowed_hosts/set_denied_hosts at runtime
         self._allowed_hosts_override: list[str] | None = None
         self._denied_hosts_override: list[str] | None = None
 
-        # The runtime does not expose a way to remove outbound interceptions yet, so
-        # once we promote an instance to intercept-all we must keep using it.
         self._has_intercept_all_registration = False
         self._using_interception = False
 
@@ -520,7 +449,6 @@ class Container(DurableObject):
         persisted_outbound_configuration = self._restore_outbound_configuration()
 
         async def initialize() -> None:
-            # First thing, schedule the next alarms.
             await self.schedule_next_alarm()
             self.renew_activity_timeout()
 
@@ -543,7 +471,6 @@ class Container(DurableObject):
         ffi.block_concurrency_while(self.ctx, initialize)
 
         self._container = ctx.container
-        # Apply options if provided
         if default_port is not None:
             self.default_port = default_port
         if sleep_after is not None:
@@ -555,7 +482,6 @@ class Container(DurableObject):
         if enable_internet is not None:
             self.enable_internet = enable_internet
 
-        # Create schedules table if it doesn't exist
         self._sql(
             """
             CREATE TABLE IF NOT EXISTS container_schedules (
@@ -584,10 +510,6 @@ class Container(DurableObject):
             A copy of the current state.
         """
         return State(**(await self._state.get_state()))
-
-    # ====================================
-    #     OUTBOUND INTERCEPTION CONFIG
-    # ====================================
 
     async def set_outbound_handler(self, method_name: str, params: Any = None) -> None:
         """
@@ -687,10 +609,6 @@ class Container(DurableObject):
         }
         await self._refresh_outbound_interception()
 
-    # ====================================
-    #     ALLOWED / DENIED HOSTS CONFIG
-    # ====================================
-
     async def set_allowed_hosts(self, hosts: list[str]) -> None:
         """
         Replace all allowed hosts at runtime.
@@ -780,10 +698,6 @@ class Container(DurableObject):
         ]
         await self._refresh_outbound_interception()
 
-    # ==========================
-    #     CONTAINER STARTING
-    # ==========================
-
     @ffi.rpc_kwargs
     async def start(
         self,
@@ -866,7 +780,6 @@ class Container(DurableObject):
 
         self._setup_monitor_callbacks()
 
-        # TODO: We should consider an onHealthy callback
         await ffi.block_concurrency_while(self.ctx, self.on_start)
 
     @ffi.rpc_kwargs
@@ -913,13 +826,10 @@ class Container(DurableObject):
         RuntimeError
             If port checks fail after the timeout, or the container fails to start.
         """
-        # Determine which ports to check
         ports_to_check = self._get_ports_to_check(ports)
 
-        # trigger all onStop that we didn't do yet
         await self._sync_pending_stopped_events()
 
-        # Prepare to start the container
         container_get_timeout = (
             instance_get_timeout_ms
             if instance_get_timeout_ms is not None
@@ -930,7 +840,6 @@ class Container(DurableObject):
         )
         container_get_retries = math.ceil(container_get_timeout / poll_interval)
 
-        # Start the container if it's not running
         tries_used = await self._start_container_if_not_running(
             signal=abort,
             retries=container_get_retries,
@@ -949,8 +858,6 @@ class Container(DurableObject):
                 }
             ),
         )
-
-        # Check each port
 
         total_port_ready_tries = math.ceil(
             (
@@ -973,7 +880,6 @@ class Container(DurableObject):
         self._setup_monitor_callbacks()
 
         async def mark_healthy() -> None:
-            # All ports are ready
             await self._state.set_healthy()
             await self.on_start()
 
@@ -1024,7 +930,6 @@ class Container(DurableObject):
             else math.ceil(TIMEOUT_TO_GET_PORTS_MS / poll_interval)
         )
 
-        # Try to connect to the port multiple times
         for i in range(tries):
             try:
                 combined_signal = _add_timeout_signal(signal, PING_TIMEOUT_MS)
@@ -1033,41 +938,31 @@ class Container(DurableObject):
                     ffi.to_js_object({"signal": combined_signal}),
                 )
 
-                # Successfully connected to this port
                 break
             except Exception as e:
                 error_message = str(e)
 
-                # If not running, it means the container crashed
                 if not self._container.running:
-                    # Intentionally ignore errors from the user-supplied on_error
-                    # handler; the original error is re-raised below regardless.
-                    with contextlib.suppress(Exception):
-                        await self.on_error(
-                            RuntimeError(
-                                "Container crashed while checking for ports, did you "
-                                "start the container and setup the entrypoint "
-                                "correctly?"
-                            )
+                    await self._notify_on_error(
+                        RuntimeError(
+                            "Container crashed while checking for ports, did you "
+                            "start the container and setup the entrypoint "
+                            "correctly?"
                         )
+                    )
 
                     raise
 
-                # If we're on the last attempt and the port is still not ready, fail
                 if i == tries - 1:
-                    # Intentionally ignore errors from the user-supplied on_error
-                    # handler; the original error is re-raised below regardless.
-                    with contextlib.suppress(Exception):
-                        await self.on_error(
-                            RuntimeError(
-                                f"Failed to verify port {port} is available after "
-                                f"{(i + 1) * poll_interval}ms, last error: "
-                                f"{error_message}"
-                            )
+                    await self._notify_on_error(
+                        RuntimeError(
+                            f"Failed to verify port {port} is available after "
+                            f"{(i + 1) * poll_interval}ms, last error: "
+                            f"{error_message}"
                         )
+                    )
                     raise
 
-                # Wait a bit before trying again
                 if signal is None:
                     await asyncio.sleep(poll_interval / 1000)
                 else:
@@ -1077,10 +972,6 @@ class Container(DurableObject):
                     raise RuntimeError("Container request aborted.") from e
 
         return tries
-
-    # =======================
-    #     LIFECYCLE HOOKS
-    # =======================
 
     async def stop(self, signal: Signal | int = "SIGTERM") -> None:
         """
@@ -1161,6 +1052,10 @@ class Container(DurableObject):
         logger.error("Container error: %s", error)
         raise error
 
+    async def _notify_on_error(self, error: Exception) -> None:
+        with contextlib.suppress(Exception):
+            await self.on_error(error)
+
     def renew_activity_timeout(self) -> None:
         """
         Renew the container's activity timeout.
@@ -1180,10 +1075,6 @@ class Container(DurableObject):
         self._inflight_requests = max(0, self._inflight_requests - 1)
         if self._inflight_requests == 0:
             self.renew_activity_timeout()
-
-    # ==================
-    #     SCHEDULING
-    # ==================
 
     async def schedule[T](
         self, when: datetime | float, callback: str, payload: T | None = None
@@ -1217,19 +1108,15 @@ class Container(DurableObject):
         """
         id = generate_id(9)
 
-        # Ensure the callback is a string (method name)
         if not isinstance(callback, str):
             raise TypeError("Callback must be a string (method name)")
 
-        # Ensure the method exists
         if not callable(getattr(self, callback, None)):
             raise ValueError(f"self.{callback} is not a function")
 
         serialized_payload = None if payload is None else json.dumps(payload)
 
-        # Schedule based on the type of 'when' parameter
         if isinstance(when, datetime):
-            # Schedule for a specific time
             timestamp = math.floor(when.timestamp())
 
             self._sql(
@@ -1255,7 +1142,6 @@ class Container(DurableObject):
             }
 
         if isinstance(when, int | float):
-            # Schedule for a delay in seconds
             timestamp = math.floor(time.time() + when)
 
             self._sql(
@@ -1285,10 +1171,6 @@ class Container(DurableObject):
         raise TypeError(
             "Invalid schedule type. 'when' must be a datetime or number of seconds"
         )
-
-    # ============
-    #     HTTP
-    # ============
 
     @ffi.rpc_kwargs
     async def container_fetch(
@@ -1333,7 +1215,6 @@ class Container(DurableObject):
         ValueError
             If no port is given and ``default_port`` is not set.
         """
-        # Parse the arguments based on their types to handle different signatures
         request, port = self._request_and_port_from_container_fetch_args(
             request_or_url, port, init
         )
@@ -1369,30 +1250,18 @@ class Container(DurableObject):
 
         tcp_port = self._container.getTcpPort(port)
 
-        # Create URL for the container request. `tcp_port.fetch` opens a raw TCP
-        # connection to the container, which does not terminate TLS, so an https
-        # scheme has to be downgraded. The match is anchored on purpose: an
-        # unanchored string replace rewrites the first `https:` anywhere in the URL,
-        # which corrupts query strings and fragments that carry an absolute URL (for
-        # example `/callback?redirect=https://app.example.com`) whenever the scheme
-        # is already http.
         container_url = re.sub(r"^https:", "http:", request.url)
 
         self._inflight_requests += 1
 
         try:
-            # Renew the activity timeout whenever a request is proxied
             self.renew_activity_timeout()
             res = await tcp_port.fetch(container_url, request.js_object)
 
             container_ws = res.webSocket
             if container_ws is not None and container_ws is not ffi.jsnull:
-                # WebSocket response: proxy by accepting both sides and forwarding
-                # messages
                 client, server = ffi.Object.values(ffi.WebSocketPair.new())
 
-                # Guard to ensure we only decrement inflight once per WebSocket,
-                # since both close and error events can fire.
                 settled = False
 
                 def settle_inflight() -> None:
@@ -1401,7 +1270,6 @@ class Container(DurableObject):
                         settled = True
                         self._decrement_inflight()
 
-                # Accept both WebSocket ends
                 container_ws.accept()
                 server.accept()
 
@@ -1416,7 +1284,10 @@ class Container(DurableObject):
                             data = await data.arrayBuffer()
                         container_ws.send(data)
                     except Exception:
-                        server.close(1011, "Failed to forward message to container")
+                        server.close(
+                            INTERNAL_ERROR_CLOSURE,
+                            "Failed to forward message to container",
+                        )
 
                 async def forward_to_client(event: Any) -> None:
                     self.renew_activity_timeout()
@@ -1429,37 +1300,31 @@ class Container(DurableObject):
                             data = await data.arrayBuffer()
                         server.send(data)
                     except Exception:
-                        container_ws.close(1011, "Failed to forward message to client")
+                        container_ws.close(
+                            INTERNAL_ERROR_CLOSURE,
+                            "Failed to forward message to client",
+                        )
 
                 def close_container(event: Any) -> None:
                     settle_inflight()
-                    # Codes 1005 (No Status Received) and 1006 (Abnormal Closure) are
-                    # reserved and cannot be sent in a close frame — fall back to 1000.
-                    code = 1000 if event.code in (1005, 1006) else event.code
-                    container_ws.close(code, event.reason)
+                    container_ws.close(_sendable_close_code(event.code), event.reason)
 
                 def close_client(event: Any) -> None:
                     settle_inflight()
-                    code = 1000 if event.code in (1005, 1006) else event.code
-                    server.close(code, event.reason)
+                    server.close(_sendable_close_code(event.code), event.reason)
 
                 def client_error(_: Any) -> None:
                     settle_inflight()
-                    container_ws.close(1011, "Client WebSocket error")
+                    container_ws.close(INTERNAL_ERROR_CLOSURE, "Client WebSocket error")
 
                 def container_error(_: Any) -> None:
                     settle_inflight()
-                    server.close(1011, "Container WebSocket error")
+                    server.close(INTERNAL_ERROR_CLOSURE, "Container WebSocket error")
 
-                # Forward messages from client to container
                 ffi.add_event_listener(server, "message", forward_to_container)
-                # Forward messages from container to client
                 ffi.add_event_listener(container_ws, "message", forward_to_client)
-                # Forward close from client to container
                 ffi.add_event_listener(server, "close", close_container)
-                # Forward close from container to client
                 ffi.add_event_listener(container_ws, "close", close_client)
-                # Forward errors
                 ffi.add_event_listener(server, "error", client_error)
                 ffi.add_event_listener(container_ws, "error", container_error)
 
@@ -1497,8 +1362,7 @@ class Container(DurableObject):
             if not isinstance(e, Exception):
                 raise
 
-            # This error means that the container might've just restarted
-            if "Network connection lost." in str(e):
+            if _is_connection_lost_error(e):
                 return Response(
                     "Container suddenly disconnected, try again", status=500
                 )
@@ -1550,12 +1414,7 @@ class Container(DurableObject):
                     "port value from switch_port is not a number"
                 ) from None
 
-        # Forward all requests (HTTP and WebSocket) to the container
         return await self.container_fetch(request, port_value)
-
-    # ==========================
-    #     GENERAL HELPERS
-    # ==========================
 
     def _validate_outbound_handler_method_name(self, method_name: str) -> None:
         """
@@ -1733,9 +1592,6 @@ class Container(DurableObject):
                 "the containers package in your worker entrypoint"
             )
 
-        # Checked up front so an unsupported runtime fails before any interception
-        # is applied, rather than part-way through and leaving HTTP hosts
-        # intercepted.
         if (
             self.intercept_https
             and getattr(self._container, "interceptOutboundHttps", None) is None
@@ -1775,22 +1631,17 @@ class Container(DurableObject):
         fetcher = container_proxy(python_to_rpc({"props": props}))
 
         if intercept_all:
-            # If we previously installed static per-host interceptors, refresh them
-            # with the current fetcher so they follow the latest config too.
             for host in self._get_static_outbound_by_host_keys():
                 await self._container.interceptOutboundHttp(host, fetcher)
 
                 if self.intercept_https:
                     await self._container.interceptOutboundHttps(host, fetcher)
 
-            # If HTTPS interception is enabled, intercept all HTTPS traffic too
             if self.intercept_https:
                 await self._container.interceptOutboundHttps("*", fetcher)
 
-            # Intercept-all: intercept all outbound HTTP traffic
             await self._container.interceptAllOutboundHttp(fetcher)
         else:
-            # Per-host: only intercept traffic for known hosts
             for host in hosts:
                 await self._container.interceptOutboundHttp(host, fetcher)
 
@@ -1808,12 +1659,10 @@ class Container(DurableObject):
         init: "FetchKwargs",
     ) -> tuple[Request, int]:
         if isinstance(request_or_url, str):
-            # URL-based: container_fetch(url, port=None, **init)
             request = Request(
                 urljoin(CONTAINER_REQUEST_BASE_URL, request_or_url), **init
             )
         else:
-            # Request-based: container_fetch(request, port=None)
             if init:
                 raise TypeError(
                     "Request options can only be given when container_fetch is "
@@ -1823,8 +1672,6 @@ class Container(DurableObject):
 
         if port is None:
             port = self.default_port
-        # Require a port to be specified, either as a parameter or as a
-        # default_port attribute
         if port is None:
             raise ValueError(
                 "No port specified for container fetch. Set default_port or specify "
@@ -1845,7 +1692,6 @@ class Container(DurableObject):
         4. Falls back to port 33 if none of the above are set
         """
         if override_ports is not None:
-            # Use explicitly provided ports (single port or list)
             return (
                 list(override_ports)
                 if isinstance(override_ports, list)
@@ -1853,19 +1699,13 @@ class Container(DurableObject):
             )
 
         if self.required_ports:
-            # Use required_ports class attribute if available
             return list(self.required_ports)
 
-        # Fall back to default_port if available
         return [
             self.default_port
             if self.default_port is not None
             else FALLBACK_PORT_TO_CHECK
         ]
-
-    # ===========================================
-    #     CONTAINER INTERACTION & MONITORING
-    # ===========================================
 
     async def _start_container_if_not_running(
         self,
@@ -1881,14 +1721,9 @@ class Container(DurableObject):
 
         Returns the number of tries used.
         """
-        # Coalesce concurrent starts: if another caller is already in the start
-        # path, join their outcome instead of racing a second `start()`. Checked
-        # before the running fast path so callers also join during the
-        # post-start()/pre-port-ready window.
         if self._start_in_flight is not None:
             return await self._start_in_flight
 
-        # Fast path: container is already running and no start is in flight.
         if self._container.running:
             if self._monitor is None:
                 self._monitor = self._container.monitor()
@@ -1908,9 +1743,6 @@ class Container(DurableObject):
         try:
             return await start_task
         finally:
-            # Clear the in-flight marker once this attempt resolves so future
-            # start attempts (e.g. after the container has stopped) can proceed.
-            # Use identity check in case a later attempt has already replaced it.
             if self._start_in_flight is start_task:
                 self._start_in_flight = None
 
@@ -1942,10 +1774,7 @@ class Container(DurableObject):
                 await self._state.set_stopped_with_code(int(err))
                 self._monitor = None
 
-                # Intentionally ignore errors from the user-supplied on_error
-                # handler; the original error is raised below regardless.
-                with contextlib.suppress(Exception):
-                    await self.on_error(to_raise)
+                await self._notify_on_error(to_raise)
 
                 raise to_raise
             elif not _is_no_instance_error(err):
@@ -1954,23 +1783,16 @@ class Container(DurableObject):
 
                 error = err if isinstance(err, Exception) else RuntimeError(str(err))
 
-                # Intentionally ignore errors from the user-supplied on_error
-                # handler; the original error is raised below regardless.
-                with contextlib.suppress(Exception):
-                    await self.on_error(error)
+                await self._notify_on_error(error)
 
                 raise error
 
         for tries in range(total_tries):
-            # Use provided options or fall back to instance attributes
             env_vars = start_options.get("env_vars", self.env_vars)
             entrypoint = start_options.get("entrypoint", self.entrypoint)
             enable_internet = start_options.get("enable_internet", self.enable_internet)
             labels = start_options.get("labels", self.labels)
-            # TODO: hopefully, enableInternet can be false in a future where we
-            # enable DNS and TLS paths.
 
-            # Only include properties that are defined
             start_config: dict[str, Any] = {"enableInternet": enable_internet}
 
             if env_vars:
@@ -1997,7 +1819,6 @@ class Container(DurableObject):
 
             self.renew_activity_timeout()
 
-            # TODO: Make this the port I'm trying to get!
             port = self._container.getTcpPort(port_to_check)
             try:
                 combined_signal = _add_timeout_signal(signal, PING_TIMEOUT_MS)
@@ -2025,17 +1846,8 @@ class Container(DurableObject):
                         "cancellation signal"
                     ) from error
 
-                # TODO: Make this error specific to this, but then catch it above
-                # w something else
                 if total_tries == tries + 1:
-                    if "Network connection lost" in str(error):
-                        # We have to abort here, the reasoning is that we might've
-                        # found ourselves in an internal error where the Worker is
-                        # stuck with a failed connection to the container services.
-                        #
-                        # Until we address this issue on the back-end CF side, we
-                        # will need to abort the durable object so it retries to
-                        # reconnect from scratch.
+                    if _is_connection_lost_error(error):
                         self.ctx.abort()
 
                     await handle_error()
@@ -2102,18 +1914,12 @@ class Container(DurableObject):
                 if self._monitor is not monitor:
                     return
 
-                # TODO: Be able to retrigger onError
-                # Intentionally ignore errors from the user-supplied on_error handler.
-                with contextlib.suppress(Exception):
-                    await self.on_error(error)
+                await self._notify_on_error(error)
         finally:
             if self._monitor is monitor:
                 self._monitored_promise = None
                 self._monitor = None
-                if self._timeout is not None:
-                    if self._resolve is not None:
-                        self._resolve()
-                    self._timeout.cancel()
+                self._end_alarm_wait()
 
     def delete_schedules(self, name: str) -> None:
         """
@@ -2125,10 +1931,6 @@ class Container(DurableObject):
             The callback method name.
         """
         self._sql("DELETE FROM container_schedules WHERE callback = ?", name)
-
-    # ============================
-    #     ALARMS AND SCHEDULES
-    # ============================
 
     async def alarm(self, alarm_info: Any = None) -> None:
         """
@@ -2148,22 +1950,15 @@ class Container(DurableObject):
                 await self.schedule_next_alarm()
             return
 
-        # do not remove this, container DOs ALWAYS need an alarm right now.
-        # The only way for this DO to stop having alarms is:
-        #  1. The container is not running anymore.
-        #  2. Activity expired and it exits.
         prev_alarm = int(time.time() * 1000)
         await self.ctx.storage.setAlarm(prev_alarm)
         await self.ctx.storage.sync()
 
-        # Get all schedules that should be executed now
         result = self._sql("SELECT * FROM container_schedules;")
-        min_time: float = int(time.time() * 1000) + 3 * 60 * 1000
+        min_time: float = int(time.time() * 1000) + MAX_ALARM_INTERVAL_MS
 
         now = time.time()
-        # Process each due schedule
         for row in result:
-            # check if we need to run it
             if row["time"] > now:
                 continue
 
@@ -2174,11 +1969,9 @@ class Container(DurableObject):
                 )
                 continue
 
-            # Create a schedule object for context
             schedule = await self.get_schedule(row["id"])
 
             try:
-                # Parse the payload and execute the callback
                 payload = json.loads(row["payload"]) if row["payload"] else None
 
                 await callback(payload, schedule)
@@ -2187,7 +1980,6 @@ class Container(DurableObject):
                     'Error executing scheduled callback "%s"', row["callback"]
                 )
 
-            # Delete the schedule after execution (one-time schedules)
             self._sql("DELETE FROM container_schedules WHERE id = ?", row["id"])
 
         result_for_min_time = self._sql("SELECT * FROM container_schedules;")
@@ -2195,7 +1987,6 @@ class Container(DurableObject):
             (row["time"] * 1000 for row in result_for_min_time), default=math.inf
         )
 
-        # if not running and nothing to do, stop
         if not self._container.running:
             await self._sync_pending_stopped_events()
 
@@ -2208,16 +1999,12 @@ class Container(DurableObject):
 
         if self._is_activity_expired():
             await self.on_activity_expired()
-            # renew_activity_timeout makes sure we don't spam calls here
             self.renew_activity_timeout()
             return
 
-        # min(3m or maxTime, sleepTimeout)
         min_time = min(min_time_from_schedules, min_time, self._sleep_after_ms)
         timeout = max(0, min_time - int(time.time() * 1000))
 
-        # await a sleep for maxTime to keep the DO alive for
-        # at least this long
         loop = asyncio.get_running_loop()
         done: asyncio.Future[None] = loop.create_future()
 
@@ -2234,9 +2021,6 @@ class Container(DurableObject):
         await done
 
         await self.ctx.storage.setAlarm(int(time.time() * 1000))
-
-        # we exit and we have another alarm,
-        # the next alarm is the one that decides if it should stop the loop.
 
     async def _sync_pending_stopped_events(self) -> None:
         """Synchronise container state with the container source of truth."""
@@ -2279,12 +2063,7 @@ class Container(DurableObject):
             Delay until the next alarm, in milliseconds.
         """
         next_time = ms + int(time.time() * 1000)
-
-        # if not already set
-        if self._timeout is not None:
-            if self._resolve is not None:
-                self._resolve()
-            self._timeout.cancel()
+        self._end_alarm_wait()
 
         await self.ctx.storage.setAlarm(next_time)
         await self.ctx.storage.sync()
@@ -2362,6 +2141,12 @@ class Container(DurableObject):
             return None
 
         return self._to_schedule(result[0])
+
+    def _end_alarm_wait(self) -> None:
+        if self._timeout is not None:
+            if self._resolve is not None:
+                self._resolve()
+            self._timeout.cancel()
 
     def _is_activity_expired(self) -> bool:
         if self._inflight_requests > 0:
