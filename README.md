@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/banner-dark.svg">
+  <img src=".github/banner-light.svg" alt="Crosswind: Python SDKs for Cloudflare Workers" width="100%">
+</picture>
+
 # crosswind
 
 | Folder | Package | Previously |
