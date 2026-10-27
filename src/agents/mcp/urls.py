@@ -58,6 +58,8 @@ def is_blocked_url(url: str) -> bool:
     (including IPv4-mapped IPv6 forms) and cloud metadata hosts. Loopback is
     allowed.
     """
+    if "\\" in url:  # fetch() reads a backslash as "/", urlsplit doesn't
+        return True
     try:
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
