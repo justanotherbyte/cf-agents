@@ -11,10 +11,3 @@ dependencies = [
     "mkdocs-material>=9.7.7",
     "mkdocstrings[python]>=1.0.8",
 ]
-
-[project.scripts]
-docs = "docs:main"
-
-[build-system]
-requires = ["uv_build>=0.12.19,<0.13.0"]
-build-backend = "uv_build"
