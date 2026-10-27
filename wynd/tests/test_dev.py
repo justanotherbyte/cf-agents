@@ -495,3 +495,45 @@ def test_flags_that_change_the_target_are_refused(
     assert "compatibility_date" in capsys.readouterr().err
     assert tools.uv() == []
     assert tools.wrangler() == []
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--remote"],
+        ["-r"],
+        ["--port", "8787", "--remote"],
+        ["--remote", "--port", "8787"],
+        ["--remote=true"],
+        ["--remote", "true"],
+    ],
+)
+def test_dev_remote_is_refused(
+    tools: Tools,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    flags: list[str],
+) -> None:
+    assert main(["dev", *flags]) == 1
+
+    assert "remote bindings" in capsys.readouterr().err
+    assert tools.uv() == []
+    assert tools.wrangler() == []
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--remote", "false"],
+        ["-r", "false"],
+        ["--remote=false"],
+        ["--remote=1"],
+        ["--", "--remote"],
+    ],
+)
+def test_dev_remote_turned_off_runs_wrangler(
+    tools: Tools, project: Path, flags: list[str]
+) -> None:
+    assert main(["dev", *flags]) == 0
+
+    assert tools.wrangler() == [["dev", *flags, "--config", staged_path(project)]]

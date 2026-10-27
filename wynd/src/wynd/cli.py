@@ -245,6 +245,13 @@ def run_wrangler(flow: str) -> int:
             "and compatibility_flags in the Wrangler config."
         )
         return 1
+    if flow == "dev" and dev_remote(args):
+        error(
+            "wynd dev --remote is not supported for Python Workers. Use remote "
+            "bindings instead: "
+            "https://developers.cloudflare.com/workers/development-testing/#remote-bindings"
+        )
+        return 1
 
     try:
         project = load_selected_project()
@@ -282,6 +289,17 @@ def run_wrangler(flow: str) -> int:
     code = wrangler.run(argv, environ=environ)
     staged.warn_if_edited(project.source.path)
     return code
+
+
+def dev_remote(args: list[str]) -> bool:
+    """Whether `args` turn on wrangler dev's --remote, as Wrangler reads it:
+    a bare -r or --remote unless `false` follows, or a value of exactly `true`."""
+    flags = args[: args.index("--")] if "--" in args else args
+    following = [*flags[1:], None]
+    return any(
+        (arg in ("--remote", "-r") and after != "false") or arg == "--remote=true"
+        for arg, after in zip(flags, following, strict=True)
+    )
 
 
 def restage(cwd: Path, config: str | None, mode: str | None) -> None:
