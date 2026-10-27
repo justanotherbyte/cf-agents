@@ -329,8 +329,8 @@ def test_route_status_follows_the_error_type_not_its_message() -> None:
         ]
         return [response.status for response in responses]
 
-    # A NUL name is the client's fault; a class named Sub is the server's.
-    assert asyncio.run(scenario()) == [400, 500]
+    # A NUL name never parses as a sub-agent route; a class named Sub is the server's fault.
+    assert asyncio.run(scenario()) == [404, 500]
 
 
 # WebSockets: the root keeps the socket
