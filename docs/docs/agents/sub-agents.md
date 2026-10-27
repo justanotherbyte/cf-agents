@@ -1,0 +1,136 @@
+---
+title: "Create sub-agents with their own storage in Python"
+description: "Create child agents from a parent agent, each with its own SQLite database, call their methods, route clients to them and delete them."
+---
+
+A sub-agent is an agent that a parent agent creates and owns. Each sub-agent
+has its own state and SQLite database, and runs on the same machine as its
+parent. Use one per item a parent manages, such as one per chat thread inside
+a user's inbox, so each thread's data stays separate.
+
+A sub-agent class needs no Durable Object binding and no migration. It must
+be defined in, or imported into, the Worker's entry module under its own name.
+
+## Create and call a sub-agent
+
+`self.dynamic_agents.get(cls, name)` returns a stub for the sub-agent. The
+first call creates it and runs its `on_start`. Await methods on the stub to
+call them:
+
+```python
+from workers import Request, Response
+
+from agents import Agent
+
+
+class Thread(Agent):
+    initial_state = {"messages": []}
+
+    async def add(self, text: str) -> int:
+        messages = [*self.state["messages"], text]
+        self.set_state({"messages": messages})
+        return len(messages)
+
+
+class Inbox(Agent):
+    async def on_request(self, request: Request) -> Response:
+        thread = await self.dynamic_agents.get(Thread, "t1")
+        count = await thread.add("hi")
+        names = [child.name for child in self.dynamic_agents.list()]
+        return Response.from_json({"count": count, "threads": names})
+```
+
+```json
+{"count": 1, "threads": ["t1"]}
+```
+
+Only `Inbox` needs a binding and a migration in `wrangler.jsonc`. Calls to the
+stub follow the same rules as
+[`get_agent_by_name`](routing.md#call-an-agent-from-worker-code): any public
+`async` method, positional arguments only.
+
+## Manage sub-agents
+
+| Call                                           | What it does                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `self.dynamic_agents.list(cls=None)`                | Sub-agents this agent created, oldest first, as `SubAgentInfo` records with `class_name`, `name` and `created_at`. |
+| `self.dynamic_agents.has(cls, name)`                | Whether this agent created that sub-agent. `cls` can be the class or its name.                             |
+| `await self.dynamic_agents.delete(cls, name)`       | Deletes the sub-agent, its storage and its own sub-agents.                                                 |
+| `self.dynamic_agents.abort(cls, name, reason=None)` | Stops it and its sub-agents now. Pending calls raise `reason`, by default `SubAgentAbortedError`. The next `get` restarts it with its storage. |
+
+Deleting a sub-agent disconnects its clients and cancels its schedules, queued
+items and task runs. Deleting one that doesn't exist does nothing.
+
+## Call the parent
+
+Inside a sub-agent, `await self.parent_agent(ParentClass)` returns a stub for
+its parent:
+
+```python
+class Thread(Agent):
+    async def add(self, text: str) -> int:
+        inbox = await self.parent_agent(Inbox)
+        await inbox.mark_unread(self.name)
+        ...
+```
+
+It raises `RuntimeError` on an agent that isn't a sub-agent, and `TypeError`
+when the class doesn't match the parent's. `self.parent_path` and
+`self.self_path` list the agents from the root down.
+
+## Route clients to a sub-agent
+
+Clients reach a sub-agent through its parent's URL, with
+`/sub/{class}/{name}` appended. `{class}` is the class name in kebab case, as
+for bindings:
+
+```text
+/agents/inbox/alice/sub/thread/t1
+```
+
+`route_agent_request` handles this path with no extra code. WebSocket
+connections, HTTP requests and `@callable` calls all reach the sub-agent.
+
+The parent decides whether to let each request through. Override
+`on_before_sub_agent`:
+
+```python
+from agents import AgentRoute
+
+
+class Inbox(Agent):
+    async def on_before_sub_agent(
+        self, request: Request, child: AgentRoute
+    ) -> Request | Response | None:
+        if not self.dynamic_agents.has(Thread, child.name):
+            return Response("Not found", status=404)
+        return None
+```
+
+Return `None` to forward the request, a `Response` to answer instead, or a
+`Request` to forward that request instead.
+
+## Call a sub-agent from Worker code
+
+`get_sub_agent_by_name(parent_stub, cls, name)` returns a stub that calls the
+sub-agent through its parent:
+
+```python
+from agents import get_agent_by_name, get_sub_agent_by_name
+
+inbox = await get_agent_by_name(self.env.Inbox, "alice")
+thread = await get_sub_agent_by_name(inbox, Thread, "t1")
+count = await thread.add("hello")
+```
+
+This path skips `on_before_sub_agent`, so check access in your Worker code
+before you call it. The stub supports method calls only, not `fetch`, and
+each call makes one extra hop through the parent.
+
+## Limits
+
+- Schedules, queue items and tasks on a sub-agent run through the root agent's
+  alarm, because a sub-agent has no alarm of its own.
+- A sub-agent's class name can't convert to `sub` in kebab case, and its
+  instance name can't contain a NUL character. Both raise `ValueError`, as
+  does a class that isn't in the entry module under its own name.

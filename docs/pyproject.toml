@@ -1,0 +1,19 @@
+[project]
+name = "docs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "mkdocs-material>=9.7.7",
+]
+
+[project.scripts]
+docs = "docs:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
