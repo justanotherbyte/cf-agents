@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from typing import Any
 
+from .gateway import BaseOptions
 from .request import Request
 
 # 101/103/204/205/304 must not carry a body per the Fetch spec.
@@ -15,8 +16,16 @@ def request_headers(req: Any) -> Iterable[tuple[str, str]]:
     return req.headers.items() if isinstance(req, Request) else req.headers
 
 
-def body_encoding(headers: Iterable[tuple[str, str]]) -> dict[str, str]:
-    """The `Response` init entry for a body the app has already encoded."""
+def body_encoding(
+    headers: Iterable[tuple[str, str]], options: BaseOptions | None
+) -> dict[str, Any]:
+    """The `Response` init entry for the body's `Content-Encoding`.
+
+    Explicit `options` behave as in the stock SDK. Without them, a body sent
+    with a `Content-Encoding` header counts as already encoded.
+    """
+    if options is not None:
+        return options.response_init()
     if any(name.lower() == "content-encoding" for name, _ in headers):
         # The app encoded the body already, as GZipMiddleware does. Without
         # this the runtime encodes it a second time.
