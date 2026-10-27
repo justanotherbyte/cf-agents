@@ -1,0 +1,5 @@
+[project]
+name = "stock-fixture"
+version = "0"
+requires-python = ">=3.12"
+dependencies = ["workers-runtime-sdk"]

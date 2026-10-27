@@ -1,0 +1,3 @@
+from contextlib import AbstractContextManager
+
+def allow_bad_entropy_calls(n: int) -> AbstractContextManager[None]: ...
