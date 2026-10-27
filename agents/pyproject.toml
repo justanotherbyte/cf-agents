@@ -41,7 +41,7 @@ dev = ["pytest", "ruff", "ty", "workers-runtime-sdk", "mcp>=2.3,<3"]
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-extend-exclude = ["verify", "examples", ".design"] # the verification Worker, examples and design docs aren't SDK code
+extend-exclude = ["verify", ".design", "tests", "examples"]
 
 [tool.ruff.lint]
 select = [
