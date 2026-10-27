@@ -271,6 +271,9 @@ class MCPClientManager(LifecycleCapability):
         return existing
 
     async def _readd(self, record: MCPServerRecord) -> AddMcpServerResult:
+        pending = self._pending.get(record.id)
+        if pending is not None:
+            await asyncio.wait([pending])  # a restore or callback still connecting
         connection = self._connections[record.id]
         if connection.state == MCPConnectionState.AUTHENTICATING:
             auth_url = connection.auth_url or record.auth_url
@@ -279,9 +282,9 @@ class MCPClientManager(LifecycleCapability):
                     id=record.id, state="authenticating", auth_url=auth_url
                 )
             return await self._connect_and_report(record.id)
-        if connection.state == MCPConnectionState.FAILED:
-            return await self._connect_and_report(record.id)
-        return AddMcpServerResult(id=record.id, state="ready")
+        if connection.state == MCPConnectionState.READY:
+            return AddMcpServerResult(id=record.id, state="ready")
+        return await self._connect_and_report(record.id)
 
     async def _redeemable(self, server_id: str, auth_url: str) -> bool:
         # A stored URL is offered again only while its state can still be redeemed.

@@ -178,6 +178,22 @@ def test_restore_after_eviction() -> None:
     asyncio.run(main())
 
 
+def test_readd_during_restore_waits_for_it() -> None:
+    async def main() -> None:
+        async with serve(demo_server()) as transport:
+            first = Setup(transport)
+            await first.lifecycle.start()
+            await first.manager.add_server("Demo", URL, id="demo")
+
+            second = Setup(transport, host=first.host)
+            await second.lifecycle.start()  # the restore connects in the background
+            result = await second.manager.add_server("Demo", URL, id="demo")
+            assert result.state == "ready"
+            assert second.manager.connections["demo"].state == MCPConnectionState.READY
+
+    asyncio.run(main())
+
+
 def test_wait_for_connections_never_raises() -> None:
     async def main() -> None:
         setup = Setup(ScriptedTransport(lambda r, m: Reply(status=500)))

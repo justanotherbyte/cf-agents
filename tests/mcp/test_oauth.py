@@ -100,6 +100,36 @@ def test_tokens_survive_eviction_and_refresh() -> None:
     asyncio.run(main())
 
 
+def test_no_refresh_with_credentials_bound_to_another_issuer() -> None:
+    async def main() -> None:
+        provider = InMemoryAuthProvider()
+        async with serve(oauth_server(provider)) as transport:
+            first = Setup(transport)
+            await first.lifecycle.start()
+            result = await first.manager.add_server(
+                "Secured", URL, id="sec", callback_url=CALLBACK
+            )
+            assert result.auth_url is not None
+            await first.manager.on_request(
+                Request(await authorize(transport, result.auth_url))
+            )
+            await first.manager.wait_for_connections(timeout=5)
+            await first.manager.dispose()
+
+            kv = first.host.ctx.storage.kv
+            key = next(k for k in kv if k.endswith("/client_info/"))
+            kv[key] = {**kv[key], "issuer": "https://old.example"}
+            provider.access.clear()
+            second = Setup(transport, host=first.host)
+            await second.lifecycle.start()
+            await second.manager.wait_for_connections(timeout=5)
+            state = second.manager.connections["sec"].state
+            assert state == MCPConnectionState.AUTHENTICATING
+            assert provider.refreshes == 0
+
+    asyncio.run(main())
+
+
 def test_callback_with_error_fails_the_connection() -> None:
     async def main() -> None:
         provider = InMemoryAuthProvider()
