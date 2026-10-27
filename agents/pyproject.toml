@@ -24,7 +24,7 @@ version = "0.1.3"
 mcp-server = ["mcp>=2.3,<3"]
 
 [project.urls]
-Source = "https://github.com/justanotherbyte/agents-py"
+Source = "https://github.com/justanotherbyte/crosswind/tree/main/agents"
 Documentation = "https://crosswind.viswa.space"
 
 [build-system]

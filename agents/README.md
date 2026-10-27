@@ -1,6 +1,6 @@
 <h1 align="center">
 <sub>
-    <img src="https://raw.githubusercontent.com/justanotherbyte/agents-py/refs/heads/main/.github/agents.svg" height="36">
+    <img src="https://raw.githubusercontent.com/justanotherbyte/crosswind/refs/heads/main/agents/.github/agents.svg" height="36">
 </sub>
 &nbsp;
 cf-agents
