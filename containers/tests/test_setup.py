@@ -39,10 +39,10 @@ class AbortSignal:
         self.aborted = False
         self._listeners: list[Any] = []
 
-    def addEventListener(self, event: str, listener: Any) -> None:  # noqa: N802
+    def addEventListener(self, event: str, listener: Any) -> None:
         self._listeners.append(listener)
 
-    def removeEventListener(self, event: str, listener: Any) -> None:  # noqa: N802
+    def removeEventListener(self, event: str, listener: Any) -> None:
         if listener in self._listeners:
             self._listeners.remove(listener)
 
@@ -176,7 +176,7 @@ class Proxy:
 
 class _JsObject:
     @staticmethod
-    def fromEntries(entries: Any) -> Any:  # noqa: N802
+    def fromEntries(entries: Any) -> Any:
         return dict(entries)
 
     @staticmethod

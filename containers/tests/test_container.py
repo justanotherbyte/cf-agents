@@ -292,8 +292,6 @@ class TestContainer:
         tcp_port = mock_ctx.container.getTcpPort.return_value
         tcp_port.fetch.assert_called()
 
-        # Just make sure that tcp_port.fetch was called - the exact URL is tested
-        # in the container.py implementation
         tcp_port.fetch.assert_called_with(ANY, ANY)
         assert isinstance(tcp_port.fetch.call_args[0][0], str)
 
@@ -483,21 +481,14 @@ class TestContainer:
         forwarded_request = tcp_port.fetch.call_args[0][1]
         assert forwarded_request.headers.get("Upgrade") == "websocket"
 
-        # The WebSocket branch must have been taken. If `WebSocketPair` is missing
-        # container_fetch catches the error and returns a 500 — these assertions
-        # guard against that silent regression.
         web_socket_pair_spy.assert_called_once()
 
-        # Container-side WebSocket from the tcp_port response must be accepted
-        # and wired up with message/close/error handlers.
         container_ws: MockWebSocket = tcp_port.fetch.results[0].webSocket
         container_ws.accept.assert_called_once()
         assert len(container_ws.event_listeners["message"]) == 1
         assert len(container_ws.event_listeners["close"]) == 1
         assert len(container_ws.event_listeners["error"]) == 1
 
-        # The response must carry the upstream status (200 in our mock) and the
-        # headers from the tcp_port response.
         assert response.status == 200
 
     async def test_fetch_should_detect_web_socket_requests_and_forward_them_correctly(
@@ -523,8 +514,6 @@ class TestContainer:
 
 
 class TestHttpsInterceptionRuntimeGuard:
-    # Simulates a runtime older than the one that introduced
-    # ctx.container.interceptOutboundHttps (workerd ~2026-04-03).
     @staticmethod
     def remove_https_support(mock_ctx: MagicMock) -> None:
         del mock_ctx.container.interceptOutboundHttps
@@ -542,9 +531,6 @@ class TestHttpsInterceptionRuntimeGuard:
         ):
             await container.set_allowed_hosts(["example.com"])
 
-    # Without the up-front check, the per-host loop applies HTTP interception for a
-    # static host and only then hits the missing HTTPS method, leaving the
-    # container partially intercepted.
     async def test_leaves_no_partial_interception_applied_when_the_guard_trips(
         self, mock_ctx
     ):
@@ -598,7 +584,6 @@ class TestGetRandom:
 
 
 class TestRpcKwargs:
-    # JS RPC has no keyword arguments: Pyodide sends them as a trailing object.
     async def test_start_accepts_keyword_options_sent_as_a_trailing_dict(
         self, mock_ctx, container
     ):

@@ -25,7 +25,7 @@ class DurableObjectStub(Protocol):
 class DurableObjectNamespace(Protocol):
     """A Durable Object namespace binding, e.g. ``self.env.MY_CONTAINER``."""
 
-    def idFromName(self, name: str, /) -> Any: ...  # noqa: N802
+    def idFromName(self, name: str, /) -> Any: ...
 
     def get(self, id: Any, /) -> DurableObjectStub: ...
 
@@ -69,7 +69,6 @@ def parse_time_expression(time_expression: str | int) -> int:
         If the value is neither a string nor an int.
     """
     if isinstance(time_expression, int):
-        # If it's already a number, assume it's in seconds
         return time_expression
 
     if isinstance(time_expression, str):
@@ -117,8 +116,6 @@ async def get_random(
     """
     id = random.randrange(instances)
 
-    # Always use idFromName for consistent behavior
-    # idFromString requires a 64-hex digit string which is hard to generate
     object_id = binding.idFromName(f"instance-{id}")
 
     return binding.get(object_id)
