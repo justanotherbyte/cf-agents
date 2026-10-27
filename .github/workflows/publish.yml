@@ -1,0 +1,46 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      # Release tags look like <package>-v<version>, for example wynd-v0.4.0.
+      - name: Pick package from tag
+        id: package
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          package="${TAG%%-*}"
+          case "$package" in
+            containers|agents|workers|wynd) echo "dir=$package" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Tag '$TAG' does not start with containers-, agents-, workers- or wynd-"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Check tag matches pyproject version
+        working-directory: ${{ steps.package.outputs.dir }}
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(uv version --short)"
+          if [ "${TAG#*-v}" != "$version" ]; then
+            echo "::error::Tag '$TAG' does not match pyproject.toml version $version"
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: ${{ steps.package.outputs.dir }}
+        run: uv build
+
+      - name: Publish
+        working-directory: ${{ steps.package.outputs.dir }}
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
