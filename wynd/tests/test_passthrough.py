@@ -40,3 +40,12 @@ def test_missing_npx_names_nodejs(
 
     assert main(["whoami"]) == 1
     assert "Node.js" in capsys.readouterr().err
+
+
+def test_remote_is_left_to_wrangler_outside_dev(tools: Tools) -> None:
+    args = ["d1", "execute", "db", "--remote"]
+
+    assert main(args) == 0
+    assert [call["args"] for call in tools.calls("npx")] == [
+        ["--yes", "wrangler@4.129.0", *args]
+    ]
