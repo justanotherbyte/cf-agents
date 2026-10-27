@@ -209,3 +209,29 @@ body {
     transition: none;
   }
 }
+
+/* Primary nav, after docs.astral.sh/uv: smaller text and tighter spacing on wide screens */
+@media screen and (min-width: 76.25em) {
+  /* The title is only needed for back navigation in the mobile drawer */
+  .md-nav--primary .md-nav__title {
+    display: none;
+  }
+
+  .md-nav--primary,
+  .md-nav--primary .md-nav {
+    font-size: 0.75rem;
+  }
+
+  /* Space items with the item margin, not the link margin, so gaps stay even */
+  .md-nav--primary .md-nav__link {
+    margin: 0;
+  }
+
+  .md-nav--primary .md-nav__item {
+    margin-top: 0.35em;
+  }
+}
+
+.md-nav__link--active {
+  font-weight: 700;
+}

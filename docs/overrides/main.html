@@ -1,12 +1,5 @@
 {% extends "base.html" %}
 
-{#- Material's font option loads only weights 300, 400 and 700; theme.css also uses 500 and 600 #}
-{% block fonts %}
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:ital,wght@0,100..900;1,100..900&family=Geist+Mono:ital,wght@0,100..900;1,100..900&display=fallback">
-  <style>:root{--md-text-font:"Geist";--md-code-font:"Geist Mono"}</style>
-{% endblock %}
-
 {% block extrahead %}
   <script
     src="https://cdn.databuddy.cc/databuddy.js"

@@ -5,7 +5,6 @@ theme:
   custom_dir: overrides
   logo: assets/logo.png
   favicon: assets/logo.png
-  font: false  # overrides/main.html loads Geist
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
