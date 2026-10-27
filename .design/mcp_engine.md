@@ -1,10 +1,17 @@
-# MCP: internals (proposed)
+# MCP: internals (decided; built)
 
-How the API in [mcp_api.md](./mcp_api.md) is built. Upstream:
-`mcp/client/index.ts` (`MCPClientManager`, 2,456 lines), `connection.ts`,
+How the API in [mcp_api.md](./mcp_api.md) is built. The client is our own
+code and has no runtime dependency beyond cf-agents, so it runs on 3.12,
+3.13 and 3.14 Workers. Server hosting stays on the `mcp` SDK behind the
+`cf-agents[mcp-server]` extra (3.14 Workers only). Why: [mcp.md](./mcp.md)
+§5.3.1 measured `mcp` at 16 to 20 MiB per Worker, most of it native code
+the client never uses.
+
+Upstream: `mcp/client/index.ts` (`MCPClientManager`), `connection.ts`,
 `storage.ts`, `do-oauth-client-provider.ts`, `server/handler-stateless.ts`,
-`server/auth-context.ts`, and the MCP wiring in `src/index.ts`. The Python
-SDK facts here were checked against `mcp` 2.3.0.
+`server/auth-context.ts`, and the MCP wiring in `src/index.ts`. The wire
+facts below were taken from the `mcp` 2.3.0 Python SDK (`mcp/`,
+`mcp_types/`), which the client ports. Line numbers refer to those trees.
 
 ---
 
@@ -12,51 +19,47 @@ SDK facts here were checked against `mcp` 2.3.0.
 
 ```
 src/agents/
+├── _ffi.py               # + open_fetch, FetchResponse
 ├── agent/
-│   ├── types.py          # + MCPOptions (no mcp import)
+│   ├── types.py          # + MCPOptions
 │   ├── errors.py         # + MCPNotEnabledError
 │   └── agent.py          # + install on options.mcp, add/remove/get_mcp_servers,
 │                         #   the two hooks, the dynamic cf_agent_mcp_servers frame
 ├── chat/types.py         # + AIChatAgentOptions.wait_for_mcp_connections
-└── mcp/
-    ├── __init__.py       # import guard (§9) + client re-exports, explicit __all__
-    ├── types.py          # MCPConnectionState, records, MCPServersState, persisted-options shapes
+└── mcp/                  # the client; never imports mcp
+    ├── __init__.py       # re-exports, static __all__; doesn't import server
     ├── errors.py         # MCPError and subclasses
-    ├── client/
-    │   ├── __init__.py
-    │   ├── manager.py    # MCPClientManager: registry, add/remove, restore, waiting, catalog
-    │   │                 #   aggregation, OAuth callback routing, state-change emitter
-    │   ├── connection.py # MCPClientConnection: the state machine and the connection task
-    │   ├── storage.py    # cf_agents_mcp_servers, schema version key, server_options codec
-    │   ├── oauth.py      # MCPOAuthProvider, DurableObjectOAuthProvider, the deferred-grant subclass
-    │   ├── callback.py   # matching and validating callback requests; the default response
-    │   ├── http.py       # the httpx2 client factory (headers, auth, timeouts)
-    │   └── urls.py       # normalize_server_id, is_blocked_url, callback URL building
-    └── server/
-        ├── __init__.py
+    ├── types.py          # enums, records, TypedDict payloads (stdlib only)
+    ├── models.py         # protocol dataclasses with wire() names, and their decoding
+    ├── urls.py           # normalize_server_id, is_blocked_url
+    ├── sse.py            # incremental SSE decoder
+    ├── http.py           # HttpTransport protocol, FetchTransport (choke point 1)
+    ├── session.py        # McpSession: JSON-RPC over Streamable HTTP, both eras (choke point 2)
+    ├── oauth.py          # MCPOAuthProvider, DurableObjectOAuthProvider
+    ├── oauth_flow.py     # OAuthFlow: discovery, registration, PKCE, exchange, refresh
+    ├── storage.py        # McpServerStore: cf_agents_mcp_servers and the server_options codec
+    ├── connection.py     # MCPClientConnection: state machine, catalog, discovery, listener
+    ├── manager.py        # MCPClientManager: the capability and facade, and the OAuth
+    │                     #   callback (it owns the connections and flows a callback touches)
+    └── server/           # needs cf-agents[mcp-server]
+        ├── __init__.py   # import guard naming the extra
         ├── handler.py    # create_mcp_handler, McpHandler, route/CORS/Host/Origin checks
         ├── asgi.py       # the request ⇄ ASGI bridge for one request
         └── auth_context.py  # McpAuthContext, the ContextVar, get_mcp_auth_context
 ```
 
-- **Where `mcp/` sits in the dependency order:** at the same level as
-  `chat/`, above `agent`:
-  `core → lifecycle → capabilities → agent → {chat, mcp}`. `agents.mcp`
-  may import `agent.types` (for `MCPOptions`) but not `agent.agent`. Like
+- **Layers**, lowest first: `http.py` (transport), `session.py` and
+  `oauth_flow.py` (protocol), `connection.py`, then `manager.py` (facade).
+  `storage.py` and `oauth.py` hold persisted state.
+- **Where `mcp/` sits:** at the same level as `chat/`, above `agent`.
+  `agents.mcp` may import `agent.types` but not `agent.agent`. Like
   upstream, `MCPClientManager` depends only on Lifecycle services, so it
   works on plain DOs.
-- **The one upward import:** `Agent.__init__` imports
-  `agents.mcp.client.manager` inside the `if options.mcp:` branch. That's
-  the only place core touches `agents.mcp`, and the import-boundary test
-  (§9) keeps it that way. Upstream builds MCP in `Agent`'s constructor too.
-- **Matching upstream's files:** `manager.py` is `client/index.ts`,
-  `connection.ts` → `connection.py`, `storage.ts` → `storage.py`,
-  `do-oauth-client-provider.ts` → `oauth.py`, `handler-stateless.ts` →
-  `server/handler.py`, and `auth-context.ts` → `server/auth_context.py`.
-  `callback.py` and `urls.py` are pieces split out of the 2.4k-line
-  `index.ts`. Not mirrored: `rpc.ts`, `x402.ts`, `transports.ts`
-  (deprecated aliases), `catalog.ts` / `invoker.ts` (the AI SDK tool
-  conversion), and the legacy server files.
+- **The one upward import:** `Agent.__init__` imports `agents.mcp.manager`
+  inside the `if options.mcp:` branch.
+- **Not ported:** `rpc.ts`, `x402.ts`, `transports.ts`, `catalog.ts` /
+  `invoker.ts` (AI SDK tool conversion), `McpAgent` and the legacy server
+  files.
 
 ---
 
@@ -69,32 +72,180 @@ Agent.__init__
        └─ yes → self._mcp = self.use(MCPClientManager(
                     client_name=options.mcp.client_name or type(self).__name__,
                     create_oauth_provider=self.create_mcp_oauth_provider,
-                    on_oauth_callback=self.on_mcp_oauth_callback, ...))
-                self._mcp.on_server_state_changed.subscribe(self._on_mcp_state_changed)
+                    on_oauth_callback=self.on_mcp_oauth_callback,
+                    keep_alive=self._keep_alive.acquire, ...))     # after _fibers
+                self._mcp.on_server_state_changed(self._on_mcp_state_changed)
 
 MCPClientManager.on_start            (Lifecycle startup, before the agent's on_start)
-  ├─ schema version key "cf_agents:mcp_schema_version" < 1 → CREATE TABLE IF NOT EXISTS, set to 1
-  ├─ restore (§4): build a connection for every row; OAuth-pending rows go to AUTHENTICATING;
+  ├─ "cf_agents:mcp_schema_version" < 1 → CREATE TABLE IF NOT EXISTS, set to 1
+  ├─ restore (§6): a connection for every row; rows with auth_url go to AUTHENTICATING;
   │  the rest start connecting in the background
   └─ fire on_server_state_changed
 ```
 
 - **Broadcasting waits until the agent has started**, as upstream's
-  `mcpBroadcastReady` does. The manager starts before the agent has
-  restored its own routing state, so `_on_mcp_state_changed` does nothing
-  until the agent's startup finishes, then sends one broadcast.
-- **The connect frame** replaces the constant `_MCP_SERVERS_FRAME` with
-  `self._mcp_servers_frame()`: the empty frame when `_mcp is None`,
-  otherwise `servers_state()` serialized. The broadcast goes to
+  `mcpBroadcastReady` does (`index.ts:2046,2410`). `_on_mcp_state_changed`
+  does nothing until the agent's startup finishes, then sends one
+  broadcast.
+- **The connect frame** is `self._mcp_servers_frame()`: the empty frame when
+  `_mcp is None`, otherwise `servers_state()` serialized. Broadcasts go to
   protocol-enabled connections only, like state broadcasts.
+- **The callback route** is the manager's `on_request`. It's a selective
+  capability, so Lifecycle runs it before `Agent.on_request`.
 
 ---
 
-## 3. Connections (`connection.py`)
+## 3. Transport (`http.py`, `_ffi.py`)
 
-### 3.1 The state machine
+```python
+@dataclass(slots=True, kw_only=True)
+class HttpRequest:
+    method: str
+    url: str
+    headers: Mapping[str, str]
+    body: str | None = None
 
-The same as upstream (`connection.ts:49`):
+class HttpResponse(Protocol):
+    status: int
+    headers: Mapping[str, str]          # lower-case names
+    def chunks(self) -> AsyncIterator[bytes]: ...
+
+class HttpTransport(Protocol):
+    def request(self, request: HttpRequest) -> AbstractAsyncContextManager[HttpResponse]: ...
+```
+
+`FetchTransport` is the default. It wraps `_ffi.open_fetch` and turns a
+`JsException` (network, DNS, TLS, or a dropped body) into
+`MCPTransportError`.
+
+`_ffi.open_fetch(method, url, *, headers, body)` is an async context
+manager:
+
+- it calls `js.fetch(url, init)` with `{method, headers, body, signal,
+  redirect: "manual"}` and an `AbortController`;
+- a `CancelledError` while waiting for headers aborts the controller;
+- it yields a `FetchResponse` with `status`, lower-cased `headers` and
+  `chunks()`, a `reader.read()` loop;
+- its `finally` calls `reader.cancel()` and `controller.abort()`.
+
+This is the only combination that aborts on cancellation
+([platform_verification.md](./platform_verification.md) §2.8). Tests inject
+a transport instead: `tests/mcp/_asgi_transport.py`'s `AsgiTransport` runs
+an ASGI app in-process.
+
+---
+
+## 4. Session (`session.py`)
+
+`McpSession(url, *, http, client_info, headers, auth, on_notification)` is
+one negotiated conversation with one server. It has no background task:
+every request is one POST whose response is read as it arrives.
+
+### 4.1 The choke point
+
+`request(method, params, *, timeout=60)` does what every call needs, once:
+
+1. Build the envelope with an id from a per-session counter starting at 1.
+2. Stamp it for the era (§4.3).
+3. Add the stored headers, `mcp-session-id`, and `Authorization` from
+   `auth.authorization()`.
+4. On 401, refresh once, then authorize (§7).
+5. Follow same-origin 307/308 redirects, at most 3. Any other redirect is
+   -32600 naming `Location`.
+6. Read a JSON or SSE response (§4.4) and dispatch in-stream
+   notifications.
+7. Answer server-initiated requests with -32601 (handshake era only).
+8. Map HTTP status to JSON-RPC errors, and `TimeoutError` to
+   `MCPRpcError(-32001)`.
+9. On a 404 while holding a session id, re-`initialize` once and retry.
+
+The endpoint methods (`list_page`, `call_tool`, `get_prompt`,
+`read_resource`) are each a few lines that call `request()`. A reply's
+`error` raises `MCPRpcError(code, message, data)`. A result with
+`resultType: "input_required"` raises `MCPProtocolError` (elicitation is
+deferred).
+
+### 4.2 Constants
+
+| Fact | Value | Source |
+| --- | --- | --- |
+| Handshake versions | `2024-11-05`, `2025-03-26`, `2025-06-18`, `2025-11-25` (latest) | `mcp_types/version.py:33-41` |
+| Modern versions | `2026-07-28` | `version.py:43` |
+| `_meta` keys | `io.modelcontextprotocol/protocolVersion`, `/clientInfo`, `/clientCapabilities` | `mcp_types/_types.py:53-72` |
+| Headers | `mcp-protocol-version`, `mcp-method`, `mcp-name`, `Mcp-Param-<token>`, `mcp-session-id` | `mcp/shared/inbound.py:60-67,234`; `client/streamable_http.py:55-56` |
+| `Mcp-Name` | `tools/call` and `prompts/get` → `name`, `resources/read` → `uri`; `=?base64?…?=` unless printable ASCII | `inbound.py:72-78,149` |
+| `Mcp-Param-*` | one per `x-mcp-header` property in the tool's input schema; bools as `true`/`false`; the server rejects a call without them | `inbound.py:237-290,526-570` |
+| Request headers | `accept: application/json, text/event-stream`, `content-type: application/json` | `streamable_http.py:139-157` |
+| Error codes | -32020 header mismatch, -32022 unsupported version, -32000 connection closed, -32001 timeout, -32700, -32600, -32601, -32602, -32603 | `mcp_types/jsonrpc.py:73-106` |
+| Timeouts | discover 10 s (`client/session.py:68`), requests 60 s | |
+| SSE limits | 1 MiB per event; GET reconnects twice, 1000 ms default delay | `streamable_http.py:59-61` |
+
+### 4.3 Era negotiation (`connect(prior=...)`)
+
+A port of `client/_probe.py:52-114`:
+
+1. **Restore:** if `prior` has a modern `protocol_version` and a
+   `discover_result`, adopt them. No network request.
+2. **Probe:** send `server/discover` at 2026-07-28, with `_meta
+   {protocolVersion, clientInfo, clientCapabilities: {}}` and the
+   `mcp-protocol-version` and `mcp-method` headers.
+   - A valid result that lists a modern version: adopt it.
+   - An unparseable result, or no modern version: initialize.
+   - -32022 naming a mutual modern version, first attempt: probe again at
+     that version.
+   - -32022 whose `supported` list has no handshake version: raise.
+   - Any other `MCPRpcError` (a 404 becomes -32601): initialize.
+   - Network errors propagate. A 401 goes to OAuth and is never an era
+     verdict.
+3. **Initialize:** send `initialize {protocolVersion: "2025-11-25",
+   capabilities: {}, clientInfo}` with no `mcp-protocol-version` header.
+   Keep `mcp-session-id` from the response. The `protocolVersion` must be
+   a handshake version, else `MCPProtocolError`. Send
+   `notifications/initialized` and expect 202. A -32022 from `initialize`
+   on the first attempt re-probes at the mutual version.
+
+After negotiation, the handshake era sends `mcp-protocol-version` and
+`mcp-session-id` on every request. The modern era merges the `_meta`
+envelope into `params` and sends `mcp-protocol-version`, `mcp-method`,
+`mcp-name` and `Mcp-Param-*`, which the server checks exactly
+(`inbound.py:401-500`).
+
+### 4.4 Reading responses
+
+A port of `streamable_http.py:174-205,363-427`:
+
+| Response | Result |
+| --- | --- |
+| 202 to a request | -32600 |
+| 401 | OAuth (§7) |
+| ≥400 with a JSON-RPC error body | that error |
+| 404 with a session id | session expired: re-initialize and retry once |
+| 404 without one | -32601 "Not Found" (drives the era fallback) |
+| other ≥400 | -32603 |
+| `application/json` | one message |
+| `text/event-stream` | `message` events; empty data is a priming event; the response with our id ends the read and cancels the reader; notifications go to `on_notification`; stream end without a response is -32000 |
+| other content type | -32600 |
+
+### 4.5 The listener (`listen()`)
+
+The connection runs it as one task after READY. It holds no keep-alive
+lease and is cancelled on close.
+
+- **Handshake era, with a session id:** a GET with `accept:
+  text/event-stream`. 405 means the server offers no stream. It
+  reconnects as `streamable_http.py:224-262` does.
+- **Modern era, only when a capability has `listChanged`:** a
+  `subscriptions/listen` request whose `params.notifications` asks for
+  `toolsListChanged`, `promptsListChanged`, `resourcesListChanged`. The
+  first frame is `notifications/subscriptions/acknowledged`
+  (`_types.py:1024-1095`, `shared/subscriptions.py:36,79`).
+- **`close()`** sends DELETE in the handshake era; 405 counts as done.
+
+---
+
+## 5. Connection (`connection.py`)
+
+The state machine is upstream's (`connection.ts:53`):
 
 ```
 no OAuth:  CONNECTING → CONNECTED → DISCOVERING → READY
@@ -102,140 +253,68 @@ OAuth:     AUTHENTICATING → (callback) → CONNECTING → CONNECTED → DISCOV
 any state → FAILED (error kept on the connection, sanitized in the frame)
 ```
 
-Every transition fires the manager's `on_server_state_changed`.
-
-### 3.2 The connection task
-
-`mcp.Client` is an async context manager. On entry it starts an anyio task
-group: the HTTP POST writer, and for handshake-era servers the GET event
-stream. **anyio requires a cancel scope to be exited by the task that
-entered it.** A connection outlives the request that created it, so it can't
-be entered in one request and closed in another. Each connection therefore
-owns one background task (`asyncio.create_task`, which works on Python
-Workers per [platform_verification.md](./platform_verification.md) §2.7):
-
-```python
-async def _run(self) -> None:
-    try:
-        async with self._open_client() as client:     # transport + handshake / adopt
-            self._client = client
-            self._connected.set_result(None)           # init() is waiting on this
-            await self._closing.wait()                 # parked until close()
-    except AuthorizationRequired as pending:            # raised by the OAuth provider (§6)
-        self._fail_or_authenticate(pending)
-    except Exception as error:
-        self._fail(error)
-    finally:
-        self._client = None
-```
-
-- **`init()`** starts `_run` and waits for `_connected`, or for the task to
-  end. It returns the resulting state, which is upstream's `init()`
-  contract.
-- **Calls** (`call_tool`, `list_tools`, …) run on whatever task called them,
-  using `self._client`. anyio's memory streams are safe to use from any task
-  on the same loop.
-- **`close()`** sets `_closing`, then waits for `_run` to finish with a
-  bounded timeout. Exiting `Client` sends the session `DELETE` for
-  handshake-era servers.
-- **A connection that dies on its own** (the transport errors, or the server
-  ends the session) ends `_run`, which moves to `FAILED` and fires a state
-  change. Upstream does the same through `onclose` / `onerror`.
-
-### 3.3 Building the client
-
-`_open_client()` builds the transport, then `mcp.Client(transport,
-client_info=Implementation(name, version), mode=..., prior_discover=...,
-message_handler=self._on_message)`:
-
-- **Transport `auto`** tries Streamable HTTP and falls back to SSE
-  (`mcp.client.sse.sse_client`) only on the errors upstream treats as
-  "this transport doesn't exist" (404 / 405 on the first POST). `auto` then
-  records which transport worked, so a restore doesn't probe again.
-- **Protocol era:** the first connect uses `mode="auto"`, where the SDK
-  probes `server/discover` and falls back to the `initialize` handshake.
-  The negotiated version, and for 2026-07-28 servers the `DiscoverResult`,
-  are persisted (§5). On restore, a 2026-07-28 server uses
-  `mode=<version>, prior_discover=<stored>`, so **reconnecting a modern
-  server makes no network request**. A handshake-era server makes a new
-  handshake: the Python SDK's `streamable_http_client` has no way to resume
-  a stored `Mcp-Session-Id`, so upstream's session resumption
-  (`_recoverStaleSession`) isn't ported.
-- **HTTP** (`http.py`): one `httpx2.AsyncClient` per connection, with the
-  stored `headers`, `auth=<OAuth provider>` when there's a callback URL, and
-  the SDK's recommended timeouts (`create_mcp_http_client`). On Workers,
-  `httpx2` sends through JS `fetch` via `httpx2-jsfetch`. Whether
-  cancelling it aborts the request is still to be verified
-  ([mcp.md](./mcp.md) §5.3). If it doesn't, `http.py` is where an aborting
-  transport goes.
-- **Notifications:** `_on_message` reacts to
-  `notifications/{tools,prompts,resources}/list_changed` by re-running that
-  one list (as upstream's `onListChanged`) and firing a state change.
-  Upstream's debounced notification methods are a client option, and are
-  left out of the first pass.
-
-### 3.4 Discovery
-
-`discover()` moves to `DISCOVERING` and runs `list_tools`, `list_prompts`,
-`list_resources` and `list_resource_templates` concurrently, skipping any
-the server's capabilities don't advertise. It holds the results in memory,
-then moves to `READY`. Rules from upstream:
-
-- It's bounded by `MCPOptions.discovery_timeout` (15 s). On timeout or error
-  it goes back to `CONNECTED` with the error, not to `FAILED`.
-- A new `discover()` cancels the one in flight (upstream's
-  `_discoveryAbortController`).
-- Pages are followed until `next_cursor` runs out, up to the SDK's limit.
-
-The catalog isn't persisted (upstream doesn't either): after a restore, the
-lists are empty until rediscovery finishes. `wait_for_connections` covers
-that.
+- **`init()`** builds a new `McpSession` and calls `connect(prior=...)`.
+  `MCPAuthorizationRequiredError` moves to AUTHENTICATING and calls
+  `on_authorize(auth_url, client_id)`. Any other `MCPError` moves to FAILED
+  and drops `prior`, so a retry negotiates afresh. It emits
+  `mcp:client:connect`. A 404 or 405 on the first POST fails with "legacy
+  SSE servers aren't supported yet".
+- **`discover(timeout=)`**, a port of `connection.ts:527`: it cancels a
+  discovery in flight, moves to DISCOVERING, and inside
+  `asyncio.timeout()` gathers `tools/list`, `prompts/list`,
+  `resources/list` and `resources/templates/list` for the capabilities the
+  server advertises. Each list follows `nextCursor` and stops on a repeated
+  cursor. A -32601 from one list leaves it empty and emits `discover` with
+  the capability (`connection.ts:980`). Success moves to READY and starts
+  the listener. An error or timeout returns to CONNECTED with the error.
+- **The catalog** is kept as the server's raw dicts, so the frame echoes
+  them exactly. `list_tools()` and the others parse them into dataclasses.
+- **Notifications:** `notifications/{tools,prompts,resources}/list_changed`
+  re-fetches that one list in a background task, then fires a state
+  change. Tasks are kept in a set and cancelled on close.
+- **Calls** that get `MCPAuthorizationRequiredError` move to
+  AUTHENTICATING, call `on_authorize`, and re-raise.
+- **`handle_callback(callback)`** holds the OAuth edge cases (§7.2).
 
 ---
 
-## 4. The manager (`manager.py`)
+## 6. Manager (`manager.py`) and storage (`storage.py`)
+
+### 6.1 The manager
 
 - **The registry:** `_connections: dict[str, MCPClientConnection]`, exposed
   read-only as `connections`.
-- **`add_server`**, in upstream's order:
-  1. normalize or generate the id, check for conflicts, apply the idempotent
-     re-add rules ([mcp_api.md](./mcp_api.md) §2.1);
-  2. `is_blocked_url`;
-  3. write the row, then build the connection;
-  4. `init()`. If it ends `AUTHENTICATING`, store `auth_url` and
-     `client_id` on the row, emit `mcp:client:authorize` and return.
-     `FAILED` raises `MCPConnectionError`. `CONNECTED` runs `discover()` and
-     returns `ready`.
+- **`add_server`**, in upstream's order: normalize or generate the id,
+  check conflicts and the idempotent re-add rules ([mcp_api.md](./mcp_api.md)
+  §2.1), `is_blocked_url`, write the row, build the connection, `init()`.
+  AUTHENTICATING stores `auth_url` and `client_id` on the row, emits
+  `mcp:client:authorize` and returns. FAILED raises `MCPConnectionError`.
+  CONNECTED runs `discover()` and returns `ready`.
 - **Restore and `wait_for_connections`:** restore puts one task per
-  restorable server in `_pending: dict[str, asyncio.Task]`. Each task is
-  `connect_with_retry` then `discover`, using the shared `retry()` utility
-  with the server's stored `RetryOptions` (upstream defaults: 3 attempts,
-  0.5 s base, 5 s cap). `wait_for_connections(timeout=)` is
-  `asyncio.wait(_pending.values(), timeout=...)`, and exceptions are already
-  turned into states, so it never raises.
-- **Keep-alive:** a background restore or post-callback connect holds a
-  keep-alive lease (the `KeepAlive` capability, through Lifecycle services)
-  until it settles, so the DO isn't evicted halfway through a handshake.
-  Upstream relies on the pending promise. This is the one place the port
-  adds something, because Python tasks don't keep a DO alive.
-- **Catalog aggregation:** `list_tools(...)` and the others filter the
-  registry (server id, name, state) and flatten each connection's lists into
-  `ServerTool` and the like, in registration order.
+  restorable server in `_pending`. Each runs `run_with_retries` (defaults:
+  3 attempts, 0.5 s base, 5 s cap, `index.ts:1140`; retries only on
+  FAILED) then `discover`, under a keep-alive lease. A modern-era server
+  restores with no network request. `wait_for_connections(timeout=)` is
+  `asyncio.wait(...)`; failures are already states, so it never raises.
+- **Catalog aggregation:** `list_tools(...)` and the others filter by
+  server id, name and state (combined with AND) and flatten in registration
+  order into `ServerTool` and the like.
 - **Removing a server:** close the connection, delete the row, call
-  `provider.clear()` for its OAuth keys, cancel its pending task, fire a
-  state change.
-- **Observability:** `mcp:client:preconnect`, `mcp:client:connect`,
-  `mcp:client:authorize`, `mcp:client:discover` and `mcp:client:close`
-  with upstream's payloads, through `self.lifecycle.events`. They reach
-  `Agent._emit` and the existing `mcp:` → `mcp` channel
-  ([observability.md](./observability.md)).
+  `provider.clear()`, cancel its pending task, fire a state change.
+- **`servers_state()`** gives a row without a connection `not-connected`,
+  or `authenticating` when it has an `auth_url`. Errors are sanitized: C0
+  controls other than `\t\n\r`, and DEL, are stripped, and the text is cut
+  at 500 characters plus `...` (`index.ts:785-807,10051`).
+- **Observability:** upstream's payloads (`observability/mcp.ts:7-38`)
+  through `lifecycle.emit`: `mcp:client:preconnect {serverId}`, `connect
+  {url, transport, state, error?}`, `authorize {serverId, authUrl,
+  clientId?}`, `discover {url?, state?, error?, capability?}`, `close {url,
+  transport?, state, error?}`.
 
----
+### 6.2 Storage
 
-## 5. Storage (`storage.py`)
-
-The table and the version key are exactly upstream's
-(`storage.ts:24`, `index.ts:398`):
+The table and version key are exactly upstream's (`storage.ts:24`,
+`index.ts:398`):
 
 ```sql
 CREATE TABLE IF NOT EXISTS cf_agents_mcp_servers (
@@ -244,121 +323,151 @@ CREATE TABLE IF NOT EXISTS cf_agents_mcp_servers (
 -- KV: "cf_agents:mcp_schema_version" = 1
 ```
 
-`server_options` is JSON in upstream's camelCase shape
-(`PersistedMcpServerOptions`). Python writes the subset it uses and keeps
-any other keys it reads, so a row written by a TypeScript agent survives a
-Python rewrite:
+`server_options` is upstream's camelCase JSON. Python writes the subset it
+uses and keeps any other keys it reads, so a row written by a TypeScript
+agent survives a Python rewrite:
 
 ```json
-{"transport": {"type": "streamable-http", "headers": {...}, "protocolVersion": "2026-07-28"},
- "discoverResult": {...},
+{"transport": {"type": "auto", "headers": {}, "sessionId": "<only if the server sent one>",
+               "protocolVersion": "2025-11-25 | 2026-07-28"},
+ "discoverResult": {"...": "modern era only"},
  "retry": {"maxAttempts": 3, "baseDelayMs": 500, "maxDelayMs": 5000}}
 ```
 
-Retry delays are stored in milliseconds, following the SDK rule that
-storage and the wire use milliseconds ([utilities.md](./utilities.md) §1).
-Writes go through the typed SQL helper ([utilities.md](./utilities.md) §6).
-They're cold paths, so the wrapped storage is fine
-([platform_verification.md](./platform_verification.md) §6.2).
+- `retry` is written only when the caller passed it; delays are in
+  milliseconds ([utilities.md](./utilities.md) §1).
+- `update_session` ports `withMcpSession` (`storage.ts:170`); decoding
+  applies upstream's drop rule (`storage.ts:141`).
+- Python keeps `protocolVersion` and `discoverResult` for a modern server
+  even without a `sessionId`. TypeScript only resumes when `sessionId` is
+  present, so it negotiates afresh on such a row.
+- A handshake-era row restores with a new `initialize` (one round trip per
+  wake). Resuming the stored `sessionId` is deferred.
 
 ---
 
-## 6. OAuth (`oauth.py`, `callback.py`)
+## 7. OAuth (`oauth.py`, `oauth_flow.py`, `callback.py`)
 
-### 6.1 The provider and its storage
+### 7.1 The provider and the flow
 
-`MCPOAuthProvider` is an abstract base. It implements the SDK's
-`TokenStorage` protocol (`get_tokens`, `set_tokens`, `get_client_info`,
-`set_client_info`) and adds what a callback that arrives in a later request
-needs:
+`MCPOAuthProvider` is an abstract base holding `server_id`, `client_id`,
+`redirect_url` and `client_metadata`. Its async methods: `tokens`,
+`save_tokens`, `clear_tokens`, `client_information`,
+`save_client_information`, `clear_client_information`, `discovery_state`,
+`save_discovery_state`, `create_state`, `check_state`, `consume_state`,
+`save_code_verifier`, `code_verifier`, `delete_code_verifier`, `clear`.
 
-```python
-class MCPOAuthProvider(ABC):
-    server_id: str; redirect_url: str
-    @property
-    def client_metadata(self) -> OAuthClientMetadata: ...      # dynamic registration request
-    async def get_tokens(self) -> OAuthToken | None: ...         # + set_tokens, get/set_client_info
-    async def create_state(self) -> str: ...                     # "<nonce>.<server_id>", stored
-    async def check_state(self, state: str) -> bool: ...         # non-destructive
-    async def consume_state(self, state: str) -> None: ...
-    async def save_code_verifier(self, state: str, verifier: str) -> None: ...
-    async def code_verifier(self, state: str) -> str | None: ...
-    async def clear(self) -> None: ...                           # every key for this server
-```
+`DurableObjectOAuthProvider(storage, client_name, redirect_url)` uses
+upstream's DO KV layout (`do-oauth-client-provider.ts`):
 
-`DurableObjectOAuthProvider` stores everything in DO KV, using **upstream's
-key layout** (`/{client_name}/{server_id}/{client_id}/token`,
-`.../client_info/`, `/{client_name}/{server_id}/state/{nonce}`, the
-code-verifier keys). The values are the RFC 6749 / 7591 JSON shapes both
-SDKs use. The client metadata is upstream's: `token_endpoint_auth_method:
-"none"`, `grant_types: [authorization_code, refresh_token]`, and
-`client_uri` set to the redirect URL's origin.
+| Key | Value |
+| --- | --- |
+| `/{c}/{s}/{clientId}/token` | RFC 6749 token JSON |
+| `/{c}/{s}/{clientId}/client_info/` | RFC 7591 client JSON, plus `issuer` |
+| `/{c}/{s}/state/{nonce}` | `{nonce, serverId, createdAt}`, valid 10 minutes |
+| `/{c}/{s}/{clientId}/code_verifier/{nonce}` | `{verifier, createdAt}` |
+| `/{c}/{s}/oauth_discovery` | `{authorizationServerUrl, resourceMetadataUrl?, resourceMetadata?, authorizationServerMetadata?, resource}` |
 
-### 6.2 Splitting the authorization step across requests
+`clear()` lists `/{c}/{s}/` and deletes in chunks of 128. The client
+metadata is upstream's (`do-oauth-client-provider.ts:108`):
+`token_endpoint_auth_method: "none"`, `grant_types: [authorization_code,
+refresh_token]`, `response_types: [code]`, `client_uri` set to the redirect
+URL's origin.
 
-The SDK's `OAuthClientProvider` (an `httpx2.Auth`) runs the whole flow
-inside one request. It discovers metadata, registers, then calls
-`redirect_handler(url)` **and awaits `callback_handler()` in the same
-coroutine**, generating the state and PKCE verifier as local variables
-(`oauth2.py:385`). On a DO, the callback is a different request, possibly
-in a different isolate after the agent was evicted, so the flow can't wait
-in memory.
+`OAuthFlow(provider, *, server_url, http)` ports the SDK's `oauth2.py` and
+`auth/utils.py` steps. The SDK runs the redirect and the callback in one
+coroutine. A DO can't wait in memory for a callback that arrives in a later
+request, possibly in a new isolate, so the flow is split the way upstream
+TypeScript splits it.
 
-**Proposed: a subclass that overrides `_perform_authorization_code_grant`**,
-the one method that does the redirect and the wait:
+### 7.2 Request A: a 401 on connect or on a call
 
-- **On the first connect**, there's no pending code. It builds the
-  authorization URL as the SDK does (endpoint, PKCE S256, `resource` per
-  RFC 8707, `scope`, `prompt=consent` for `offline_access`), but with
-  `state = provider.create_state()` and the verifier saved under that state.
-  It then raises `AuthorizationRequired(auth_url)`. That unwinds out of
-  `httpx2` and `Client.__aenter__` into `_run`, which moves to
-  `AUTHENTICATING` with `auth_url`.
-- **On the callback request**, `callback.py` checks that it's a GET on a
-  stored `callback_url` (origin + path) whose `state` names a known server,
-  as upstream's `isCallbackRequest` does. It then runs the two-phase state
-  check (check now, consume once the exchange succeeds) and stores `(code,
-  state)` on the connection. Finally it runs `init()` again, which hits the
-  same 401, re-discovers, and calls the override again. This time the
-  override returns `(code, verifier)` from the pending pair, after checking
-  RFC 9207 `iss` as the SDK does. **The SDK then exchanges the code and
-  saves the tokens through `TokenStorage`, and refreshes them later
-  itself.**
-- **Upstream's edge cases carry over:**
-  - a callback for a connection that's already authenticated consumes its
-    state and reports success (a stale popup);
-  - a callback whose state can't be verified changes nothing (it can't fail
-    someone else's connection);
-  - a genuine callback can recover a connection that went `FAILED`.
+Handling a 401 holds a per-server lock. Discovery sends its four lists at
+once, so four 401s arrive together, and refresh tokens are single-use: a
+request that waited on the lock retries with the tokens the first one
+refreshed instead of refreshing again. Without the lock, the losing
+refreshes fail and clear the new tokens (found by the contract tests).
 
-**Risk:** `_perform_authorization_code_grant` is private SDK API. This is
-why the extra caps `mcp<3`. A contract test runs the override against the
-SDK's own auth server fixtures on every `mcp` version CI installs, so a
-signature change fails CI rather than production. The alternative was
-writing our own `httpx2.Auth` for metadata discovery, registration, the
-exchange and refresh. That's about 600 lines of security-sensitive code the
-SDK already maintains, so it's rejected unless the override breaks.
+1. **Refresh**, when the tokens have a `refresh_token` and client info
+   exists: POST `grant_type=refresh_token` with `client_id` and `resource`.
+   200 saves the tokens (carrying forward `scope` and `refresh_token`,
+   `oauth2.py:533-560`) and the session retries once. Anything else clears
+   the tokens and continues.
+2. **Discover** the protected resource metadata (RFC 9728) from
+   `WWW-Authenticate`'s `resource_metadata`, then the path-aware and root
+   well-known URLs (`auth/utils.py:64-98`). Its `resource` must be allowed
+   for the server URL. With none found, the issuer is the server's origin.
+   Then the authorization server metadata (RFC 8414 and OIDC URLs,
+   `utils.py:159-195`), whose issuer must match. Stored client info from a
+   different issuer is dropped with its tokens (`utils.py:340`).
+3. **Scope:** `WWW-Authenticate`'s, else PRM's, else ASM's
+   `scopes_supported`, plus `offline_access` when the server supports it
+   (`utils.py:101-134`).
+4. **Register** (RFC 7591) when there's no client info, at
+   `registration_endpoint` or `{origin}/register`.
+5. **PKCE S256:** a 128-character verifier from `secrets`, its unpadded
+   base64url SHA-256 as the challenge. `state` is
+   `"{token_urlsafe(16)}.{server_id}"`.
+6. **The authorization URL** at `authorization_endpoint` or
+   `{origin}/authorize`, with `response_type=code`, `client_id`,
+   `redirect_uri`, `state`, `code_challenge`, `code_challenge_method=S256`,
+   `scope`, `prompt=consent` with `offline_access`, and `resource` (RFC 8707)
+   when a PRM was found or the version is at least 2025-06-18
+   (`oauth2.py:203-233,385-451`).
+7. **Save the discovery state** and raise
+   `MCPAuthorizationRequiredError(auth_url)`. The connection moves to
+   AUTHENTICATING; the manager stores `auth_url` and `client_id` on the
+   row and emits `mcp:client:authorize`.
 
-### 6.3 The callback response
+Without a callback URL there's no provider, and a 401 is FAILED.
 
-`on_request` returns, in order: the hook's response when the hook returns
-one, otherwise a redirect to `oauth_success_redirect` /
-`oauth_error_redirect` (adding `?error=`) resolved against the request
-origin, otherwise a redirect to the origin. The connection then continues
-in a background task, as upstream does
-(`void this.establishConnection(...)`), under a keep-alive lease.
+### 7.3 Request B: the callback
+
+Startup has restored the row as AUTHENTICATING with its provider.
+
+1. **Match** (`index.ts:1591`): a GET whose origin and path equal a stored
+   `callback_url` and whose `state` splits into two parts on `.`.
+   Anything else isn't claimed and falls through to the agent.
+2. **Validate** (`index.ts:1619`): state, server id, a code or an error, a
+   known server with a connection.
+3. **Edge cases** (`index.ts:1684-1810`), in `connection.handle_callback`:
+
+   | Case | Handling |
+   | --- | --- |
+   | invalid, connection already accepts auth | consume the stale state; success (a stale popup) |
+   | invalid, state not redeemable | ignore it (it can't fail someone else's connection) |
+   | invalid, otherwise | clear `auth_url`, FAILED |
+   | valid, connection already accepts auth | consume; success |
+   | neither AUTHENTICATING nor FAILED | FAILED |
+   | FAILED with a genuine callback | recover: continue below |
+   | `error` parameter | `MCPOAuthError`, FAILED |
+
+   "Accepts auth" means READY, CONNECTED, CONNECTING or DISCOVERING
+   (`index.ts:818`).
+4. **Exchange:** CONNECTING, `consume_state`, then check RFC 9207 `iss`
+   against the stored issuer (`utils.py:239`), POST
+   `grant_type=authorization_code` with `code`, `redirect_uri`,
+   `client_id`, `code_verifier` and `resource`, save the tokens and delete
+   the discovery state. The verifier is deleted in a `finally`.
+5. **Connect:** the manager clears `auth_url`, fires a state change, and
+   runs connect-with-retry and discover in a tracked task under a
+   keep-alive lease.
+6. **Respond** (`index.ts:478`): the hook's `Response` if it returns one,
+   else a redirect to `oauth_success_redirect`, or `oauth_error_redirect`
+   with `?error=`, resolved against the request origin, else a redirect to
+   the origin.
 
 ---
 
-## 7. Server (`server/`)
+## 8. Server (`server/`)
 
 For each request:
 
 ```
 McpHandler(request, env, ctx)
   ├─ path != route                 → 404
+  ├─ Host / Origin not allowed     → 403 (JSON-RPC -32000; checked before the preflight, as upstream)
   ├─ OPTIONS                       → CORS preflight
-  ├─ Host / Origin not allowed     → 403 (upstream's hostHeaderValidationResponse / originValidationResponse)
   ├─ set the auth ContextVar
   ├─ server = factory() if a factory was given, else the shared instance; take its low-level Server
   ├─ manager = StreamableHTTPSessionManager(lowlevel_server, stateless=True, json_response=...)
@@ -368,93 +477,105 @@ McpHandler(request, env, ctx)
 ```
 
 - **A new session manager for every request.** `run()` can only be entered
-  once per instance (`streamable_http_manager.py`, `_has_started`), and
-  stateless mode needs its task group. Building one is cheap: it holds no
-  sessions.
-- **`asgi.py`** is a small request ⇄ ASGI bridge: scope from the Workers
-  `Request`, `receive` reading the body, and `send` collecting the
-  status, headers and body, or a streamed body for SSE responses. The
-  Workers SDK's `workers.asgi.fetch` drives an app's lifespan on every
-  request, and `MCPServer.streamable_http_app()` keeps one session manager
-  across lifespans, so it's used for reference only. Whether its internals
-  can be reused is an implementation detail checked in step 1 (§10).
-- **Checking the server** happens before serving: a server with the SDK's
-  auth server settings raises `MCPServerConfigError`, and subscriptions are
-  turned off ([mcp_api.md](./mcp_api.md) §4.1).
-- **Factories are called once per request**, before the session manager is
-  built. An exception from the factory is a 500 that goes through the
-  handler's error reporting (upstream's `handler-errors.ts`).
-- **Tools run in the request's task.** When the handler is called from an
-  agent's `on_request`, `get_current_agent()` is set inside them.
+  once per instance, and stateless mode needs its task group.
+- **`asgi.py`** builds the scope from the Workers `Request`, feeds the
+  body to `receive`, and collects `send` into a response, streamed for SSE.
+- **Checking the server:** a server with the SDK's auth server settings
+  (`MCPServer.settings.auth`) raises `MCPServerConfigError`.
+- **Subscriptions are off.** The SDK has no public switch after
+  construction, so the handler removes `subscriptions/listen`,
+  `resources/subscribe` and `resources/unsubscribe` from the server's
+  private `Server._request_handlers`, which also keeps the advertised
+  capabilities honest. This changes the user's server object, and relies on
+  private SDK API; the `mcp<3` cap covers it.
+- **Lifespan** runs once per request, because `run()` enters it.
+- **Factories are called once per request.** An exception from one is a
+  500.
+- **Tools run in the request's task**, so `get_current_agent()` works in
+  them when the handler is called from an agent's `on_request`.
 
 ---
 
-## 8. Chat
+## 9. Chat
 
-`AIChatAgentOptions.wait_for_mcp_connections: bool | Duration = False`
-(upstream's `waitForMcpConnections: boolean | { timeout }`). Before
-`on_chat_message`, a turn calls `self.mcp.wait_for_connections(timeout=...)`
-when it's set and MCP is on. `True` means no timeout.
-
----
-
-## 9. Packaging and tests
-
-- **The import guard:** `agents/mcp/__init__.py` imports `mcp` first, and
-  turns `ModuleNotFoundError` into an `ImportError` that names
-  `cf-agents[mcp]` and Python 3.14 Workers.
-- **The import boundary:** a test runs `import agents` and
-  `import agents.chat` in a subprocess and asserts that none of `mcp`,
-  `mcp_types`, `pydantic` or `httpx2` is in `sys.modules`. A second test
-  does the same for an `Agent` without `options.mcp`.
-- **Unit tests run on CPython with no network:**
-  - **In-process:** `connection.py` takes a client factory, and tests pass
-    `mcp.Client(MCPServer(...))`, which the SDK connects in-process. That
-    covers the state machine, discovery, list-changed handling, the
-    catalog, `call_tool` and restore.
-  - **Over HTTP:** an `httpx2.ASGITransport` against
-    `MCPServer.streamable_http_app()` covers both protocol eras, header
-    auth, the `auto` transport fallback and the OAuth flow, using the SDK's
-    `mcp.server.auth` provider fixtures.
-  - **Storage, the frame, broadcasts and callback routing** use the existing
-    fakes in `tests/fake_runtime.py`.
-  - **Server:** `create_mcp_handler` driven with fake Workers `Request`
-    objects, and a `mcp.Client` talking to it through an `httpx2`
-    transport that calls the handler.
-- **Contract tests:** the OAuth override (§6.2), and the persisted JSON
-  against a fixture copied from upstream's storage tests.
-- **On Workers:** the platform checks in [mcp.md](./mcp.md) §5.3, plus one
-  round trip through each path (add a server, call a tool, OAuth with a
-  local provider, `create_mcp_handler`) in the verification Worker.
+`AIChatAgentOptions.wait_for_mcp_connections: bool | Duration = False`.
+In `_consume`, after the turn is registered and before `on_chat_message`,
+a turn awaits `self._mcp.wait_for_connections(timeout=...)` when the
+option is set and MCP is on. `True` means no timeout. A stop request
+cancels the wait.
 
 ---
 
-## 10. Build order
+## 10. Packaging and tests
 
-| Step | Contents | Depends on |
+- **Packaging:** core dependencies don't change. `mcp-server =
+  ["mcp>=2.3,<3"]` is the extra; `mcp>=2.3,<3` joins the dev group for
+  contract tests.
+- **The import boundary:** a subprocess imports `agents`, `agents.chat`
+  and `agents.mcp` and starts an agent with `mcp=MCPOptions()`. None of
+  `mcp`, `mcp_types`, `pydantic` or `httpx2` may load.
+  `agents.mcp.server` without `mcp` raises an `ImportError` naming the
+  extra.
+- **Contract tests** run the client against the SDK's `MCPServer`
+  (`streamable_http_app()`, both eras, JSON and SSE) through
+  `AsgiTransport`, and the OAuth flow against the SDK's auth server
+  (`mcp.server.auth`) with an in-memory provider in `conftest.py`.
+- **Unit tests** cover `urls`, `sse`, `models`, `storage`, negotiation
+  through a scripted transport, the OAuth provider's key layout, the
+  callback edge cases, the manager, the agent members and the chat wait,
+  using `tests/fake_runtime.py`.
+- **On Workers:** the verification Worker checks `open_fetch` (cancel
+  before headers, cancel mid-SSE, `redirect: "manual"`), and one round
+  trip per path.
+
+---
+
+## 11. Build order
+
+All phases are built (2026-10-26) and pass on CPython: the client's tests
+run against the SDK's `MCPServer` and its OAuth authorization server. What
+hasn't run is anything on `workerd` (§13).
+
+| Phase | Work | Done when |
 | --- | --- | --- |
-| 0 | Packaging and the import guard and boundary test; `MCPOptions` / `MCPNotEnabledError`; the dynamic frame with an empty state ([mcp.md](./mcp.md) §5.1–5.2) | — |
-| 1 | Platform checks: `httpx2` in `workerd` (requests, SSE, cancellation), deploy size and cold start, the ASGI bridge (`mcp.md` §5.3) | 0 |
-| 2 | `storage.py`, `urls.py`, `types.py`, `errors.py` | 0 |
-| 3 | `connection.py` and `manager.py` without OAuth: add, remove, restore, wait, discovery, catalog, calls, events; the `Agent` members and the broadcast | 2 |
-| 4 | OAuth: `oauth.py`, `callback.py`, the two hooks | 3 |
-| 5 | `server/`: `create_mcp_handler` (server or factory), auth context | 0, 1 |
-| 6 | Chat: `wait_for_mcp_connections` | 3 |
-| 7 | User docs and an example (`examples/mcp-client`, `examples/mcp-server`) on a 3.14 Worker | 3–5 |
-
-Steps 3 and 5 are independent, so the server can ship before the client's
-OAuth.
+| 0 | pyproject; `MCPOptions`, `MCPNotEnabledError`; `mcp/__init__.py`, `errors.py`; the dynamic frame (empty) | existing tests, the boundary test, ruff and ty pass |
+| 1 | `urls`, `sse`, `codec`, `models`, `types`, `storage` | unit tests pass |
+| 2 | `http.py`, `_ffi.open_fetch`, `AsgiTransport` | a round trip against the SDK app |
+| 3 | session: modern era | contract tests pass |
+| 4 | session: handshake era and negotiation | contract and scripted tests pass |
+| 5 | listener | list-changed tests pass in both eras |
+| 6 | connection and manager without OAuth | manager tests pass |
+| 7 | Agent integration | agent tests pass |
+| 8 | OAuth provider, flow, callback, hooks | OAuth contract and callback tests pass |
+| 9 | chat wait | chat tests pass |
+| 10 | server | handler tests pass |
 
 ---
 
-## 11. Open
+## 12. Deferred
 
-- **SSE-only servers (`transport="sse"`):** whether they're worth
-  supporting in the first pass, given that the GET event stream's lifetime
-  inside a DO hasn't been checked on Workers.
-- **Whether an `httpx2` transport that aborts on cancellation becomes
-  required** (depends on step 1).
-- **MCP on facets:** the default callback URL for a sub-agent would need its
-  `/sub/` path.
-- **Elicitation handlers** (upstream's `configureElicitationHandlers`), as
-  an `on_mcp_elicitation` hook later.
+- The legacy SSE transport (`transport="sse"`). A stored `"sse"` row ends
+  up FAILED.
+- Resuming a handshake-era `Mcp-Session-Id` on restore.
+- 403 `insufficient_scope` step-up, CIMD client ids, refreshing tokens
+  before they expire (they're refreshed on a 401, as the TypeScript SDK
+  does).
+- Elicitation and multi-round-trip requests (`input_required` raises),
+  `notifications/cancelled`, SSE resumption with `Last-Event-ID`.
+- **MCP on facets:** the default callback URL would need the facet's
+  `/sub/` path, so facets must pass `callback_path` for now.
+- **Cancelling a discovery in flight** when another starts (upstream's
+  `_discoveryAbortController`). Concurrent discoveries both run.
+- **Moving a server to a new id** (upstream's `migrateServerId`). Adding a
+  server with an `id` that's already stored under a random id creates a
+  second row.
+
+## 13. Open
+
+- **Nothing has run on `workerd` yet.** The verification Worker still has to
+  check `_ffi.open_fetch` (cancelling before headers and mid-SSE aborts the
+  request, `redirect: "manual"` returns the 3xx), `kv_keys`, and one round
+  trip per path: add a server, call a tool, OAuth, `create_mcp_handler`.
+- **Does a long-lived listener fetch keep the DO active, and so billed?**
+  Measure with the `open_fetch` probe. If it does, open the listener only
+  after a list changes during a call.

@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from types import FunctionType
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
+from urllib.parse import urlsplit
 
 from typing_extensions import TypeVar
 from workers import DurableObject, Response
@@ -92,11 +93,20 @@ from ..websockets.types import (
     WebSocketHandlers,
 )
 from ..websockets.websockets import WebSockets, _parse_frame, _prepare_tags, _send
-from .errors import ReadonlyConnectionError
-from .types import AgentOptions
+from .errors import MCPNotEnabledError, ReadonlyConnectionError
+from .types import AgentOptions, MCPOptions
 
 if TYPE_CHECKING:
     from workers import Request
+
+    from ..mcp.manager import MCPClientManager
+    from ..mcp.oauth import MCPOAuthProvider
+    from ..mcp.types import (
+        AddMcpServerResult,
+        MCPOAuthResult,
+        MCPServersState,
+        TransportType,
+    )
 
 __all__ = ("Agent",)
 
@@ -105,8 +115,8 @@ _log = logging.getLogger("agents.agent")
 S = TypeVar("S", bound=Mapping[str, Any], default=dict[str, Any])
 
 _DESTROY_PENDING_KEY = "cf_agents_destroy_pending"
-# MCP is out of scope, but clients expect this frame on connect (wire §3).
-_MCP_SERVERS_FRAME = to_json(
+# Sent on connect when MCP is off: clients expect the frame (wire §3).
+_EMPTY_MCP_SERVERS_FRAME = to_json(
     {
         "type": "cf_agent_mcp_servers",
         "mcp": {"servers": {}, "tools": [], "prompts": [], "resources": []},
@@ -214,6 +224,26 @@ class Agent(Generic[S], DurableObject):  # noqa: UP046  (see above; 3.12 has no 
             self._fibers,
         ):
             self._lifecycle.use(capability)
+        self._mcp_broadcast_ready = False
+        self._mcp = None if options.mcp is None else self._install_mcp(options.mcp)
+
+    def _install_mcp(self, options: MCPOptions) -> "MCPClientManager":
+        # Only agents with MCP on import the client (.design/mcp_engine.md §2).
+        from .. import __version__
+        from ..mcp.manager import MCPClientManager
+
+        manager = MCPClientManager(
+            client_name=options.client_name or type(self).__name__,
+            client_version=options.client_version or __version__,
+            create_oauth_provider=self.create_mcp_oauth_provider,
+            on_oauth_callback=self.on_mcp_oauth_callback,
+            oauth_success_redirect=options.oauth_success_redirect,
+            oauth_error_redirect=options.oauth_error_redirect,
+            discovery_timeout=options.discovery_timeout,
+            keep_alive=self._keep_alive.acquire,
+        )
+        manager.on_server_state_changed(self._on_mcp_state_changed)
+        return self.use(manager)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Wrap a subclass's public methods so they run as the current agent."""
@@ -432,7 +462,12 @@ class Agent(Generic[S], DurableObject):  # noqa: UP046  (see above; 3.12 has no 
         current = self._state.get()
         if current is None:
             return
-        text = to_json({"type": "cf_agent_state", "state": current})
+        self._broadcast_protocol(
+            to_json({"type": "cf_agent_state", "state": current}), exclude
+        )
+
+    def _broadcast_protocol(self, text: str, exclude: Connection | None = None) -> None:
+        # Protocol frames go to protocol-enabled clients that finished connecting.
         connecting = self._websockets._connecting
         for connection in self.get_connections():
             if connection == exclude or connection in connecting:
@@ -766,6 +801,173 @@ class Agent(Generic[S], DurableObject):  # noqa: UP046  (see above; 3.12 has no 
         # Framework recovery (chat turns) overrides this; True means handled.
         return False
 
+    # MCP (on with AgentOptions(mcp=MCPOptions()); .design/mcp_api.md §2)
+
+    @property
+    def mcp(self) -> "MCPClientManager":
+        """The MCP client: servers, their catalog, and calls.
+
+        Raises
+        ------
+        MCPNotEnabledError
+            If the agent's options don't turn MCP on.
+        """
+        if self._mcp is None:
+            raise MCPNotEnabledError
+        return self._mcp
+
+    async def add_mcp_server(
+        self,
+        name: str,
+        url: str,
+        *,
+        id: str | None = None,
+        headers: Mapping[str, str] | None = None,
+        transport: "TransportType" = "auto",
+        callback_host: str | None = None,
+        callback_path: str | None = None,
+        agents_prefix: str = "agents",
+        retry: RetryOptions | None = None,
+    ) -> "AddMcpServerResult":
+        """Register an MCP server, connect to it and load its catalog.
+
+        Idempotent: the same name and URL return the existing server. When
+        the server needs OAuth, the result is ``authenticating`` with the URL
+        to send the user to; the callback finishes the connection.
+
+        Parameters
+        ----------
+        name
+            A display name.
+        url
+            The server's Streamable HTTP endpoint.
+        id
+            A stable id (normalized); by default a random one.
+        headers
+            Sent on every request (bearer tokens, Cloudflare Access), and
+            stored with the server.
+        transport
+            ``auto`` or ``streamable-http``.
+        callback_host
+            The OAuth callback's origin; by default the current request's or
+            connection's.
+        callback_path
+            The callback's path instead of
+            ``/{agents_prefix}/{agent}/{name}/callback``. Required with
+            ``send_identity_on_connect=False`` and a ``callback_host``.
+        agents_prefix
+            The routing prefix in the default callback path.
+        retry
+            Connection retries when the server is restored.
+
+        Raises
+        ------
+        ValueError
+            If ``callback_path`` is required and missing.
+        MCPNotEnabledError
+            If MCP isn't on.
+        MCPServerIdConflictError, MCPBlockedUrlError, MCPConnectionError
+            As ``MCPClientManager.add_server``.
+        """
+        manager = self.mcp
+        if (
+            not type(self).options.send_identity_on_connect
+            and callback_host
+            and not callback_path
+        ):
+            raise ValueError(
+                "callback_path is required when send_identity_on_connect is False: "
+                "the default callback URL contains the instance name"
+            )
+        host = callback_host or self._callback_origin()
+        callback_url = None
+        if host:
+            host = host.rstrip("/")
+            callback_url = (
+                f"{host}/{callback_path.lstrip('/')}"
+                if callback_path
+                else f"{host}/{agents_prefix}/"
+                f"{camel_case_to_kebab_case(type(self).__name__)}/{self.name}/callback"
+            )
+        return await manager.add_server(
+            name,
+            url,
+            id=id,
+            callback_url=callback_url,
+            headers=headers,
+            transport=transport,
+            retry=retry,
+        )
+
+    def _callback_origin(self) -> str | None:
+        current = current_host_context()
+        if current is None or current.host is not self:
+            return None
+        url = current.request.url if current.request is not None else None
+        if url is None and isinstance(current.connection, Connection):
+            url = current.connection.uri
+        if url is None:
+            return None
+        parts = urlsplit(url)
+        return f"{parts.scheme}://{parts.netloc}"
+
+    async def remove_mcp_server(self, id: str) -> None:
+        """Close an MCP server's connection and delete it and its OAuth state.
+
+        Raises
+        ------
+        MCPNotEnabledError
+            If MCP isn't on.
+        """
+        await self.mcp.remove_server(id)
+
+    def get_mcp_servers(self) -> "MCPServersState":
+        """Return what the ``cf_agent_mcp_servers`` frame carries.
+
+        Raises
+        ------
+        MCPNotEnabledError
+            If MCP isn't on.
+        """
+        return self.mcp.servers_state()
+
+    def create_mcp_oauth_provider(self, callback_url: str) -> "MCPOAuthProvider":
+        """Return the OAuth provider for an MCP server's callback URL.
+
+        Override for pre-registered client credentials or another flow. The
+        default registers dynamically and keeps tokens in the agent's storage.
+        """
+        from ..mcp.oauth import DurableObjectOAuthProvider
+
+        return DurableObjectOAuthProvider(self.ctx.storage, self.name, callback_url)
+
+    async def on_mcp_oauth_callback(
+        self, result: "MCPOAuthResult", request: "Request"
+    ) -> Response | None:
+        """Handle the end of an MCP OAuth callback (after every one).
+
+        Return a ``Response`` to replace the default redirect. ``result.error``
+        can contain text from the OAuth provider: escape it before showing it.
+        """
+        return None
+
+    def _mcp_servers_frame(self) -> str:
+        if self._mcp is None:
+            return _EMPTY_MCP_SERVERS_FRAME
+        return to_json(
+            {"type": "cf_agent_mcp_servers", "mcp": self._mcp.servers_state()}
+        )
+
+    def _on_mcp_state_changed(self, _: None) -> None:
+        # Nothing is broadcast until the agent has started (upstream mcpBroadcastReady).
+        if self._mcp_broadcast_ready:
+            self._broadcast_protocol(self._mcp_servers_frame())
+
+    def _mcp_started(self) -> None:
+        if self._mcp is not None:
+            self._mcp_broadcast_ready = True
+            self._broadcast_protocol(self._mcp_servers_frame())
+
     # Keep-alive
 
     async def keep_alive(self) -> Disposable:
@@ -856,7 +1058,7 @@ class Agent(Generic[S], DurableObject):  # noqa: UP046  (see above; 3.12 has no 
                 )
             else:
                 websockets.send_state(connection)
-            _send(connection, _MCP_SERVERS_FRAME)
+            _send(connection, self._mcp_servers_frame())
         else:
             connection._set_protocol_enabled(False)
         self._emit("connect", {"connectionId": connection.id})
@@ -1080,6 +1282,7 @@ class _AgentHooks:
                 )
             await agent._fibers.recover_on_wake()
             await agent.on_start()
+            agent._mcp_started()
         except Exception as error:
             # Startup can't be half-done: on_error is told, then it re-raises.
             await agent._report_error(None, error)

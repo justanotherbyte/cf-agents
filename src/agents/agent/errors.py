@@ -2,7 +2,7 @@
 
 from ..core.errors import AgentsException
 
-__all__ = ("ReadonlyConnectionError",)
+__all__ = ("MCPNotEnabledError", "ReadonlyConnectionError")
 
 
 class ReadonlyConnectionError(AgentsException):
@@ -10,3 +10,13 @@ class ReadonlyConnectionError(AgentsException):
 
     def __init__(self) -> None:
         super().__init__("Connection is readonly")
+
+
+class MCPNotEnabledError(AgentsException):
+    """An MCP member was used on an agent without ``AgentOptions(mcp=...)``."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "MCP isn't enabled on this agent; "
+            "set options = AgentOptions(mcp=MCPOptions())"
+        )

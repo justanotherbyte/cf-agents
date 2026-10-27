@@ -196,3 +196,16 @@ def websocket_rejection(code: int, reason: str) -> Any:
 
     rejections.append((code, reason))
     return Response(f"rejected {code}", status=101)
+
+
+class FetchResponse:
+    pass
+
+
+def open_fetch(*_args: Any, **_kwargs: Any) -> Any:
+    # Tests inject an HttpTransport instead (tests/mcp/_asgi_transport.py).
+    raise NotImplementedError("tests must pass an HttpTransport")
+
+
+async def kv_keys(storage: Any, prefix: str) -> list[str]:
+    return sorted(key for key in unwrap(storage).kv if key.startswith(prefix))

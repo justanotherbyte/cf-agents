@@ -11,8 +11,15 @@ Workers SDK's own converters, wrapped by `to_rpc` / `from_rpc`.
 
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Generator
-from contextlib import contextmanager, suppress
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Generator,
+    Mapping,
+)
+from contextlib import asynccontextmanager, contextmanager, suppress
 from datetime import UTC, datetime
 from typing import Any
 
@@ -29,6 +36,7 @@ from workers import Request, Response, python_from_rpc, python_to_rpc
 
 __all__ = (
     "ConsoleHandler",
+    "FetchResponse",
     "JsException",
     "JsProxy",
     "ProxyScope",
@@ -45,8 +53,10 @@ __all__ = (
     "from_rpc",
     "has_namespace",
     "js_to_py",
+    "kv_keys",
     "make_request",
     "namespace_stub",
+    "open_fetch",
     "proxies",
     "py_to_js",
     "read_attachment",
@@ -407,6 +417,90 @@ def streaming_response(
         dict_converter=js.Object.fromEntries,
     )
     return Response(js.ReadableStream.new(source), headers=headers)
+
+
+async def kv_keys(storage: Any, prefix: str) -> list[str]:
+    """Return the KV keys starting with ``prefix`` (``storage.list({prefix})``)."""
+    entries = await unwrap(storage).list(py_to_js({"prefix": prefix}))
+    return [str(key) for key in entries.keys()]  # noqa: SIM118  (a JS Map iterates pairs)
+
+
+# Outbound HTTP (.design/platform_verification.md §2.8)
+
+
+class FetchResponse:
+    """A fetched response whose body is read as it arrives.
+
+    Parameters
+    ----------
+    response
+        The JS ``Response``.
+    """
+
+    __slots__ = ("_reader", "_response", "headers", "status")
+
+    def __init__(self, response: JsProxy) -> None:
+        self._response = response
+        self._reader: JsProxy | None = None
+        self.status: int = int(response.status)
+        self.headers: dict[str, str] = dict(
+            js.Object.fromEntries(response.headers).to_py()
+        )
+        """Lower-case header names."""
+
+    async def chunks(self) -> AsyncIterator[bytes]:
+        """Yield the body's chunks as they arrive (read it once)."""
+        body = self._response.body
+        if body is None:
+            return
+        self._reader = reader = body.getReader()
+        while True:
+            result = await reader.read()
+            if result.done:
+                return
+            yield result.value.to_bytes()
+
+    async def _cancel(self) -> None:
+        if self._reader is not None:
+            with suppress(JsException):  # rejected once the stream has errored
+                await self._reader.cancel()
+
+
+@asynccontextmanager
+async def open_fetch(
+    method: str, url: str, *, headers: Mapping[str, str], body: str | None
+) -> AsyncGenerator[FetchResponse]:
+    """Send a request with ``fetch``, aborting it when the block exits early.
+
+    Cancelling the task while it waits for headers, or leaving the block
+    before the body is read, aborts the request: only an ``AbortController``
+    and a cancelled body reader do that on Workers. Redirects aren't
+    followed; the 3xx response is returned.
+
+    Raises
+    ------
+    JsException
+        If the request fails (network, DNS, TLS) or the body read does.
+    """
+    controller = js.AbortController.new()
+    init = to_js(
+        {
+            "method": method,
+            "headers": dict(headers),
+            "body": body,
+            "signal": controller.signal,
+            "redirect": "manual",
+        },
+        dict_converter=js.Object.fromEntries,
+    )
+    response: FetchResponse | None = None
+    try:
+        response = FetchResponse(await js.fetch(url, init))
+        yield response
+    finally:
+        if response is not None:
+            await response._cancel()
+        controller.abort()
 
 
 # Facets (sub-agents; .design/subagents_engine.md §1)
