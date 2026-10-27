@@ -1,6 +1,6 @@
 [project]
 name = "wynd"
-version = "0.5.1"
+version = "0.6.0"
 description = "Alternative to pywrangler for Crosswind"
 readme = "README.md"
 authors = [
