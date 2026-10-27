@@ -1722,7 +1722,7 @@ class Container(DurableObject):
         Returns the number of tries used.
         """
         if self._start_in_flight is not None:
-            return await self._start_in_flight
+            return await asyncio.shield(self._start_in_flight)
 
         if self._container.running:
             if self._monitor is None:
@@ -1740,11 +1740,15 @@ class Container(DurableObject):
             )
         )
         self._start_in_flight = start_task
-        try:
-            return await start_task
-        finally:
-            if self._start_in_flight is start_task:
+
+        def clear_in_flight(task: asyncio.Future[int]) -> None:
+            if self._start_in_flight is task:
                 self._start_in_flight = None
+
+        # Clear on completion, not when this caller is cancelled, so later callers
+        # keep sharing the running start.
+        start_task.add_done_callback(clear_in_flight)
+        return await asyncio.shield(start_task)
 
     async def _do_start_container(
         self,
@@ -1760,10 +1764,13 @@ class Container(DurableObject):
 
         async def handle_error() -> None:
             err: object
-            try:
-                err = await self._monitor
-            except Exception as e:
-                err = e
+            if self._monitor is None:
+                err = RuntimeError("Container stopped and has no monitor to report why")
+            else:
+                try:
+                    err = await self._monitor
+                except Exception as e:
+                    err = e
 
             if isinstance(err, int | float) and not isinstance(err, bool):
                 to_raise = RuntimeError(

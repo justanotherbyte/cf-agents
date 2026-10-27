@@ -46,3 +46,27 @@ class TestContainerConcurrentStartRace:
                 "start() cannot be called on a container that is already running."
                 not in (body or "")
             )
+
+
+class TestSharedStartCancellation:
+    async def test_cancelling_one_caller_does_not_cancel_the_shared_start(
+        self, mock_ctx, container
+    ):
+        release = asyncio.Event()
+
+        async def fetch(*args):
+            await release.wait()
+
+        mock_ctx.container.getTcpPort.return_value.fetch.side_effect = fetch
+
+        first = asyncio.ensure_future(container.start_and_wait_for_ports(8080))
+        second = asyncio.ensure_future(container.start_and_wait_for_ports(8080))
+        await asyncio.sleep(0.01)
+
+        first.cancel()
+        await asyncio.sleep(0)
+        release.set()
+
+        await second
+        assert first.cancelled()
+        assert mock_ctx.container.start.call_count == 1
