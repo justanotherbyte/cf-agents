@@ -9,6 +9,7 @@ import io
 import logging
 import sys
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import SplitResult, unquote, urlsplit
 
@@ -18,10 +19,16 @@ import pyodide.ffi
 from ._adapter import NULL_BODY_STATUSES, body_encoding, request_headers
 from .context import ExecutionContext
 from .entrypoints import WorkerEntrypoint
+from .gateway import BaseOptions
 from .request import Request
 from .types import Context
 
 logger = logging.getLogger("wsgi")
+
+
+@dataclass(frozen=True, kw_only=True)
+class Options(BaseOptions):
+    """Options for the WSGI adapter."""
 
 
 def _wsgi_native_string(value: str) -> str:
@@ -222,6 +229,7 @@ def _make_streaming_response(
     headers: "list[tuple[str, str]]",
     chunks: "Iterator[bytes]",
     on_close: "Callable[[], None]",
+    options: Options | None,
 ) -> js.Response:
     """Build a ``js.Response`` whose body is pulled lazily from *chunks*.
 
@@ -232,7 +240,7 @@ def _make_streaming_response(
     """
     from js import ReadableStream, Response
 
-    init = _response_init(status, headers)
+    init = _response_init(status, headers, options)
     if init["status"] in NULL_BODY_STATUSES:
         on_close()
         return Response.new(None, **init)
@@ -243,11 +251,13 @@ def _make_streaming_response(
     return Response.new(stream, **init)
 
 
-def _response_init(status: str, headers: "list[tuple[str, str]]") -> dict[str, Any]:
+def _response_init(
+    status: str, headers: "list[tuple[str, str]]", options: Options | None
+) -> dict[str, Any]:
     from js import Headers as JsHeaders
 
     code, _, reason = status.partition(" ")
-    init: dict[str, Any] = {"status": int(code), **body_encoding(headers)}
+    init: dict[str, Any] = {"status": int(code), **body_encoding(headers, options)}
     if reason:
         init["statusText"] = reason
 
@@ -338,6 +348,7 @@ def process_request(
     req: "Request | js.Request",
     env: Any,
     body: "bytes | io.IOBase",
+    options: Options | None = None,
 ) -> js.Response:
     environ = build_environ(req, env, body)
     start_response = _StartResponse()
@@ -371,7 +382,11 @@ def process_request(
         yield from result_iter
 
     return _make_streaming_response(
-        start_response.status, start_response.headers, body_chunks(), close_all
+        start_response.status,
+        start_response.headers,
+        body_chunks(),
+        close_all,
+        options,
     )
 
 
@@ -380,6 +395,8 @@ async def fetch(
     req: "Request | js.Request",
     env: Any,
     ctx: "Context | ExecutionContext | None" = None,
+    *,
+    options: Options | None = None,
 ) -> js.Response:
     logger.debug("WSGI request: %s %s", req.method, req.url)
     body: bytes | io.IOBase | None = _make_wsgi_input(req)
@@ -387,17 +404,17 @@ async def fetch(
         body = await _read_body(req)
 
     try:
-        return process_request(app, req, env, body)
+        return process_request(app, req, env, body, options)
     except Exception:
         logger.exception("WSGI request failed")
         raise
 
 
-def entrypoint(app: Any) -> type[WorkerEntrypoint]:
+def entrypoint(app: Any, *, options: Options | None = None) -> type[WorkerEntrypoint]:
     """Create the default Worker entrypoint for a WSGI application."""
 
     class Default(WorkerEntrypoint):
         async def fetch(self, request):
-            return await fetch(app, request, self.env)
+            return await fetch(app, request, self.env, options=options)
 
     return Default

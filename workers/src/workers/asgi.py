@@ -10,6 +10,7 @@ import logging
 from asyncio import Event, Future, Queue, create_task, ensure_future
 from collections.abc import Awaitable
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
 
@@ -19,12 +20,18 @@ from ._adapter import NULL_BODY_STATUSES, body_encoding, request_headers
 from ._js import to_js_headers as _to_js_headers
 from .context import ExecutionContext, js_promise
 from .entrypoints import WorkerEntrypoint
+from .gateway import BaseOptions
 from .request import Request
 from .types import Context
 
 ASGI = {"spec_version": "2.0", "version": "3.0"}
 logger = logging.getLogger("asgi")
 background_tasks = set()
+
+
+@dataclass(frozen=True, kw_only=True)
+class Options(BaseOptions):
+    """Options for the ASGI adapter."""
 
 
 def run_in_background(coro: Awaitable[Any]) -> Future:
@@ -194,8 +201,9 @@ async def start_application(app):
 class _HttpCycle:
     """One HTTP request through an ASGI app, and the `js.Response` it sends."""
 
-    def __init__(self, app: Any) -> None:
+    def __init__(self, app: Any, options: Options | None) -> None:
         self.app = app
+        self.options = options
         self.status: int | None = None
         self.headers: list[tuple[str, str]] | None = None
         self.result: Future[js.Response] = Future()
@@ -273,7 +281,7 @@ class _HttpCycle:
         return {
             "headers": _to_js_headers(self.headers),
             "status": self.status,
-            **body_encoding(self.headers or []),
+            **body_encoding(self.headers or [], self.options),
         }
 
     async def run(
@@ -311,8 +319,9 @@ async def process_request(
     # Unused, kept for the stock signature.
     ctx: "Context | ExecutionContext | None",
     state: dict[str, Any] | None = None,
+    options: Options | None = None,
 ) -> tuple[js.Response, Future[None]]:
-    cycle = _HttpCycle(app)
+    cycle = _HttpCycle(app, options)
     await cycle.queue_body(req)
     request_task = create_task(cycle.run(req, env, state))
 
@@ -443,12 +452,16 @@ async def fetch(
     req: "Request | js.Request",
     env: Any,
     ctx: "Context | ExecutionContext | None" = None,
+    *,
+    options: Options | None = None,
 ) -> js.Response:
     logger.debug("ASGI request: %s %s", req.method, req.url)
     shutdown, state = await start_application(app)
 
     try:
-        result, request_task = await process_request(app, req, env, ctx, state=state)
+        result, request_task = await process_request(
+            app, req, env, ctx, state=state, options=options
+        )
     except Exception:
         logger.exception("ASGI request failed")
         await shutdown()
@@ -478,7 +491,7 @@ async def websocket(
     return await process_websocket(app, req, env, ctx)
 
 
-def entrypoint(app: Any) -> type[WorkerEntrypoint]:
+def entrypoint(app: Any, *, options: Options | None = None) -> type[WorkerEntrypoint]:
     """Create the default Worker entrypoint for an ASGI application."""
 
     class Default(WorkerEntrypoint):
@@ -487,7 +500,7 @@ def entrypoint(app: Any) -> type[WorkerEntrypoint]:
             ctx = getattr(self, "ctx", None)
             if (request.headers.get("upgrade") or "").lower() == "websocket":
                 return await websocket(app, request, self.env, ctx)
-            return await fetch(app, request, self.env, ctx)
+            return await fetch(app, request, self.env, ctx, options=options)
 
     return Default
 
