@@ -1,0 +1,78 @@
+[project]
+name = "cf-agents"
+description = "Cloudflare Agents for Python Workers"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [
+    { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+requires-python = ">=3.12"
+dependencies = ["typing-extensions>=4.12"]
+version = "0.1.3"
+
+[project.optional-dependencies]
+# Hosting MCP servers (agents.mcp.server); needs Python 3.14 Workers (.design/mcp.md §2.1).
+mcp-server = ["mcp>=2.3,<3"]
+
+[project.urls]
+Source = "https://github.com/justanotherbyte/agents-py"
+Documentation = "https://crosswind.viswa.space"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "agents"
+
+[dependency-groups]
+# mcp: the client's contract tests run against the SDK's servers.
+dev = ["pytest", "ruff", "ty", "workers-runtime-sdk", "mcp>=2.3,<3"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-exclude = ["verify", ".design", "tests", "examples"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",      # pycodestyle, pyflakes
+    "I",                # import sorting
+    "N",                # PEP 8 naming
+    "UP",               # modern syntax for the target version
+    "B",                # bugbear
+    "SIM", "C4", "PIE", # simplifications
+    "RUF",              # ruff-specific
+    "ANN",              # annotations everywhere
+    "D",                # docstrings
+]
+ignore = ["ANN401"]     # Any is allowed where decided (code_semantics.md §3)
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN"]
+# Wildcard re-exports with a static __all__ (checked by tests/test_public_api.py).
+"src/agents/__init__.py" = ["F403", "F405"]
+# wire() returns a dataclasses.field() (utilities.md §5), which RUF009 can't see.
+"src/agents/chat/{chunks,messages}.py" = ["RUF009"]
+"src/agents/mcp/models.py" = ["RUF009"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.analysis]
+allowed-unresolved-imports = ["js", "pyodide", "pyodide.**"]
