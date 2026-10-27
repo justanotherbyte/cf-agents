@@ -93,13 +93,13 @@ def scaffold(
     for path, text in files.items():
         (directory / path).parent.mkdir(parents=True, exist_ok=True)
         (directory / path).write_text(text)
-    _ignore(directory / ".gitignore")
+    ignore(directory / ".gitignore")
     if sdk == "crosswind-workers":
         write_env(load_project(directory, None, None))
     info(f"created {name}. Run `wynd dev` in {directory} to serve it.")
 
 
-def _ignore(path: Path) -> None:
+def ignore(path: Path) -> None:
     """Add the ignore lines a .gitignore lacks, keeping what it has."""
     text = path.read_text() if path.is_file() else ""
     missing = [line for line in IGNORED if line not in text.splitlines()]

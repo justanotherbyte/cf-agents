@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
-from ._model import Container
-from ._utils import to_table
+from .model import Container
+from .utils import to_table
 
 __all__ = (
     "DeletedDurableObject",
@@ -25,29 +25,29 @@ class Export(ABC):
     Worker.exports."""
 
     @abstractmethod
-    def _entry(self) -> dict[str, Any] | None:
+    def entry(self) -> dict[str, Any] | None:
         """The Wrangler `exports` entry, or None for an export Wrangler
         declares in another section."""
 
 
 @dataclass(frozen=True, kw_only=True)
-class _DurableObjectExport(Export):
+class DurableObjectExport(Export):
     """One state of a Durable Object class, compiled to the `exports` entry
     Wrangler 4.129 reconciles on upload."""
 
-    _state: ClassVar[str | None] = None
+    state: ClassVar[str | None] = None
 
-    def _entry(self) -> dict[str, Any]:
+    def entry(self) -> dict[str, Any]:
         entry: dict[str, Any] = {"type": "durable-object", **to_table(self)}
-        if self._state is not None:
-            entry["state"] = self._state
+        if self.state is not None:
+            entry["state"] = self.state
         if isinstance(container := entry.get("container"), Container):
             entry["container"] = container.name
         return entry
 
 
 @dataclass(frozen=True, kw_only=True)
-class _LiveDurableObject(_DurableObjectExport):
+class LiveDurableObject(DurableObjectExport):
     """A Durable Object class this Worker runs, so a binding can name it.
 
     Raises ValueError for a container on storage other than sqlite.
@@ -64,32 +64,32 @@ class _LiveDurableObject(_DurableObjectExport):
 
 
 @dataclass(frozen=True, kw_only=True)
-class DurableObject(_LiveDurableObject):
+class DurableObject(LiveDurableObject):
     pass
 
 
 @dataclass(frozen=True, kw_only=True)
-class ExpectingTransferDurableObject(_LiveDurableObject):
-    _state = "expecting-transfer"
+class ExpectingTransferDurableObject(LiveDurableObject):
+    state = "expecting-transfer"
 
     transfer_from: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class DeletedDurableObject(_DurableObjectExport):
-    _state = "deleted"
+class DeletedDurableObject(DurableObjectExport):
+    state = "deleted"
 
 
 @dataclass(frozen=True, kw_only=True)
-class RenamedDurableObject(_DurableObjectExport):
-    _state = "renamed"
+class RenamedDurableObject(DurableObjectExport):
+    state = "renamed"
 
     renamed_to: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferredDurableObject(_DurableObjectExport):
-    _state = "transferred"
+class TransferredDurableObject(DurableObjectExport):
+    state = "transferred"
 
     transferred_to: str
 
@@ -100,7 +100,7 @@ class Worker(Export):
 
     cache: bool | None = None
 
-    def _entry(self) -> dict[str, Any]:
+    def entry(self) -> dict[str, Any]:
         entry: dict[str, Any] = {"type": "worker"}
         if self.cache is not None:
             entry["cache"] = {"enabled": self.cache}
@@ -119,10 +119,10 @@ class Workflow(Export):
     name: str
     limits_steps: int | None = None
 
-    def _entry(self) -> None:
+    def entry(self) -> None:
         return None
 
-    def _binding_fields(self) -> dict[str, Any]:
+    def binding_fields(self) -> dict[str, Any]:
         fields: dict[str, Any] = {"name": self.name}
         if self.limits_steps is not None:
             fields["limits"] = {"steps": self.limits_steps}

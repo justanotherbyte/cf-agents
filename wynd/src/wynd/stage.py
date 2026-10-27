@@ -60,15 +60,15 @@ def stage_run(project: Project) -> StagedFile:
     path = project.run_dir / project.source.staged_name(project.mode)
     text = project.config.to_wrangler(path, code_root=config_dir)
 
-    _mirror_env_files(config_dir, project.run_dir)
-    _warn_on_old_state(config_dir, project.run_dir)
+    mirror_env_files(config_dir, project.run_dir)
+    warn_on_old_state(config_dir, project.run_dir)
     return StagedFile(path, text)
 
 
 def stage_upload(project: Project) -> tuple[StagedFile, ShakePlan]:
     """Shake and copy the Worker into .wynd/build/, with its config."""
     config_dir = project.source.path.parent
-    source = _source_dir(project)
+    source = source_dir(project)
 
     plan = shake(
         project.python_modules,
@@ -89,7 +89,7 @@ def stage_upload(project: Project) -> tuple[StagedFile, ShakePlan]:
     return StagedFile(path, project.config.to_wrangler(path, code_root=build)), plan
 
 
-def _source_dir(project: Project) -> Path:
+def source_dir(project: Project) -> Path:
     """The module root, relative to the config directory."""
     config = project.config
     config_dir = config.source.parent
@@ -109,7 +109,7 @@ def _source_dir(project: Project) -> Path:
     return source.relative_to(config_dir)
 
 
-def _mirror_env_files(config_dir: Path, run_dir: Path) -> None:
+def mirror_env_files(config_dir: Path, run_dir: Path) -> None:
     """Copy each changed env file into run_dir, and drop copies of gone ones."""
     sources = {
         path.name: path
@@ -126,7 +126,7 @@ def _mirror_env_files(config_dir: Path, run_dir: Path) -> None:
             shutil.copyfile(path, copied)
 
 
-def _warn_on_old_state(config_dir: Path, run_dir: Path) -> None:
+def warn_on_old_state(config_dir: Path, run_dir: Path) -> None:
     """Point at local data Wrangler kept beside the config before Wynd staged it."""
     old = config_dir / ".wrangler" / "state"
     new = run_dir / ".wrangler" / "state"

@@ -52,14 +52,14 @@ def main(argv: list[str] | None = None) -> int:
     return code if isinstance(code, int) else 0
 
 
-def _remember(ctx: click.Context, param: click.Parameter, value: Any) -> None:
+def remember(ctx: click.Context, param: click.Parameter, value: Any) -> None:
     # Wrangler reads these flags anywhere on the line, so each command accepts
     # them and the root context keeps the one given.
     if value and param.name:
         ctx.find_root().meta[param.name] = value
 
 
-def _wrangler_options[F: Callable[..., Any]](command: F) -> F:
+def wrangler_options[F: Callable[..., Any]](command: F) -> F:
     """Add the Wrangler flags Wynd reads, wherever they appear."""
     options: list[tuple[tuple[str, ...], dict[str, Any]]] = [
         (("-c", "--config"), {"help": "The Wrangler or Python config."}),
@@ -76,87 +76,87 @@ def _wrangler_options[F: Callable[..., Any]](command: F) -> F:
     ]
     for decls, settings in options:
         command = click.option(
-            *decls, callback=_remember, expose_value=False, **settings
+            *decls, callback=remember, expose_value=False, **settings
         )(command)
     return command
 
 
-def _setting(name: str) -> Any:
+def setting(name: str) -> Any:
     """Return a Wrangler flag given anywhere on the line, or None."""
     return click.get_current_context().find_root().meta.get(name)
 
 
-class _WyndGroup(click.Group):
+class WyndGroup(click.Group):
     """A group that sends commands it doesn't own to Wrangler."""
 
     def resolve_command(
         self, ctx: click.Context, args: list[str]
     ) -> tuple[str | None, click.Command | None, list[str]]:
         if args and self.get_command(ctx, args[0]) is None:
-            return args[0], _passthrough, args[1:]
+            return args[0], passthrough, args[1:]
         return super().resolve_command(ctx, args)
 
 
 @click.group(
-    cls=_WyndGroup,
+    cls=WyndGroup,
     context_settings={"ignore_unknown_options": True},
     epilog="Any other command runs Wrangler on the config Wynd stages in .wynd/.",
 )
-@_wrangler_options
+@wrangler_options
 def cli() -> None:
     """Build and run Python Workers with Wrangler."""
 
 
 @cli.command(context_settings=WRANGLER_COMMAND)
-@_wrangler_options
+@wrangler_options
 def dev() -> int:
     """Sync packages and serve the Worker with wrangler dev."""
-    return _run_wrangler("dev")
+    return run_wrangler("dev")
 
 
 @cli.command(context_settings=WRANGLER_COMMAND)
-@_wrangler_options
+@wrangler_options
 def deploy() -> int:
     """Sync packages and deploy the Worker with wrangler deploy."""
-    return _run_wrangler("upload")
+    return run_wrangler("upload")
 
 
 @cli.command(context_settings=WRANGLER_COMMAND)
-@_wrangler_options
+@wrangler_options
 def versions() -> int:
     """Run wrangler versions. `versions upload` syncs packages first."""
-    upload = _subcommand("versions") == "upload"
-    return _run_wrangler("upload" if upload else "passthrough")
+    upload = subcommand("versions") == "upload"
+    return run_wrangler("upload" if upload else "passthrough")
 
 
 @cli.command(context_settings=WRANGLER_COMMAND)
-@_wrangler_options
+@wrangler_options
 def preview() -> int:
     """Run wrangler preview. Without a subcommand it syncs packages first."""
-    return _run_wrangler("passthrough" if _subcommand("preview") else "upload")
+    return run_wrangler("passthrough" if subcommand("preview") else "upload")
 
 
 @click.command(context_settings=WRANGLER_COMMAND)
-@_wrangler_options
-def _passthrough() -> int:
-    return _run_wrangler("passthrough")
+@wrangler_options
+def passthrough() -> int:
+    return run_wrangler("passthrough")
 
 
 @cli.command("sync")
-@_wrangler_options
+@wrangler_options
 def sync_command() -> int:
     """Install the Worker's packages into python_modules."""
-    project = _load_project()
+    project = load_selected_project()
     sync(project, select_target(project.config))
     return 0
 
 
 @cli.command()
 @click.option("--check", is_flag=True, help="Fail if src/env.py is out of date.")
-@_wrangler_options
+@wrangler_options
 def types(check: bool) -> int:
     """Write the Env class for the Worker's bindings to env.py."""
-    write_env(_load_project(), check=check)
+    write_env(load_selected_project(), check=check)
     return 0
 
 
@@ -167,28 +167,28 @@ def types(check: bool) -> int:
     "--containers/--no-containers", default=None, help=f"Add {ADDONS['containers']}."
 )
 @click.option("--agents/--no-agents", default=None, help=f"Add {ADDONS['agents']}.")
-@_wrangler_options
+@wrangler_options
 def init(directory: str | None, sdk: str | None, **flags: bool | None) -> int:
     """Write a new project. In a terminal, asks for the choices flags leave out."""
     ask = sys.stdin.isatty()
     if sdk is None:
-        sdk = _ask_sdk() if ask else SDKS[0]
+        sdk = ask_sdk() if ask else SDKS[0]
     unset = [addon for addon in ADDONS if flags[addon] is None]
-    chosen = set(_ask_addons(unset)) if ask and unset else set()
+    chosen = set(ask_addons(unset)) if ask and unset else set()
     addons = tuple(addon for addon in ADDONS if flags[addon] or addon in chosen)
-    cwd = _cwd()
+    cwd = working_dir()
     scaffold(cwd / directory if directory else cwd, sdk, addons)
     return 0
 
 
-def _ask_sdk() -> str:
+def ask_sdk() -> str:
     """Ask which of SDKS to build on. Enter picks the first."""
     choices(SDKS)
     number = click.prompt("Workers SDK", type=click.IntRange(1, len(SDKS)), default=1)
     return SDKS[number - 1]
 
 
-def _ask_addons(addons: list[str]) -> list[str]:
+def ask_addons(addons: list[str]) -> list[str]:
     """Ask which of `addons` to add, as numbers. Enter picks none."""
 
     def parse(answer: str) -> list[str]:
@@ -208,27 +208,27 @@ def _ask_addons(addons: list[str]) -> list[str]:
     )
 
 
-def _subcommand(command: str) -> str:
+def subcommand(command: str) -> str:
     """Return the Wrangler subcommand of `command` on the line, or ''."""
     known = SUBCOMMANDS[command]
     args = click.get_current_context().args
     return next((arg for arg in args if arg in known), "")
 
 
-def _cwd() -> Path:
-    cwd = _setting("cwd")
+def working_dir() -> Path:
+    cwd = setting("cwd")
     return Path.cwd() / cwd if cwd else Path.cwd()
 
 
-def _mode() -> str | None:
-    return _setting("env") or os.environ.get("CLOUDFLARE_ENV")
+def selected_mode() -> str | None:
+    return setting("env") or os.environ.get("CLOUDFLARE_ENV")
 
 
-def _load_project() -> Project:
-    return load_project(_cwd(), _setting("config"), _mode())
+def load_selected_project() -> Project:
+    return load_project(working_dir(), setting("config"), selected_mode())
 
 
-def _run_wrangler(flow: str) -> int:
+def run_wrangler(flow: str) -> int:
     """Run Wrangler on the whole command line and the config Wynd stages.
 
     `flow` is "dev", "upload" for commands that upload code, or "passthrough",
@@ -236,7 +236,7 @@ def _run_wrangler(flow: str) -> int:
     """
     args = click.get_current_context().find_root().obj
     if flow in ("dev", "upload") and any(
-        _setting(name)
+        setting(name)
         for name in ("compatibility_date", "compatibility_flags", "latest")
     ):
         error(
@@ -247,7 +247,7 @@ def _run_wrangler(flow: str) -> int:
         return 1
 
     try:
-        project = _load_project()
+        project = load_selected_project()
     except ProjectNotFoundError:
         if flow != "passthrough":
             raise
@@ -271,12 +271,12 @@ def _run_wrangler(flow: str) -> int:
 
     argv, environ = project.source.wrangler_args(args, staged.path)
     if flow == "dev":
-        cwd, config, mode = _cwd(), _setting("config"), _mode()
+        cwd, config, mode = working_dir(), setting("config"), selected_mode()
         return wrangler.run(
             argv,
             environ=environ,
             watch=project.source.path,
-            restage=lambda: _restage(cwd, config, mode),
+            restage=lambda: restage(cwd, config, mode),
         )
 
     code = wrangler.run(argv, environ=environ)
@@ -284,7 +284,7 @@ def _run_wrangler(flow: str) -> int:
     return code
 
 
-def _restage(cwd: Path, config: str | None, mode: str | None) -> None:
+def restage(cwd: Path, config: str | None, mode: str | None) -> None:
     """Stage an edited config again, so the running wrangler dev reloads.
 
     A broken edit is reported and dev keeps serving the last good config.
