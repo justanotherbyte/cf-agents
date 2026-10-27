@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import math
@@ -93,7 +94,7 @@ class OutboundHandlerContext(Generic[ParamsT]):
 
 
 type OutboundHandler = Callable[
-    [Request, Any, OutboundHandlerContext[Any]], Awaitable[Response]
+    [Request, Any, OutboundHandlerContext[Any]], Response | Awaitable[Response]
 ]
 
 
@@ -239,6 +240,12 @@ def _matches_host_list(hostname: str, patterns: list[str]) -> bool:
     return any(_simple_glob_match(pattern, hostname) for pattern in patterns)
 
 
+async def _maybe_await[T](value: T | Awaitable[T]) -> T:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 def _match_host[T](by_host: dict[str, T], hostname: str) -> T | None:
     return by_host.get(hostname) or next(
         (
@@ -297,20 +304,26 @@ class ContainerProxy(WorkerEntrypoint):
         if outbound_by_host_overrides and handlers:
             override = _match_host(outbound_by_host_overrides, hostname)
             if override and override["method"] in handlers:
-                return await handlers[override["method"]](
-                    request,
-                    self.env,
-                    OutboundHandlerContext(
-                        container_id, class_name, override.get("params")
-                    ),
+                return await _maybe_await(
+                    handlers[override["method"]](
+                        request,
+                        self.env,
+                        OutboundHandlerContext(
+                            container_id, class_name, override.get("params")
+                        ),
+                    )
                 )
 
         handlers_by_host = container_class.outbound_by_host if container_class else None
         if handlers_by_host:
             handler = _match_host(handlers_by_host, hostname)
             if handler:
-                return await handler(
-                    request, self.env, OutboundHandlerContext(container_id, class_name)
+                return await _maybe_await(
+                    handler(
+                        request,
+                        self.env,
+                        OutboundHandlerContext(container_id, class_name),
+                    )
                 )
 
         if not intercept_all:
@@ -322,20 +335,24 @@ class ContainerProxy(WorkerEntrypoint):
         if outbound_handler_override and handlers:
             handler = handlers.get(outbound_handler_override["method"])
             if handler:
-                return await handler(
-                    request,
-                    self.env,
-                    OutboundHandlerContext(
-                        container_id,
-                        class_name,
-                        outbound_handler_override.get("params"),
-                    ),
+                return await _maybe_await(
+                    handler(
+                        request,
+                        self.env,
+                        OutboundHandlerContext(
+                            container_id,
+                            class_name,
+                            outbound_handler_override.get("params"),
+                        ),
+                    )
                 )
 
         default_outbound = container_class.outbound if container_class else None
         if default_outbound is not None:
-            return await default_outbound(
-                request, self.env, OutboundHandlerContext(container_id, class_name)
+            return await _maybe_await(
+                default_outbound(
+                    request, self.env, OutboundHandlerContext(container_id, class_name)
+                )
             )
 
         if allowed_hosts is not None:
@@ -794,7 +811,9 @@ class Container(DurableObject):
 
         self._setup_monitor_callbacks()
 
-        await ffi.block_concurrency_while(self.ctx, self.on_start)
+        await ffi.block_concurrency_while(
+            self.ctx, lambda: _maybe_await(self.on_start())
+        )
 
     @ffi.rpc_kwargs
     async def start_and_wait_for_ports(
@@ -895,7 +914,7 @@ class Container(DurableObject):
 
         async def mark_healthy() -> None:
             await self._state.set_healthy()
-            await self.on_start()
+            await _maybe_await(self.on_start())
 
         await ffi.block_concurrency_while(self.ctx, mark_healthy)
 
@@ -1068,7 +1087,7 @@ class Container(DurableObject):
 
     async def _notify_on_error(self, error: Exception) -> None:
         with contextlib.suppress(Exception):
-            await self.on_error(error)
+            await _maybe_await(self.on_error(error))
 
     def renew_activity_timeout(self) -> None:
         """
@@ -1999,7 +2018,7 @@ class Container(DurableObject):
             try:
                 payload = json.loads(row["payload"]) if row["payload"] else None
 
-                await callback(payload, schedule)
+                await _maybe_await(callback(payload, schedule))
             except Exception:
                 logger.exception(
                     'Error executing scheduled callback "%s"', row["callback"]
@@ -2023,7 +2042,7 @@ class Container(DurableObject):
             return
 
         if self._is_activity_expired():
-            await self.on_activity_expired()
+            await _maybe_await(self.on_activity_expired())
             self.renew_activity_timeout()
             return
 
@@ -2072,7 +2091,7 @@ class Container(DurableObject):
 
         self._on_stop_called = True
         try:
-            await self.on_stop(exit_code=exit_code, reason=reason)
+            await _maybe_await(self.on_stop(exit_code=exit_code, reason=reason))
         finally:
             self._on_stop_called = False
 
