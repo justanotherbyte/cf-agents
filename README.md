@@ -20,6 +20,8 @@ Each SDK part of Crosswind uses the same licensing that its official counterpart
 ## Contributing
 I am very much open to contributions. Crosswind is a large project and open-source contributions help alot. I'm happy with AI-written PRs (I myself use AI tools - it's the only way someone can even attempt to feasibly maintain a project of this size), but do note I care about code quality. Please don't submit slop code.
 
+If you'd like to contribute, please join the [Crosswind Discord](https://discord.gg/tbZTEeK35p).
+
 ## Getting Help
 
 Crosswind aims to have full API and feature parity with the official SDKs (with some meaningful deviations). Often, referring (or your agents) to the Crosswind and official Cloudflare docs should do the trick. Do open issues if you must though!
