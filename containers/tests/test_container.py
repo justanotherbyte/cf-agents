@@ -9,7 +9,8 @@ import pytest
 from test_fixtures import MockWebSocket, ObjectContaining, wait_for
 from workers import Request, Response
 
-from containers import Container, get_random
+from containers import Container, get_random, load_balance
+from containers.utils import parse_time_expression
 
 STATE_KEY = "__CF_CONTAINER_STATE"
 
@@ -581,6 +582,44 @@ class TestGetRandom:
         mock_binding.idFromName.assert_called()
         mock_binding.get.assert_called_with("mock-id")
         assert result == {"mock_stub": True}
+
+    async def test_load_balance_warns_and_returns_a_container_stub(self):
+        mock_binding = MagicMock()
+        mock_binding.get = MagicMock(return_value={"mock_stub": True})
+
+        with pytest.warns(DeprecationWarning, match="please use get_random"):
+            result = await load_balance(mock_binding, 5)
+
+        assert result == {"mock_stub": True}
+
+
+class TestDeprecatedOutboundAliases:
+    def test_aliases_set_outbound_handlers_and_outbound(self):
+        async def handler(request, env, ctx):
+            return Response("ok")
+
+        with pytest.warns(DeprecationWarning):
+
+            class Legacy(Container):
+                outbound_proxies = {"h": handler}
+                outbound_proxy = handler
+
+        assert Legacy.outbound_handlers == {"h": handler}
+        assert Legacy.outbound is handler
+
+
+class TestParseTimeExpression:
+    def test_accepts_float_seconds(self):
+        assert parse_time_expression(0.5) == 0.5
+
+    def test_rejects_bool(self):
+        with pytest.raises(TypeError):
+            parse_time_expression(True)
+
+    def test_renew_activity_timeout_keeps_ms_an_int(self, container):
+        container.sleep_after = 0.5
+        container.renew_activity_timeout()
+        assert isinstance(container._sleep_after_ms, int)
 
 
 class TestRpcKwargs:

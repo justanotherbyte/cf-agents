@@ -12,6 +12,7 @@ from .utils import (
     DurableObjectStub,
     get_container,
     get_random,
+    load_balance,
     switch_port,
 )
 
@@ -27,6 +28,7 @@ __all__ = (
     "State",
     "get_container",
     "get_random",
+    "load_balance",
     "switch_port",
 )
 

@@ -1,6 +1,7 @@
 import random
 import re
 import secrets
+import warnings
 from collections.abc import Awaitable
 from typing import Any, Protocol
 
@@ -47,7 +48,7 @@ def generate_id(length: int = 9) -> str:
     return "".join(secrets.choice(_ID_ALPHABET) for _ in range(length))
 
 
-def parse_time_expression(time_expression: str | int) -> int:
+def parse_time_expression(time_expression: str | float) -> float:
     """
     Parse a time expression into seconds.
 
@@ -58,17 +59,20 @@ def parse_time_expression(time_expression: str | int) -> int:
 
     Returns
     -------
-    int
-        Number of seconds.
+    float
+        Number of seconds. Strings always give an int.
 
     Raises
     ------
     ValueError
         If the string is not a valid time expression.
     TypeError
-        If the value is neither a string nor an int.
+        If the value is not a string or a number, or is a bool.
     """
-    if isinstance(time_expression, int):
+    if isinstance(time_expression, bool):
+        raise TypeError("invalid type for a time expression: bool")
+
+    if isinstance(time_expression, (int, float)):
         return time_expression
 
     if isinstance(time_expression, str):
@@ -119,6 +123,33 @@ async def get_random(
     object_id = binding.idFromName(f"instance-{id}")
 
     return binding.get(object_id)
+
+
+async def load_balance(
+    binding: DurableObjectNamespace, instances: int = 3
+) -> DurableObjectStub:
+    """
+    Deprecated alias of `get_random`.
+
+    Parameters
+    ----------
+    binding
+        The Container's Durable Object binding.
+    instances
+        Number of instances to load balance across.
+
+    Returns
+    -------
+    DurableObjectStub
+        A container stub ready to handle requests.
+    """
+    warnings.warn(
+        "load_balance is deprecated, please use get_random instead. "
+        "This will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return await get_random(binding, instances)
 
 
 def get_container(

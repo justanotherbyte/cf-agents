@@ -67,6 +67,8 @@ Names use `snake_case`, and fields become class attributes.
 | `containerFetch`, `startAndWaitForPorts`, `waitForPort`               | `container_fetch`, `start_and_wait_for_ports`, `wait_for_port` |
 | `getState`, `renewActivityTimeout`                                    | `get_state`, `renew_activity_timeout`                          |
 | `getContainer`, `getRandom`, `switchPort`                             | `get_container`, `get_random`, `switch_port`                   |
+| `loadBalance` (deprecated)                                            | `load_balance` (deprecated)                                    |
+| `static outboundProxies`, `static outboundProxy` (deprecated)         | `outbound_proxies`, `outbound_proxy` (deprecated)              |
 | `State.lastChange`, `State.exitCode`                                  | `last_change`, `exit_code`                                     |
 | `Schedule.taskId`, `Schedule.delayInSeconds`                          | `task_id`, `delay_in_seconds`                                  |
 | `ctx.containerId`, `ctx.className` (outbound)                         | `ctx.container_id`, `ctx.class_name`                           |
@@ -153,12 +155,10 @@ method on a stub positionally. See
 
 ## Not ported
 
-| TypeScript                                         | Use instead                     |
-| -------------------------------------------------- | ------------------------------- |
-| `loadBalance` (deprecated)                         | `get_random`                    |
-| `static outboundProxies` / `outboundProxy` aliases | `outbound_by_host` / `outbound` |
-| `outboundParams` (typing helper)                   | Plain values for `params`       |
-| `ContainerOptions.id` (unused)                     | n/a                             |
+| TypeScript                       | Use instead               |
+| -------------------------------- | ------------------------- |
+| `outboundParams` (typing helper) | Plain values for `params` |
+| `ContainerOptions.id` (unused)   | n/a                       |
 
 ## Raw container API
 

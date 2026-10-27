@@ -5,6 +5,7 @@ import logging
 import math
 import re
 import time
+import warnings
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import (
@@ -381,11 +382,13 @@ class Container(DurableObject):
         Handler for hosts that no more specific rule handles.
     outbound_handlers
         Named handlers for ``set_outbound_handler`` and ``set_outbound_by_host``.
+    outbound_proxies, outbound_proxy
+        Deprecated aliases of ``outbound_handlers`` and ``outbound``.
     """
 
     default_port: int | None = None
     required_ports: list[int] | None = None
-    sleep_after: str | int = DEFAULT_SLEEP_AFTER
+    sleep_after: str | float = DEFAULT_SLEEP_AFTER
     env_vars: dict[str, str] = {}
     entrypoint: list[str] | None = None
     enable_internet: bool = True
@@ -401,6 +404,17 @@ class Container(DurableObject):
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         _container_classes[cls.__name__] = cls
+        for old, new in (
+            ("outbound_proxies", "outbound_handlers"),
+            ("outbound_proxy", "outbound"),
+        ):
+            if old in cls.__dict__:
+                warnings.warn(
+                    f"{old} is deprecated, please use {new} instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                setattr(cls, new, cls.__dict__[old])
 
     def __init__(
         self,
@@ -409,7 +423,7 @@ class Container(DurableObject):
         /,
         *,
         default_port: int | None = None,
-        sleep_after: str | int | None = None,
+        sleep_after: str | float | None = None,
         env_vars: dict[str, str] | None = None,
         entrypoint: list[str] | None = None,
         enable_internet: bool | None = None,
@@ -1062,7 +1076,7 @@ class Container(DurableObject):
 
         Call this method whenever there is activity on the container.
         """
-        timeout_in_ms = parse_time_expression(self.sleep_after) * 1000
+        timeout_in_ms = int(parse_time_expression(self.sleep_after) * 1000)
         self._sleep_after_ms = int(time.time() * 1000) + timeout_in_ms
 
     def _decrement_inflight(self) -> None:
