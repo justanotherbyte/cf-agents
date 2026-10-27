@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [agents, containers, workers, wynd]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      # ty is left out until it passes on main.
+      - name: Lint
+        run: |
+          uv run --with ruff ruff check .
+          uv run --with ruff ruff format --check .
+
+      - name: Test
+        run: uv run pytest
