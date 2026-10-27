@@ -162,7 +162,9 @@ class AIChatAgent(Agent[S]):
         The Streams each turn's output is stored in.
     """
 
-    options: AIChatAgentOptions = AIChatAgentOptions()
+    # Narrowing is unsound only for writes through `Agent`; options are set
+    # once per class, and __init__ rejects a non-AIChatAgentOptions value.
+    options: AIChatAgentOptions = AIChatAgentOptions()  # ty: ignore[invalid-mutable-override]
 
     def __init__(self, ctx: Any, env: Any) -> None:
         super().__init__(ctx, env)

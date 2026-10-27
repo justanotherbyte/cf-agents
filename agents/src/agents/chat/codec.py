@@ -218,7 +218,7 @@ def _decode_part(part: Mapping[str, Any]) -> UIMessagePart:
 
 
 def _unknown(part: Mapping[str, Any]) -> UnknownPart:
-    return UnknownPart(fields=cast(dict[str, JSONValue], dict(part)))
+    return UnknownPart(fields=dict(part))
 
 
 def _record_from_wire(
