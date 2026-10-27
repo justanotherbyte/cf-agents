@@ -667,3 +667,11 @@ class TestStorageFormat:
         assert container._allowed_hosts_override == ["a.com"]
         assert container._denied_hosts_override == ["b.com"]
         assert container._has_intercept_all_registration is True
+
+    async def test_restores_empty_host_lists(self, mock_ctx, container):
+        mock_ctx.storage.kv.get.return_value = {"allowedHosts": [], "deniedHosts": []}
+
+        container._restore_outbound_configuration()
+
+        assert container._allowed_hosts_override == []
+        assert container._denied_hosts_override == []

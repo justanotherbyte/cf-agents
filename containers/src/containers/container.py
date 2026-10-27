@@ -1506,10 +1506,10 @@ class Container(DurableObject):
             configuration.get("hasInterceptAllRegistration") is True
         )
 
-        if configuration.get("allowedHosts"):
+        if configuration.get("allowedHosts") is not None:
             self._allowed_hosts_override = configuration["allowedHosts"]
 
-        if configuration.get("deniedHosts"):
+        if configuration.get("deniedHosts") is not None:
             self._denied_hosts_override = configuration["deniedHosts"]
 
         return self._get_outbound_configuration()
