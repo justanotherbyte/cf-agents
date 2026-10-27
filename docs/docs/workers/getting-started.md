@@ -10,7 +10,7 @@ on every request.
 
 ## Prerequisites
 
-- [`uv`](https://docs.astral.sh/uv/) 0.12.3 or later. Check with
+- [`uv`](https://docs.astral.sh/uv/) 0.13.4 or later. Check with
   `uv --version`.
 - Node.js, which provides `npx`. Wynd runs Wrangler through it.
 - A Cloudflare account, for the deploy step only.

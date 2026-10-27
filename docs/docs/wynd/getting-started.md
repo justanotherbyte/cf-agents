@@ -12,7 +12,7 @@ follow [Build a typed Python Worker](../workers/getting-started.md).
 ## Prerequisites
 
 - A Python Worker that runs under `pywrangler dev`.
-- [uv](https://docs.astral.sh/uv/) 0.12.3 or later. Check with `uv --version`,
+- [uv](https://docs.astral.sh/uv/) 0.13.4 or later. Check with `uv --version`,
   and update with `uv self update`.
 - Node.js, which provides `npx`.
 

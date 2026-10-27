@@ -34,7 +34,7 @@ import shutil
 from pathlib import Path
 args = sys.argv[1:]
 if args == ["--version"]:
-    print(f"uv {os.environ.get('WYND_TEST_UV_VERSION', '0.12.19')} (abc 2026-10-01)")
+    print(f"uv {os.environ.get('WYND_TEST_UV_VERSION', '0.13.4')} (abc 2026-10-01)")
 elif os.environ.get("WYND_TEST_UV_FAIL") in args:
     print("uv: no solution found", file=sys.stderr)
     sys.exit(2)
