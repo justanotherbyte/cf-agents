@@ -107,7 +107,7 @@ class File(Blob):
 
 def _is_part_list(parts: Any) -> bool:
     # bytes-like values are one part, even though Python can iterate them.
-    if isinstance(parts, (str, bytes, bytearray, memoryview)):
+    if isinstance(parts, (str, bytes, bytearray, memoryview)) or _is_js_buffer(parts):
         return False
 
     try:
@@ -136,7 +136,11 @@ def _js_parts(parts: Any) -> Generator[Any]:
 
 @contextmanager
 def _js_part(part: Any) -> Generator[Any]:
-    if isinstance(part, str) or js_name(part) in ("Blob", "File"):
+    if (
+        isinstance(part, str)
+        or js_name(part) in ("Blob", "File")
+        or _is_js_buffer(part)
+    ):
         yield part
     elif isinstance(part, Blob):
         yield part.js_object
@@ -153,3 +157,8 @@ def _is_buffer(value: Any) -> bool:
             return True
     except TypeError:
         return False
+
+
+def _is_js_buffer(value: Any) -> bool:
+    # Pyodide gives ArrayBuffer, typed array and DataView proxies to_memoryview().
+    return js_name(value) is not None and hasattr(value, "to_memoryview")
