@@ -22,8 +22,8 @@ class JsValue:
         self.__dict__.update(attributes)
 
     def __iter__(self) -> Any:
-        # Pyodide makes JS arrays and sets iterable from Python.
-        if self.constructor.name not in ("Array", "Set"):
+        # Pyodide makes JS arrays, sets and typed arrays iterable from Python.
+        if self.constructor.name not in ("Array", "Set", "Uint8Array"):
             raise TypeError(f"{self.constructor.name} is not iterable")
         return iter(self.contents)
 
@@ -81,6 +81,7 @@ def to_js(
     *,
     dict_converter: Callable[..., Any] | None = None,
     default_converter: Callable[..., Any] | None = None,
+    pyproxies: Any = None,
 ) -> Any:
     def convert(item: Any) -> Any:
         if item is None or isinstance(
