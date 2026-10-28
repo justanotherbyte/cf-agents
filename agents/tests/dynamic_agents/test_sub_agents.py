@@ -406,6 +406,23 @@ def test_a_refused_sub_agent_socket_closes_with_4000_plus_status() -> None:
     assert _fake_ffi.rejections == [(4403, "Sub-agent connection rejected (403)")]
 
 
+def test_a_forged_sub_agent_url_header_cannot_skip_the_gate() -> None:
+    _, inbox = make_world()
+
+    async def scenario() -> None:
+        request = Request(
+            "https://x.dev/agents/inbox/alice",
+            headers={
+                "Upgrade": "websocket",
+                "x-cf-agents-subagent-url": "https://x.dev/sub/chat/forbidden",
+            },
+        )
+        await inbox.fetch(request)
+
+    asyncio.run(scenario())
+    assert "Chat\0forbidden" not in inbox.ctx.facets.live
+
+
 def test_nested_sockets_reach_the_grandchild() -> None:
     _, inbox = make_world()
 

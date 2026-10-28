@@ -172,11 +172,16 @@ async def facet_fetch(stub: Any, request: Any) -> Any:
 
 
 def request_with(
-    request: Any, *, url: str | None = None, headers: dict[str, str] | None = None
+    request: Any,
+    *,
+    url: str | None = None,
+    headers: dict[str, str] | None = None,
+    drop: str | None = None,
 ) -> Any:
     from workers import Request
 
     merged = {**request.headers._values, **(headers or {})}
+    merged.pop((drop or "").lower(), None)
     return Request(
         url if url is not None else request.url, method=request.method, headers=merged
     )

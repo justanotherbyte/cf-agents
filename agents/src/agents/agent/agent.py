@@ -1008,6 +1008,9 @@ class Agent(Generic[S], DurableObject):  # noqa: UP046  (see above; 3.12 has no 
     # Runtime entry points (attached under the runtime's names below)
 
     async def __fetch(self, request: "Request") -> Response:
+        if request.headers.get(OUTER_URL_HEADER) is not None:
+            # Only route_request may set this header, after on_before_sub_agent.
+            request = _ffi.request_with(request, drop=OUTER_URL_HEADER)
         match = parse_sub_agent_path(request.url, _ffi.export_names(self.ctx))
         if match is None:
             return await self._lifecycle.fetch(request)

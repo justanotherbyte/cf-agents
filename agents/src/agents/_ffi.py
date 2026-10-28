@@ -582,12 +582,18 @@ async def facet_fetch(stub: Any, request: Request) -> Response:
 
 
 def request_with(
-    request: Request, *, url: str | None = None, headers: dict[str, str] | None = None
+    request: Request,
+    *,
+    url: str | None = None,
+    headers: dict[str, str] | None = None,
+    drop: str | None = None,
 ) -> Request:
-    """Return a copy of ``request`` with another URL and/or extra headers."""
+    """Return a copy of ``request`` with another URL, extra headers or one dropped."""
     copy = js.Request.new(url if url is not None else request.url, request.js_object)
     for name, value in (headers or {}).items():
         copy.headers.set(name, value)
+    if drop is not None:
+        copy.headers.delete(drop)
     return Request(copy)
 
 
