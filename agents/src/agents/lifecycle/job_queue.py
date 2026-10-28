@@ -31,6 +31,7 @@ __all__ = (
     "hung_timeout_ms",
     "is_hung",
     "job_from_row",
+    "new_job_id",
 )
 
 HOST_JOB_OWNER = "host"
@@ -60,8 +61,8 @@ CREATE TABLE IF NOT EXISTS cf_agents_jobs (
 ) WITHOUT ROWID"""
 
 
-def _new_job_id() -> str:
-    # Same alphabet and length as upstream's nanoid(9).
+def new_job_id() -> str:
+    """Return a random job id (same alphabet and length as upstream's nanoid(9))."""
     return "".join(secrets.choice(_ID_ALPHABET) for _ in range(_ID_LENGTH))
 
 
@@ -177,7 +178,7 @@ class JobQueue:
         """
         if not fn.strip():
             raise ValueError("jobs require a non-empty fn")
-        job_id = id if id is not None else _new_job_id()
+        job_id = id if id is not None else new_job_id()
         self._rows(
             """INSERT INTO cf_agents_jobs
                  (id, capability, fn, time, payload, retry_options, singleflight,
