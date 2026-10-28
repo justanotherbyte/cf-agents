@@ -292,7 +292,7 @@ def test_facet_items_live_on_the_root_and_run_in_the_facet() -> None:
         item = await facet_queue.push(recorder.handle, {"k": 1})
         assert await facet_queue.get(item.id) == item
         assert await root_queue.list() == []  # owner-scoped
-        stored = root_queue.lifecycle.jobs.get(item.id)
+        stored = root_queue.lifecycle.jobs.get(f"child#{item.id}")  # owner-scoped
         assert stored is not None
         assert stored.payload == {
             "payload": {"k": 1},
@@ -332,7 +332,7 @@ def test_unroutable_dispatch_yields_and_keeps_the_item() -> None:
         item = await facet_queue.push(recorder.handle)
         root._route_transport.peers.clear()  # ty: ignore[unresolved-attribute]
         await drain(root)
-        assert root_queue.lifecycle.jobs.get(item.id) is not None
+        assert root_queue.lifecycle.jobs.get(f"child#{item.id}") is not None
 
     asyncio.run(scenario())
 
@@ -344,5 +344,20 @@ def test_cleanup_route_prefix_removes_a_facet_subtree() -> None:
         await facet_queue.push(recorder.handle)
         await root_queue._cleanup_route_prefix("child")
         assert root_queue.lifecycle.jobs.list() == []
+
+    asyncio.run(scenario())
+
+
+def test_root_and_facet_items_with_the_same_stable_id_both_survive() -> None:
+    _, root_queue, _, facet_queue, recorder = facet_setup()
+
+    async def scenario() -> None:
+        await root_queue.push("handle", {"from": "root"}, id="refresh")
+        facet_item = await facet_queue.push(recorder.handle, {"from": "facet"}, id="refresh")
+        assert facet_item.id == "refresh"
+        assert [item.payload for item in await root_queue.list()] == [{"from": "root"}]
+        assert await facet_queue.list() == [facet_item]
+        assert await facet_queue.cancel("refresh")
+        assert await root_queue.get("refresh") is not None
 
     asyncio.run(scenario())

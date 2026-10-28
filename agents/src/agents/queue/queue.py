@@ -10,7 +10,7 @@ Lifecycle runs the alarm loop, the retries, and the physical alarm
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
-from typing import Any, override
+from typing import Any, cast, override
 
 from ..core.methods import get_bound_method, method_name
 from ..core.platform_errors import is_code_update_reset, is_platform_failure
@@ -18,7 +18,7 @@ from ..core.retry import run_with_retries, validate_retry_options
 from ..core.timing import epoch_ms, from_epoch_ms, now_ms
 from ..core.types import JSONValue, RetryOptions
 from ..lifecycle.capability import LifecycleCapability
-from ..lifecycle.job_queue import retry_from_json, retry_to_json
+from ..lifecycle.job_queue import new_job_id, retry_from_json, retry_to_json
 from ..lifecycle.types import (
     JobContext,
     JobOutcome,
@@ -223,7 +223,7 @@ class Queue(LifecycleCapability):
                 "queue:retry",
                 {
                     "callback": job.fn,
-                    "id": job.id,
+                    "id": item.id,
                     "attempt": attempt,
                     "maxAttempts": self._retry_for(item).max_attempts,
                 },
@@ -247,8 +247,10 @@ class Queue(LifecycleCapability):
     async def on_job_error(self, context: JobContext, error: Exception) -> JobOutcome:
         """Report an item's terminal failure; the item is dropped."""
         job = context.job
+        envelope = _envelope(job)
+        id = _item(job, envelope).id if envelope is not None else job.id
         attempts = (job.retry or self._retry).max_attempts
-        await self._report_failure(job.fn, job.id, error, attempts)
+        await self._report_failure(job.fn, id, error, attempts)
         return None
 
     @override
@@ -387,30 +389,25 @@ class Queue(LifecycleCapability):
     ) -> QueueItem:
         # A stable-id push replaces the item in place, keeping its due time
         # and so its position in the queue.
-        existing = self.lifecycle.jobs.get(id) if id is not None else None
-        if existing is not None and self._get_for_owner(owner, existing.id) is not None:
+        job_id = _job_id(owner, id if id is not None else new_job_id())
+        existing = self.lifecycle.jobs.get(job_id) if id is not None else None
+        if existing is not None:
             time = existing.time
         else:
             time = from_epoch_ms(self._next_time_ms())
-        envelope: dict[str, JSONValue] = {
-            "payload": payload,
-            "owner_path": owner.data if owner is not None else None,
-            "owner_path_key": owner.key if owner is not None else None,
-        }
+        envelope = QueueJobPayload(
+            payload=payload,
+            owner_path=owner.data if owner is not None else None,
+            owner_path_key=owner.key if owner is not None else None,
+        )
         job = await self.lifecycle.jobs.push(
             fn=callback,
             time=time,
-            payload=envelope,
-            id=id,
+            payload=cast("dict[str, JSONValue]", envelope),
+            id=job_id,
             retry=retry or self._retry,
         )
-        return QueueItem(
-            id=job.id,
-            callback=job.fn,
-            payload=payload,
-            created_at=job.created_at,
-            retry=job.retry,
-        )
+        return _item(job, envelope)
 
     def _next_time_ms(self) -> int:
         """Return the next strictly increasing due time, never before now."""
@@ -434,7 +431,7 @@ class Queue(LifecycleCapability):
         return owned
 
     def _get_for_owner(self, owner: RouteAddress | None, id: str) -> QueueItem | None:
-        job = self.lifecycle.jobs.get(id)
+        job = self.lifecycle.jobs.get(_job_id(owner, id))
         if job is None:
             return None
         envelope = _envelope(job)
@@ -456,14 +453,14 @@ class Queue(LifecycleCapability):
     async def _cancel_for_owner(self, owner: RouteAddress | None, id: str) -> bool:
         if self._get_for_owner(owner, id) is None:
             return False
-        return await self.lifecycle.jobs.cancel(id)
+        return await self.lifecycle.jobs.cancel(_job_id(owner, id))
 
     async def _cancel_all_for_owner(
         self, owner: RouteAddress | None, callback: str | None
     ) -> int:
         cancelled = 0
         for item in self._list_for_owner(owner, callback):
-            if await self.lifecycle.jobs.cancel(item.id):
+            if await self.lifecycle.jobs.cancel(_job_id(owner, item.id)):
                 cancelled += 1
         return cancelled
 
@@ -510,6 +507,15 @@ def _owner_key(owner: RouteAddress | None) -> str | None:
     return owner.key if owner is not None else None
 
 
+def _job_id(owner: RouteAddress | None, id: str) -> str:
+    """Return the stored job id for an owner's item id.
+
+    Facet items share the root's job table, so their ids carry the owner key
+    (which URL-encodes ``#``); root ids stay bare, as stored before scoping.
+    """
+    return id if owner is None else f"{owner.key}#{id}"
+
+
 def _envelope(job: LifecycleJob) -> QueueJobPayload | None:
     """Return the queue envelope a job carries, or ``None`` if it's malformed."""
     raw = job.payload
@@ -525,8 +531,9 @@ def _envelope(job: LifecycleJob) -> QueueJobPayload | None:
 
 
 def _item(job: LifecycleJob, envelope: QueueJobPayload) -> QueueItem:
+    key = envelope["owner_path_key"]
     return QueueItem(
-        id=job.id,
+        id=job.id.removeprefix(f"{key}#") if key is not None else job.id,
         callback=job.fn,
         payload=envelope["payload"],
         created_at=job.created_at,
