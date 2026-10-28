@@ -2126,9 +2126,7 @@ class Container(DurableObject):
         list of Schedule
             The scheduled tasks.
         """
-        result = self._sql(
-            "SELECT * FROM container_schedules WHERE callback = ? LIMIT 1", name
-        )
+        result = self._sql("SELECT * FROM container_schedules WHERE callback = ?", name)
 
         if not result:
             return []

@@ -409,8 +409,7 @@ def delete_schedules(self, name: str) -> None
 
 - `get_schedule` looks up a task by its `task_id`. It returns `None` once the
   task has run or been deleted.
-- `list_schedules` returns pending tasks for the callback `name`. Like the
-  TypeScript SDK, it currently returns at most one.
+- `list_schedules` returns pending tasks for the callback `name`.
 - `delete_schedules` removes every pending task for the callback `name`. It
   is not a coroutine.
 

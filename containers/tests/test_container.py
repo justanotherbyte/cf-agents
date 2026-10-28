@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sqlite3
 import time
 from http import HTTPMethod
 from types import SimpleNamespace
@@ -533,6 +534,23 @@ class TestContainer:
             await container.fetch(mock_request)
 
             proxy_spy.assert_called_with(mock_request, container.default_port)
+
+    async def test_lists_every_schedule_for_a_callback(self, mock_ctx):
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        mock_ctx.storage.sql.exec = lambda query, *values: db.execute(query, values)
+        container = Container(mock_ctx, {})
+        container.tick = AsyncMock()
+
+        first = await container.schedule(60, "tick", 1)
+        second = await container.schedule(120, "tick", 2)
+
+        schedules = await container.list_schedules("tick")
+
+        assert {s["task_id"] for s in schedules} == {
+            first["task_id"],
+            second["task_id"],
+        }
 
 
 class TestHttpsInterceptionRuntimeGuard:
