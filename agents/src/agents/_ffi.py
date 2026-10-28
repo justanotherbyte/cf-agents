@@ -29,10 +29,17 @@ from pyodide.ffi import (
     JsProxy,
     create_once_callable,
     create_proxy,
-    jsnull,
     to_js,
 )
 from workers import Request, Response, python_from_rpc, python_to_rpc
+
+try:
+    from pyodide.ffi import jsnull
+except ImportError:
+    # Pyodide 0.27 (Python 3.12 Workers) has no jsnull: JS null arrives as
+    # None, and None leaves as undefined, which storage, SQL and attachments
+    # treat as null except for a top-level storage.put (no caller does that).
+    jsnull = None
 
 __all__ = (
     "ConsoleHandler",
@@ -102,9 +109,9 @@ def py_to_js(value: Any) -> Any:
     Returns
     -------
     Any
-        The JS value: ``None`` becomes ``null``, a ``dict`` a plain object, a
-        ``list`` an array, bytes a ``Uint8Array`` copy, a ``datetime`` a
-        ``Date``.
+        The JS value: ``None`` becomes ``null`` (``undefined`` on Pyodide
+        0.27), a ``dict`` a plain object, a ``list`` an array, bytes a
+        ``Uint8Array`` copy, a ``datetime`` a ``Date``.
 
     Raises
     ------
