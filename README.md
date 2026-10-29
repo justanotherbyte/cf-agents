@@ -13,6 +13,7 @@ Crosswind is a set of typed, async-first Python SDKs to help you deploy more cap
 | [wynd](wynd)                 | Alternative to `pywrangler`. Supports a typed `cloudflare.config.py` to configure your projects. Has minimal tree-shaking to help you reduce bundle sizes. | [workers-py](https://github.com/cloudflare/workers-py)          |
 | [crosswind-workers](workers) | Typed Workers SDK for Python.                                                                                                                              | [workers-py](https://github.com/cloudflare/workers-py)          |
 | [containers-py](containers)  | Python SDK to help you manage your Cloudflare Containers                                                                                                   | [Containers SDK](https://developers.cloudflare.com/containers/) |
+| [crosswind-sandboxes](sandboxes) | File operations, S3 mounts and directory backups for a running container.                                                                         | [Sandbox SDK](https://developers.cloudflare.com/sandbox/)       |
 
 ## Licensing
 Each SDK part of Crosswind uses the same licensing that its official counterpart uses. The Crosswind docs are under the MIT license.
