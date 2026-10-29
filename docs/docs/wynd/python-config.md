@@ -295,7 +295,7 @@ same name unless the table says otherwise:
 | `base_dir`            | `str`                                            |
 | `compatibility_flags` | `list[str]`, added after `python_workers`        |
 | `domains`             | `list[str]`, compiled to `routes` with `custom_domain: true` |
-| `assets`              | `Assets(directory, html_handling=None, not_found_handling=None, run_worker_first=None)` |
+| `assets`              | `Assets(directory, html_handling=None, not_found_handling=None, run_worker_first=None, base_path=None)` |
 | `observability`       | `Observability(enabled=None, head_sampling_rate=None, redact_query_string=None, logs=None, traces=None)` |
 | `placement`           | `Placement(mode, hint=None)`, with `mode` as `"off"` or `"smart"` |
 | `limits`              | `Limits(cpu_ms=None, subrequests=None)`          |

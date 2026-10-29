@@ -71,7 +71,9 @@ def test_a_config_compiles_to_the_wrangler_dict() -> None:
             entrypoint="src/main.py",
             compatibility_date="2026-09-08",
             compatibility_flags=["python_workers", "nodejs_compat"],
-            assets=Assets(directory="./public", not_found_handling="404-page"),
+            assets=Assets(
+                directory="./public", not_found_handling="404-page", base_path="/blog"
+            ),
             domains=["images.example.com"],
             rules=[Rule(type="Data", globs=["**/*.onnx"], fallthrough=True)],
             env={
@@ -114,6 +116,7 @@ def test_a_config_compiles_to_the_wrangler_dict() -> None:
         "assets": {
             "directory": "./public",
             "not_found_handling": "404-page",
+            "base_path": "/blog",
             "binding": "STATIC",
         },
         "routes": [
