@@ -20,8 +20,8 @@ jobs:
         run: |
           package="${TAG%%-*}"
           case "$package" in
-            containers|agents|workers|wynd) echo "dir=$package" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::Tag '$TAG' does not start with containers-, agents-, workers- or wynd-"; exit 1 ;;
+            containers|agents|sandboxes|workers|wynd) echo "dir=$package" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Tag '$TAG' does not start with containers-, agents-, sandboxes-, workers- or wynd-"; exit 1 ;;
           esac
 
       - uses: actions/checkout@v5

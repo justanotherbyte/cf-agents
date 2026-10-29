@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [agents, containers, workers, wynd]
+        package: [agents, containers, sandboxes, workers, wynd]
     defaults:
       run:
         working-directory: ${{ matrix.package }}
