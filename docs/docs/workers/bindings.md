@@ -8,20 +8,68 @@ crosswind-workers wraps each one in a class with `async` snake_case methods
 that take and return Python values. Every example on this page uses this
 config:
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "bindings-demo",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-09-08",
-  "compatibility_flags": ["python_workers"],
-  "kv_namespaces": [{ "binding": "CACHE", "id": "<your KV namespace id>" }],
-  "d1_databases": [
-    { "binding": "DB", "database_name": "notes", "database_id": "<your D1 database id>" }
-  ],
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "files" }],
-  "queues": { "producers": [{ "binding": "JOBS", "queue": "jobs" }] }
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "bindings-demo",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-09-08",
+      "compatibility_flags": ["python_workers"],
+      "kv_namespaces": [{ "binding": "CACHE", "id": "<your KV namespace id>" }],
+      "d1_databases": [
+        { "binding": "DB", "database_name": "notes", "database_id": "<your D1 database id>" }
+      ],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "files" }],
+      "queues": { "producers": [{ "binding": "JOBS", "queue": "jobs" }] }
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "bindings-demo"
+    main = "src/entry.py"
+    compatibility_date = "2026-09-08"
+    compatibility_flags = ["python_workers"]
+
+    [[kv_namespaces]]
+    binding = "CACHE"
+    id = "<your KV namespace id>"
+
+    [[d1_databases]]
+    binding = "DB"
+    database_name = "notes"
+    database_id = "<your D1 database id>"
+
+    [[r2_buckets]]
+    binding = "FILES"
+    bucket_name = "files"
+
+    [[queues.producers]]
+    binding = "JOBS"
+    queue = "jobs"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Config, Worker, bindings
+
+    config = Config(
+        worker=Worker(
+            name="bindings-demo",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-09-08",
+            env={
+                "CACHE": bindings.KV(id="<your KV namespace id>"),
+                "DB": bindings.D1(name="notes", id="<your D1 database id>"),
+                "FILES": bindings.R2(name="files"),
+                "JOBS": bindings.Queue(name="jobs"),
+            },
+        ),
+    )
+    ```
 
 `wynd dev` simulates every binding locally, so any placeholder id works until
 you deploy. Create the real resources with `uvx wynd kv namespace create`,
@@ -163,12 +211,34 @@ takes one dictionary per message, with the body under `"body"`.
 
 Add a consumer to the config, and a `queue` method to the entrypoint:
 
-```jsonc title="wrangler.jsonc"
-"queues": {
-  "producers": [{ "binding": "JOBS", "queue": "jobs" }],
-  "consumers": [{ "queue": "jobs" }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    "queues": {
+      "producers": [{ "binding": "JOBS", "queue": "jobs" }],
+      "consumers": [{ "queue": "jobs" }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    [[queues.producers]]
+    binding = "JOBS"
+    queue = "jobs"
+
+    [[queues.consumers]]
+    queue = "jobs"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import bindings, triggers
+
+    env={"JOBS": bindings.Queue(name="jobs")},
+    triggers=[triggers.Queue("jobs")],
+    ```
 
 ```python title="src/entry.py"
 class Default(WorkerEntrypoint[Env]):
@@ -193,9 +263,28 @@ request to the bound Worker and returns a crosswind
 entrypoint. This Worker binds to its own `Auth` entrypoint, so it runs without
 a second project:
 
-```jsonc title="wrangler.jsonc"
-"services": [{ "binding": "AUTH", "service": "bindings-demo", "entrypoint": "Auth" }]
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    "services": [{ "binding": "AUTH", "service": "bindings-demo", "entrypoint": "Auth" }]
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    [[services]]
+    binding = "AUTH"
+    service = "bindings-demo"
+    entrypoint = "Auth"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import bindings
+
+    env={"AUTH": bindings.Service("bindings-demo", export="Auth")},
+    ```
 
 ```python title="src/entry.py"
 from env import Env
@@ -260,9 +349,30 @@ To reach the JavaScript object itself, read `js_object`. See
 
 A text var or a secret is a `str`. A JSON var arrives as a Python value:
 
-```jsonc title="wrangler.jsonc"
-"vars": { "GREETING": "hello", "LIMITS": { "uploads": 10 } }
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    "vars": { "GREETING": "hello", "LIMITS": { "uploads": 10 } }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    [vars]
+    GREETING = "hello"
+    LIMITS = { uploads = 10 }
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import bindings
+
+    env={
+        "GREETING": bindings.Text("hello"),
+        "LIMITS": bindings.Json({"uploads": 10}),
+    },
+    ```
 
 `self.env.LIMITS["uploads"]` is the integer `10`. Wynd types secrets from the
 names in `.dev.vars`, so add each secret there for local development.

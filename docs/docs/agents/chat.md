@@ -41,14 +41,37 @@ class Default(WorkerEntrypoint):
 Add a binding and a migration for `EchoChat`, as in
 [Getting started](getting-started.md#3-configure-wrangler):
 
-```jsonc title="wrangler.jsonc"
-{
-  "durable_objects": {
-    "bindings": [{ "class_name": "EchoChat", "name": "EchoChat" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EchoChat"] }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "durable_objects": {
+        "bindings": [{ "class_name": "EchoChat", "name": "EchoChat" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EchoChat"] }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    [[durable_objects.bindings]]
+    class_name = "EchoChat"
+    name = "EchoChat"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["EchoChat"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import bindings, exports
+
+    env={"EchoChat": bindings.DurableObject("EchoChat")},
+    exports={"EchoChat": exports.DurableObject()},
+    ```
 
 `self.messages` is the conversation, oldest first, including the message the
 user just sent. Each message is a `UIMessage` with `id`, `role` and `parts`.

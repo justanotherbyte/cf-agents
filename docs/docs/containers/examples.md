@@ -131,12 +131,32 @@ class Default(WorkerEntrypoint):
         await container.start(env_vars={"REPORT_DATE": date.today().isoformat()})
 ```
 
-```jsonc title="wrangler.jsonc"
-{
-  // ...
-  "triggers": { "crons": ["0 3 * * *"] }
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      // ...
+      "triggers": { "crons": ["0 3 * * *"] }
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    # ...
+    [triggers]
+    crons = ["0 3 * * *"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    # cloudflare.config.py needs Wynd: run `uvx wynd dev` in place of `pywrangler dev`.
+    from wynd.config import triggers
+
+    # ...
+    triggers=[triggers.Cron("0 3 * * *")],
+    ```
 
 See [Cron container](https://developers.cloudflare.com/containers/examples/cron/).
 

@@ -18,13 +18,31 @@ writes only the object the current backup created.
 npx wrangler r2 bucket create sandbox-backups
 ```
 
-Bind it in `wrangler.jsonc`:
+Bind it in your config:
 
-```jsonc title="wrangler.jsonc"
-{
-  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "sandbox-backups" }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "sandbox-backups" }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    [[r2_buckets]]
+    binding = "BACKUPS"
+    bucket_name = "sandbox-backups"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import bindings
+
+    env={"BACKUPS": bindings.R2(name="sandbox-backups")},
+    ```
 
 ## 2. Export the gateway
 

@@ -80,21 +80,64 @@ each one its own sandbox.
 
 ## 4. Configure Wrangler
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "hello-sandbox",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-05-12",
-  "compatibility_flags": ["python_workers"],
-  "containers": [
-    { "class_name": "Sandbox", "image": "./Dockerfile", "max_instances": 5 }
-  ],
-  "durable_objects": {
-    "bindings": [{ "class_name": "Sandbox", "name": "SANDBOX" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sandbox"] }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "hello-sandbox",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-05-12",
+      "compatibility_flags": ["python_workers"],
+      "containers": [
+        { "class_name": "Sandbox", "image": "./Dockerfile", "max_instances": 5 }
+      ],
+      "durable_objects": {
+        "bindings": [{ "class_name": "Sandbox", "name": "SANDBOX" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sandbox"] }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "hello-sandbox"
+    main = "src/entry.py"
+    compatibility_date = "2026-05-12"
+    compatibility_flags = ["python_workers"]
+
+    [[containers]]
+    class_name = "Sandbox"
+    image = "./Dockerfile"
+    max_instances = 5
+
+    [[durable_objects.bindings]]
+    class_name = "Sandbox"
+    name = "SANDBOX"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["Sandbox"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    # cloudflare.config.py needs Wynd: run `uvx wynd dev` in place of `pywrangler dev`.
+    from wynd.config import Config, Container, Worker, bindings, exports
+
+    sandbox = Container(name="hello-sandbox-sandbox", dockerfile="./Dockerfile", max_instances=5)
+
+    config = Config(
+        worker=Worker(
+            name="hello-sandbox",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-05-12",
+            env={"SANDBOX": bindings.DurableObject("Sandbox")},
+            exports={"Sandbox": exports.DurableObject(container=sandbox)},
+        ),
+    )
+    ```
 
 `containers[].class_name` links the image to the `Sandbox` class.
 `durable_objects.bindings` makes the class reachable as `self.env.SANDBOX`.

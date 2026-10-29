@@ -65,20 +65,56 @@ class Default(WorkerEntrypoint):
 
 ## 3. Configure Wrangler
 
-Replace `wrangler.jsonc`:
+Replace the Wrangler config with one of these:
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "hello-agents",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-07-20",
-  "compatibility_flags": ["python_workers"],
-  "durable_objects": {
-    "bindings": [{ "class_name": "Counter", "name": "Counter" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "hello-agents",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-07-20",
+      "compatibility_flags": ["python_workers"],
+      "durable_objects": {
+        "bindings": [{ "class_name": "Counter", "name": "Counter" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "hello-agents"
+    main = "src/entry.py"
+    compatibility_date = "2026-07-20"
+    compatibility_flags = ["python_workers"]
+
+    [[durable_objects.bindings]]
+    class_name = "Counter"
+    name = "Counter"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["Counter"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    # cloudflare.config.py needs Wynd: run `uvx wynd dev` in place of `pywrangler dev`.
+    from wynd.config import Config, Worker, bindings, exports
+
+    config = Config(
+        worker=Worker(
+            name="hello-agents",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-07-20",
+            env={"Counter": bindings.DurableObject("Counter")},
+            exports={"Counter": exports.DurableObject()},
+        ),
+    )
+    ```
 
 Each agent class needs a Durable Object binding and a migration that creates
 it as a SQLite-backed class. `route_agent_request` finds the agent by the

@@ -21,19 +21,71 @@ come from `workers.bindings`.
 
 With this config:
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "typed",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-09-08",
-  "compatibility_flags": ["python_workers"],
-  "kv_namespaces": [{ "binding": "CACHE", "id": "<your KV namespace id>" }],
-  "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "Counter" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }],
-  "ai": { "binding": "AI" },
-  "vars": { "GREETING": "hi", "LIMITS": { "uploads": 10, "users": 3 } }
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "typed",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-09-08",
+      "compatibility_flags": ["python_workers"],
+      "kv_namespaces": [{ "binding": "CACHE", "id": "<your KV namespace id>" }],
+      "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "Counter" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }],
+      "ai": { "binding": "AI" },
+      "vars": { "GREETING": "hi", "LIMITS": { "uploads": 10, "users": 3 } }
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "typed"
+    main = "src/entry.py"
+    compatibility_date = "2026-09-08"
+    compatibility_flags = ["python_workers"]
+
+    [[kv_namespaces]]
+    binding = "CACHE"
+    id = "<your KV namespace id>"
+
+    [[durable_objects.bindings]]
+    name = "COUNTER"
+    class_name = "Counter"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["Counter"]
+
+    [ai]
+    binding = "AI"
+
+    [vars]
+    GREETING = "hi"
+    LIMITS = { uploads = 10, users = 3 }
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Config, Worker, bindings, exports
+
+    config = Config(
+        worker=Worker(
+            name="typed",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-09-08",
+            env={
+                "CACHE": bindings.KV(id="<your KV namespace id>"),
+                "COUNTER": bindings.DurableObject("Counter"),
+                "AI": bindings.AI(),
+                "GREETING": bindings.Text("hi"),
+                "LIMITS": bindings.Json({"uploads": 10, "users": 3}),
+            },
+            exports={"Counter": exports.DurableObject()},
+        ),
+    )
+    ```
 
 and a `.dev.vars` file that sets `API_TOKEN=...`, run:
 

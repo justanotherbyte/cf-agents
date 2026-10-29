@@ -191,25 +191,72 @@ there.
 
 ## 4. Configure Wrangler
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "hello-containers",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-05-12",
-  "compatibility_flags": ["python_workers"],
-  "containers": [
+=== "wrangler.jsonc"
+
+    ```jsonc
     {
-      "class_name": "MyContainer",
-      "image": "./Dockerfile",
-      "max_instances": 10
+      "name": "hello-containers",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-05-12",
+      "compatibility_flags": ["python_workers"],
+      "containers": [
+        {
+          "class_name": "MyContainer",
+          "image": "./Dockerfile",
+          "max_instances": 10
+        }
+      ],
+      "durable_objects": {
+        "bindings": [{ "class_name": "MyContainer", "name": "MY_CONTAINER" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MyContainer"] }]
     }
-  ],
-  "durable_objects": {
-    "bindings": [{ "class_name": "MyContainer", "name": "MY_CONTAINER" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MyContainer"] }]
-}
-```
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "hello-containers"
+    main = "src/entry.py"
+    compatibility_date = "2026-05-12"
+    compatibility_flags = ["python_workers"]
+
+    [[containers]]
+    class_name = "MyContainer"
+    image = "./Dockerfile"
+    max_instances = 10
+
+    [[durable_objects.bindings]]
+    class_name = "MyContainer"
+    name = "MY_CONTAINER"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["MyContainer"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    # cloudflare.config.py needs Wynd: run `uvx wynd dev` in place of `pywrangler dev`.
+    from wynd.config import Config, Container, Worker, bindings, exports
+
+    container = Container(
+        name="hello-containers-mycontainer",
+        dockerfile="./Dockerfile",
+        max_instances=10,
+    )
+
+    config = Config(
+        worker=Worker(
+            name="hello-containers",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-05-12",
+            env={"MY_CONTAINER": bindings.DurableObject("MyContainer")},
+            exports={"MyContainer": exports.DurableObject(container=container)},
+        ),
+    )
+    ```
 
 | Key                          | What it does                                                                                                                                                 |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |

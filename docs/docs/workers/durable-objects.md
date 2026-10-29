@@ -11,18 +11,53 @@ alarm.
 
 Every example uses this config:
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "rooms",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-09-08",
-  "compatibility_flags": ["python_workers"],
-  "durable_objects": {
-    "bindings": [{ "name": "ROOM", "class_name": "Room" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "rooms",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-09-08",
+      "compatibility_flags": ["python_workers"],
+      "durable_objects": {
+        "bindings": [{ "name": "ROOM", "class_name": "Room" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "rooms"
+    main = "src/entry.py"
+    compatibility_date = "2026-09-08"
+    compatibility_flags = ["python_workers"]
+
+    [[durable_objects.bindings]]
+    name = "ROOM"
+    class_name = "Room"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["Room"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Config, Worker, bindings, exports
+
+    config = Config(
+        worker=Worker(
+            name="rooms",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-09-08",
+            env={"ROOM": bindings.DurableObject("Room")},
+            exports={"Room": exports.DurableObject()},
+        ),
+    )
+    ```
 
 ## Define the class
 
