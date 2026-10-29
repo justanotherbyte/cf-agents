@@ -5,6 +5,8 @@
 
 # Crosswind
 
+![https://discord.com/api/guilds/1564745929733443664/embed.png](https://discord.gg/tbZTEeK35p)
+
 Crosswind is a set of typed, async-first Python SDKs to help you deploy more capable applications on Cloudflare's Python Workers. It's goal is to bring Cloudflare's official TypeScript SDKs to the Python eco-system.
 
 | Python SDK                   | Description                                                                                                                                                | Official Pair                                                   |
