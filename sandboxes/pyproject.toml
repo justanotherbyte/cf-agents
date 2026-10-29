@@ -1,0 +1,49 @@
+[project]
+name = "crosswind-sandboxes"
+version = "0.1.0"
+description = "Cloudflare Sandbox SDK for Python Workers"
+readme = "README.md"
+authors = [
+    { name = "Viswa Marepalli", email = "reachvishm@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+license = "Apache-2.0"
+license-files = ["LICENSE-APACHE"]
+
+[project.urls]
+Source = "https://github.com/justanotherbyte/crosswind/tree/main/sandboxes"
+Documentation = "https://crosswind.viswa.space"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }]
+
+[tool.uv.build-backend]
+module-name = "sandboxes"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.ty.analysis]
+allowed-unresolved-imports = ["js", "pyodide.**", "workers"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.9",
+    "ty>=0.0.84",
+]
