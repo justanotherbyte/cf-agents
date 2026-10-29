@@ -16,6 +16,9 @@ dependencies = [
 [project.scripts]
 wynd = "wynd.cli:main"
 
+[project.urls]
+Source = "https://github.com/justanotherbyte/crosswind/tree/main/wynd"
+
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]
 build-backend = "uv_build"

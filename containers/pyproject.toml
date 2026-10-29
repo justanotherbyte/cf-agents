@@ -14,7 +14,7 @@ dependencies = [
 license = "MIT OR Apache-2.0"
 
 [project.urls]
-Source = "https://github.com/justanotherbyte/containers"
+Source = "https://github.com/justanotherbyte/crosswind/tree/main/containers"
 Documentation = "https://crosswind.viswa.space"
 
 [build-system]
