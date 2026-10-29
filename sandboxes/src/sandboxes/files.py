@@ -46,7 +46,28 @@ _USER = re.compile(r"[0-9]+:[0-9]+")
 
 @dataclass(frozen=True, slots=True)
 class SandboxFileStat:
-    """Metadata for a path in the container."""
+    """
+    Metadata for a path in the container.
+
+    Attributes
+    ----------
+    type
+        The kind of path.
+    size
+        The size in bytes.
+    mode
+        The permission bits.
+    uid
+        The owner's user ID.
+    gid
+        The owner's group ID.
+    accessed_at
+        The last access time, in UTC.
+    modified_at
+        The last time the contents changed, in UTC.
+    changed_at
+        The last time the metadata changed, in UTC.
+    """
 
     type: SandboxFileType
     size: int
@@ -81,7 +102,16 @@ class SandboxFileStat:
 
 @dataclass(frozen=True, slots=True)
 class SandboxDirectoryEntry:
-    """One entry of a directory. ``type`` describes the entry without following it."""
+    """
+    One entry of a directory.
+
+    Attributes
+    ----------
+    name
+        The entry's name, without its directory.
+    type
+        The kind of entry. A symbolic link is ``"symlink"``, not its target.
+    """
 
     name: str
     type: SandboxFileType
@@ -201,6 +231,8 @@ class Files:
     """
     File operations in a running container.
 
+    Every method is a coroutine and accepts ``cwd``, ``user`` and ``abort``.
+
     The image must provide ``/usr/local/bin/sandbox-shim`` from the
     ``cloudflare/sandbox`` image this package was tested against.
 
@@ -228,6 +260,20 @@ class Files:
         """
         Stream a file's bytes.
 
+        Parameters
+        ----------
+        path
+            The file to read.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
         Returns
         -------
         js.Response
@@ -238,6 +284,8 @@ class Files:
         ------
         SandboxFileError
             The file could not be opened.
+        SandboxProtocolError
+            The shim's reply was invalid.
         """
         options = _FileOptions(cwd, user, abort)
         session = await options.start(
@@ -264,6 +312,31 @@ class Files:
 
         The file is opened before ``content`` is read, so a later failure can
         leave it created, truncated or partly written.
+
+        Parameters
+        ----------
+        path
+            The file to write. Its parent directory must exist.
+        content
+            ``str`` (written as UTF-8), bytes-like, an async iterable of
+            bytes, or a JS ``ReadableStream`` of ``Uint8Array`` chunks.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Raises
+        ------
+        TypeError
+            ``content`` has an unsupported type.
+        SandboxFileError
+            Linux rejected the write, for example with ``ENOENT`` or
+            ``EISDIR``.
         """
         options = _FileOptions(cwd, user, abort)
         resolved = options.resolve(path)
@@ -291,7 +364,32 @@ class Files:
         user: str | None = None,
         abort: asyncio.Event | None = None,
     ) -> SandboxFileStat:
-        """Return metadata for ``path``, following a final symbolic link."""
+        """
+        Return metadata for ``path``, following a final symbolic link.
+
+        Parameters
+        ----------
+        path
+            The path to describe.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Returns
+        -------
+        SandboxFileStat
+
+        Raises
+        ------
+        SandboxFileError
+            Linux rejected the call, for example with ``ENOENT``.
+        """
         payload = await self._run(
             "stat", path, _FileOptions(cwd, user, abort), expected="data"
         )
@@ -306,7 +404,32 @@ class Files:
         user: str | None = None,
         abort: asyncio.Event | None = None,
     ) -> SandboxFileStat:
-        """Return metadata for ``path`` without following a final symbolic link."""
+        """
+        Return metadata for ``path`` without following a final symbolic link.
+
+        Parameters
+        ----------
+        path
+            The path to describe.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Returns
+        -------
+        SandboxFileStat
+
+        Raises
+        ------
+        SandboxFileError
+            Linux rejected the call, for example with ``ENOENT``.
+        """
         payload = await self._run(
             "lstat", path, _FileOptions(cwd, user, abort), expected="data"
         )
@@ -321,7 +444,32 @@ class Files:
         user: str | None = None,
         abort: asyncio.Event | None = None,
     ) -> list[SandboxDirectoryEntry]:
-        """List the immediate entries of a directory, in native order."""
+        """
+        List the immediate entries of a directory, in native order.
+
+        Parameters
+        ----------
+        path
+            The directory to list.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Returns
+        -------
+        list[SandboxDirectoryEntry]
+
+        Raises
+        ------
+        SandboxFileError
+            Linux rejected the call, for example with ``ENOTDIR``.
+        """
         payload = await self._run(
             "read_directory", path, _FileOptions(cwd, user, abort), expected="data"
         )
@@ -337,7 +485,30 @@ class Files:
         user: str | None = None,
         abort: asyncio.Event | None = None,
     ) -> None:
-        """Create a directory, and with ``recursive``, its missing parents."""
+        """
+        Create a directory, and with ``recursive``, its missing parents.
+
+        Parameters
+        ----------
+        path
+            The directory to create.
+        recursive
+            Create missing parents too.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Raises
+        ------
+        SandboxFileError
+            Linux rejected the call, for example with ``EEXIST``.
+        """
         _check_flag("recursive", recursive)
         await self._run(
             "mkdir",
@@ -360,6 +531,27 @@ class Files:
         Rename a path with Linux ``rename`` rules.
 
         Crossing filesystems fails with ``EXDEV``. Nothing is copied instead.
+
+        Parameters
+        ----------
+        source
+            The path to rename.
+        destination
+            The new path.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Raises
+        ------
+        SandboxFileError
+            Linux rejected the call, for example with ``ENOENT`` or ``EXDEV``.
         """
         await self._run(
             "rename",
@@ -382,7 +574,29 @@ class Files:
         """
         Remove a file, a symbolic link, or with ``recursive``, a directory tree.
 
-        ``force`` ignores only a missing target.
+        Parameters
+        ----------
+        path
+            The path to remove.
+        recursive
+            Remove a directory and everything in it.
+        force
+            Succeed when ``path`` doesn't exist. Other errors still raise.
+        cwd
+            An absolute directory that relative paths are joined onto. Without
+            it, relative paths raise ``ValueError``.
+        user
+            The numeric user and group the shim runs as, as ``"uid:gid"``.
+            Defaults to the container's user.
+        abort
+            Set it to stop the operation. The call then raises
+            ``SandboxAbortError``.
+
+        Raises
+        ------
+        SandboxFileError
+            Linux rejected the call, for example with ``ENOENT`` or
+            ``EISDIR``.
         """
         _check_flag("recursive", recursive)
         _check_flag("force", force)
