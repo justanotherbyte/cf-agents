@@ -49,6 +49,33 @@ hide:
             return await container.fetch(request)
     ```
 
+=== "Sandboxes"
+
+    ```python
+    from sandboxes import Files
+    from workers import DurableObject, Request, Response, WorkerEntrypoint
+
+
+    class Sandbox(DurableObject):
+        async def save(self, text: str) -> str:
+            if not self.ctx.container.running:
+                self.ctx.container.start()
+
+            files = Files(self.ctx.container)
+            await files.mkdir("/workspace", recursive=True)
+            await files.write_file("/workspace/notes.txt", text)  # still there on the next request
+            entries = await files.read_directory("/workspace")
+            return ", ".join(entry.name for entry in entries)
+
+
+    class Default(WorkerEntrypoint):
+        async def fetch(self, request: Request) -> Response:
+            # One sandbox per user, with its own container and files
+            user_id = request.url.rsplit("/", 1)[-1]
+            sandbox = self.env.SANDBOX.getByName(user_id)
+            return Response(await sandbox.save(await request.text()))
+    ```
+
 === "Workers"
 
     ```python
