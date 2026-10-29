@@ -83,6 +83,7 @@ class Assets:
         Literal["single-page-application", "404-page", "none"] | None
     ) = None
     run_worker_first: bool | Sequence[str] | None = None
+    base_path: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
