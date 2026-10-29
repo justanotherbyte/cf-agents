@@ -48,6 +48,21 @@ class DirectoryBackupRecord(TypedDict):
     What ``backup()`` returns. Store it to restore or delete the backup later.
 
     Records match the JS SDK's, so either SDK can restore them.
+
+    Attributes
+    ----------
+    id
+        A UUID that names the R2 object, ``<prefix><id>.tar.zst``.
+    dir
+        The directory that was saved.
+    size
+        The object's size in bytes.
+    name
+        The ``name`` passed to ``backup()``, if any.
+    sha256
+        The hex SHA-256 of the object.
+    format
+        Always ``"tar+zstd/1"``.
     """
 
     id: str
@@ -320,6 +335,25 @@ class DirectoryBackup:
         Pause writers in ``dir`` first. Files that change while it is read are
         captured as they are at that moment.
 
+        Parameters
+        ----------
+        dir
+            The absolute directory to save.
+        name
+            A label stored in the record and in the R2 object's custom
+            metadata.
+        exclude
+            Patterns of paths to leave out.
+        gitignore
+            Also leave out paths that ``.gitignore`` files in ``dir`` ignore.
+        abort
+            Set it to stop the backup. The call raises ``SandboxAbortError``
+            and the partial upload is aborted.
+
+        Returns
+        -------
+        DirectoryBackupRecord
+
         Raises
         ------
         SandboxFileError
@@ -392,6 +426,27 @@ class DirectoryBackup:
         verifies the download. A ``SandboxFileError`` or ``SandboxBackupError``
         means the target was not replaced, and so does an abort before the
         download is verified. The target's parent must exist.
+
+        Parameters
+        ----------
+        record
+            A record that ``backup()`` returned.
+        dir
+            Restore here instead of the record's ``dir``.
+        abort
+            Set it to stop the restore. Once the download is verified, the
+            restore finishes anyway.
+
+        Raises
+        ------
+        ValueError
+            ``record`` isn't a valid record.
+        SandboxFileError
+            The target's parent is missing, or a file can't be written.
+        SandboxBackupError
+            ``BACKUP_NOT_FOUND`` when the object is gone, ``BACKUP_INTEGRITY``
+            when its size or hash differs from the record, or
+            ``BACKUP_TRANSFER`` when the download fails.
         """
         parsed = _parse_record(record)
         target = parsed["dir"] if dir is None else _check_dir(dir)
@@ -427,6 +482,19 @@ class DirectoryBackup:
         Delete the backup's object. Needs no running container.
 
         Deleting an object that is already gone succeeds.
+
+        Parameters
+        ----------
+        record
+            A record that ``backup()`` returned.
+        abort
+            If already set, the call raises ``SandboxAbortError`` and deletes
+            nothing.
+
+        Raises
+        ------
+        ValueError
+            ``record`` isn't a valid record.
         """
         parsed = _parse_record(record)
         _check_abort(abort)

@@ -29,7 +29,7 @@ plugins:
       handlers:
         python:
           # griffe reads the source without importing it, so workerd-only modules (js, pyodide) don't matter
-          paths: [../agents/src, ../containers/src, ../workers/src, ../wynd/src]
+          paths: [../agents/src, ../containers/src, ../sandboxes/src, ../workers/src, ../wynd/src]
           options:
             docstring_style: numpy
             show_root_heading: true
@@ -78,6 +78,16 @@ nav:
       - Container class: containers/container-class.md
       - Generated API: containers/generated-api.md
       - Troubleshooting: containers/troubleshooting.md
+  - Sandboxes:
+    - Overview: sandboxes/overview.md
+    - Getting started: sandboxes/getting-started.md
+    - Guides:
+      - Work with files: sandboxes/files.md
+      - Mount an S3 bucket: sandboxes/s3-mounts.md
+      - Back up a directory: sandboxes/backups.md
+    - Reference:
+      - API reference: sandboxes/api.md
+      - Generated API: sandboxes/generated-api.md
   - Workers:
     - Overview: workers/overview.md
     - Getting started: workers/getting-started.md

@@ -133,7 +133,21 @@ class SandboxProtocolError(SandboxError):
 
 
 class SandboxS3MountError(SandboxError):
-    """An S3 mount operation failed in the container."""
+    """
+    An S3 mount operation failed in the container.
+
+    Attributes
+    ----------
+    code
+        ``S3_MOUNT_BUSY``, ``S3_MOUNT_CONFLICT``, ``S3_MOUNT_FAILED`` or
+        ``S3_MOUNT_INCOMPATIBLE``.
+    operation
+        ``"mount"``, ``"inspect"`` or ``"unmount"``.
+    path
+        The mount path.
+    detail
+        The shim's description of the failure.
+    """
 
     def __init__(
         self,
@@ -150,7 +164,20 @@ class SandboxS3MountError(SandboxError):
 
 
 class SandboxBackupError(SandboxError):
-    """A directory backup is missing, changed, or failed to transfer."""
+    """
+    A directory backup is missing, changed, or failed to transfer.
+
+    Attributes
+    ----------
+    code
+        ``BACKUP_NOT_FOUND``, ``BACKUP_INTEGRITY`` or ``BACKUP_TRANSFER``.
+    operation
+        ``"backup"``, ``"restore"`` or ``"delete"``.
+    path
+        The directory being saved or restored.
+    detail
+        A description of the failure.
+    """
 
     def __init__(
         self, code: BackupErrorCode, operation: BackupOperation, path: str, detail: str

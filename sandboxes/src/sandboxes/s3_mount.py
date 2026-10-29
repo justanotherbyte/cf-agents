@@ -41,6 +41,21 @@ type S3MountAccess = Literal["read-only", "read-write"]
 
 
 class StaticCredentials(TypedDict):
+    """
+    Fixed S3 keys, such as an R2 API token's access key ID and secret.
+
+    Attributes
+    ----------
+    type
+        Always ``"static"``.
+    access_key_id
+        The access key ID.
+    secret_access_key
+        The secret access key.
+    session_token
+        A session token, for temporary credentials.
+    """
+
     type: Literal["static"]
     access_key_id: str
     secret_access_key: str
@@ -63,6 +78,25 @@ type S3Credentials = StaticCredentials | ProviderCredentials
 
 
 class S3Source(TypedDict):
+    """
+    The bucket to mount and the credentials that reach it.
+
+    Attributes
+    ----------
+    type
+        Always ``"s3"``.
+    endpoint
+        The S3 API origin, such as
+        ``"https://<ACCOUNT_ID>.r2.cloudflarestorage.com"``. HTTP or HTTPS,
+        with no path, query or credentials.
+    region
+        The region requests are signed for. R2 uses ``"auto"``.
+    bucket
+        The bucket name. It can't start with ``-`` or contain ``/`` or ``:``.
+    credentials
+        ``StaticCredentials`` or ``ProviderCredentials``.
+    """
+
     type: Literal["s3"]
     endpoint: str
     region: str
@@ -406,10 +440,34 @@ class S3Mount:
 
         A mount with the same settings is reused, and leftover state repaired.
 
+        Parameters
+        ----------
+        mount_path
+            An absolute, normalized path, such as ``"/mnt/data"``. Not ``/``,
+            and no trailing ``/``.
+        source
+            The bucket and its credentials.
+        access
+            ``"read-only"`` or ``"read-write"``.
+        key_prefix
+            Mount only the keys under this prefix. A trailing ``/`` is added.
+        s3fs_options
+            Extra ``s3fs`` options. ``True`` passes a flag, ``False`` drops it,
+            and a string or number passes ``name=value``. Options the package
+            sets itself, such as ``endpoint`` or ``ro``, raise ``ValueError``.
+        abort
+            Set it to stop the mount. The call then raises
+            ``SandboxAbortError``.
+
         Raises
         ------
+        ValueError
+            An argument is invalid, or ``mount_path`` overlaps a path the
+            package needs.
         SandboxS3MountError
-            ``S3_MOUNT_CONFLICT`` when a different mount holds the path.
+            ``S3_MOUNT_CONFLICT`` when a different mount holds the path,
+            ``S3_MOUNT_BUSY``, ``S3_MOUNT_INCOMPATIBLE`` or
+            ``S3_MOUNT_FAILED``.
         """
         request = _MountRequest.create(
             mount_path, source, access, key_prefix, s3fs_options
@@ -450,6 +508,18 @@ class S3Mount:
         Report the state of ``mount_path`` without changing it.
 
         Waits for a ``mount()`` or ``unmount()`` in progress on the path first.
+
+        Parameters
+        ----------
+        mount_path
+            The path to inspect.
+        abort
+            Set it to stop the call. The call then raises
+            ``SandboxAbortError``.
+
+        Returns
+        -------
+        S3MountInspection
         """
         path = canonical_mount_path(mount_path)
         session = await _start(
@@ -474,6 +544,16 @@ class S3Mount:
     ) -> None:
         """
         Deny further storage requests, then unmount ``mount_path``.
+
+        Unmounting a path with nothing mounted succeeds.
+
+        Parameters
+        ----------
+        mount_path
+            The path to unmount.
+        abort
+            Set it to stop the call. The call then raises
+            ``SandboxAbortError``.
 
         Raises
         ------
