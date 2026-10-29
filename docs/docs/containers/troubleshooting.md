@@ -51,9 +51,31 @@ config, or the entry's `class_name` doesn't match the class.
 **Fix.** Add an entry whose `class_name` is the exact name of your `Container`
 subclass:
 
-```jsonc title="wrangler.jsonc"
-"containers": [{ "class_name": "MyContainer", "image": "./Dockerfile" }]
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    "containers": [{ "class_name": "MyContainer", "image": "./Dockerfile" }]
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    [[containers]]
+    class_name = "MyContainer"
+    image = "./Dockerfile"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Container, exports
+
+    exports={
+        "MyContainer": exports.DurableObject(
+            container=Container(name="my-container", dockerfile="./Dockerfile"),
+        ),
+    },
+    ```
 
 ## `ctx.exports.ContainerProxy is undefined`
 

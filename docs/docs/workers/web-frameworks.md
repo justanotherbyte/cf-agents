@@ -23,15 +23,44 @@ requires-python = ">=3.12"
 dependencies = ["crosswind-workers", "fastapi"]
 ```
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "fastapi-worker",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-09-08",
-  "compatibility_flags": ["python_workers"],
-  "vars": { "GREETING": "hello" }
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "fastapi-worker",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-09-08",
+      "compatibility_flags": ["python_workers"],
+      "vars": { "GREETING": "hello" }
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "fastapi-worker"
+    main = "src/entry.py"
+    compatibility_date = "2026-09-08"
+    compatibility_flags = ["python_workers"]
+
+    [vars]
+    GREETING = "hello"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Config, Worker, bindings
+
+    config = Config(
+        worker=Worker(
+            name="fastapi-worker",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-09-08",
+            env={"GREETING": bindings.Text("hello")},
+        ),
+    )
+    ```
 
 ```python title="src/entry.py"
 from fastapi import FastAPI

@@ -10,15 +10,47 @@ the whole Workflow in Python.
 
 ## Define the Workflow
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "signup",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-09-08",
-  "compatibility_flags": ["python_workers"],
-  "workflows": [{ "name": "signup", "binding": "SIGNUP", "class_name": "Signup" }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "signup",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-09-08",
+      "compatibility_flags": ["python_workers"],
+      "workflows": [{ "name": "signup", "binding": "SIGNUP", "class_name": "Signup" }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "signup"
+    main = "src/entry.py"
+    compatibility_date = "2026-09-08"
+    compatibility_flags = ["python_workers"]
+
+    [[workflows]]
+    name = "signup"
+    binding = "SIGNUP"
+    class_name = "Signup"
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Config, Worker, bindings, exports
+
+    config = Config(
+        worker=Worker(
+            name="signup",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-09-08",
+            env={"SIGNUP": bindings.Workflow("Signup")},
+            exports={"Signup": exports.Workflow(name="signup")},
+        ),
+    )
+    ```
 
 ```python title="src/entry.py"
 from urllib.parse import parse_qs, urlparse

@@ -39,19 +39,60 @@ Wynd reads this list to choose the SDK. A project declares either
 
 ## 2. Configure Wrangler
 
-```jsonc title="wrangler.jsonc"
-{
-  "name": "hello-worker",
-  "main": "src/entry.py",
-  "compatibility_date": "2026-09-08",
-  "compatibility_flags": ["python_workers"],
-  "vars": { "GREETING": "hello" },
-  "durable_objects": {
-    "bindings": [{ "name": "COUNTER", "class_name": "Counter" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }]
-}
-```
+=== "wrangler.jsonc"
+
+    ```jsonc
+    {
+      "name": "hello-worker",
+      "main": "src/entry.py",
+      "compatibility_date": "2026-09-08",
+      "compatibility_flags": ["python_workers"],
+      "vars": { "GREETING": "hello" },
+      "durable_objects": {
+        "bindings": [{ "name": "COUNTER", "class_name": "Counter" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }]
+    }
+    ```
+
+=== "wrangler.toml"
+
+    ```toml
+    name = "hello-worker"
+    main = "src/entry.py"
+    compatibility_date = "2026-09-08"
+    compatibility_flags = ["python_workers"]
+
+    [vars]
+    GREETING = "hello"
+
+    [[durable_objects.bindings]]
+    name = "COUNTER"
+    class_name = "Counter"
+
+    [[migrations]]
+    tag = "v1"
+    new_sqlite_classes = ["Counter"]
+    ```
+
+=== "cloudflare.config.py"
+
+    ```python
+    from wynd.config import Config, Worker, bindings, exports
+
+    config = Config(
+        worker=Worker(
+            name="hello-worker",
+            entrypoint="src/entry.py",
+            compatibility_date="2026-09-08",
+            env={
+                "GREETING": bindings.Text("hello"),
+                "COUNTER": bindings.DurableObject("Counter"),
+            },
+            exports={"Counter": exports.DurableObject()},
+        ),
+    )
+    ```
 
 The `python_workers` flag and the date pick the Python version. A date of
 2026-09-08 or later runs Python 3.14. See
