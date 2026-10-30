@@ -21,9 +21,9 @@ files = Files(self.ctx.container)
 await files.write_file("/workspace/main.py", "print('hi')\n")
 ```
 
-`write_file()` creates the file or truncates an existing one. A `str` is
-written as UTF-8. `bytes`, `bytearray` and `memoryview` are written as they
-are. The parent directory must exist, or the call raises
+`write_file()` creates the file or truncates an existing one. It encodes a
+`str` as UTF-8 and writes `bytes`, `bytearray` and `memoryview` unchanged. The
+parent directory must exist, or the call raises
 [`SandboxFileError`](api.md#errors) with `code` `"ENOENT"`.
 
 To write a large file without holding it in memory, pass an async iterable of
@@ -38,8 +38,8 @@ async def numbers():
 await files.write_file("/workspace/numbers.txt", numbers())
 ```
 
-The file is opened before any content is read. If the content fails halfway,
-the file is left partly written.
+`write_file()` opens the file before it reads any content. If the content
+fails halfway, the file stays partly written.
 
 ## Read a file
 
@@ -68,8 +68,8 @@ numbers.txt file
 
 Each entry is a [`SandboxDirectoryEntry`](api.md#sandboxdirectoryentry). Its
 `type` is one of `"file"`, `"directory"`, `"symlink"`, `"block_device"`,
-`"character_device"`, `"fifo"` or `"socket"`. A symbolic link is reported as
-`"symlink"`, not as the type of its target. Entries come in the order the
+`"character_device"`, `"fifo"` or `"socket"`. A symbolic link has the type
+`"symlink"`, not the type of its target. Entries come in the order the
 filesystem returns them, not sorted.
 
 ## Get a file's size and times
@@ -126,7 +126,7 @@ that user's permissions:
 await files.write_file("/home/app/notes.txt", "draft", user="1000:1000")
 ```
 
-Names such as `"app"` raise `ValueError`. Only `"uid:gid"` is accepted.
+`user` takes only `"uid:gid"`. Names such as `"app"` raise `ValueError`.
 
 ## Handle errors
 
@@ -163,4 +163,4 @@ asyncio.get_running_loop().call_later(5, abort.set)
 await files.write_file("/workspace/numbers.txt", numbers(), abort=abort)
 ```
 
-An event can't be sent over RPC, so create it inside the Durable Object.
+RPC can't carry an event, so create it inside the Durable Object.

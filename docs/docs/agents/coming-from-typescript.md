@@ -41,7 +41,6 @@ export class Counter extends Agent<Env, { count: number }> {
 }
 ```
 
-
 ## Names
 
 Methods and hooks use `snake_case`. The common ones:
@@ -112,8 +111,8 @@ In TypeScript, `onChatMessage` returns a `Response`, usually from the AI SDK's
 `streamText(...).toUIMessageStreamResponse()`. In Python, `on_chat_message` is
 an async generator that yields text or typed chunks, and you call the model
 with your own client. There's no `onFinish` callback, so use
-`on_chat_response`. Cancellation replaces the `abortSignal`: a stopped turn
-gets `asyncio.CancelledError`. See [Build a chat agent](chat.md).
+`on_chat_response`. Cancellation replaces the `abortSignal`, so a stopped
+turn gets `asyncio.CancelledError`. See [Build a chat agent](chat.md).
 
 ## Errors
 

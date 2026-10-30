@@ -4,7 +4,7 @@ description: "Every Wynd command including init, the flags Wynd reads, [tool.wyn
 ---
 
 Run Wynd with `uvx wynd <command>`. To pin its version, run
-`uvx wynd@0.3.0 <command>`. Wynd needs uv 0.13.4 or later and Node.js on
+`uvx wynd@<version> <command>`. Wynd needs uv 0.13.4 or later and Node.js on
 `PATH`, and runs Wrangler 4.129.0 through `npx --yes wrangler@4.129.0`.
 
 ## Commands
@@ -33,7 +33,7 @@ wynd: python_modules is 127,013 bytes, 92,668 after pruning (34,345 fewer). Each
 | ------------ | -------------------------------------------------------------------- |
 | Wrangler's   | Wynd ran Wrangler, and it exited with this code.                     |
 | `1`          | Wynd stopped before Wrangler ran. The error starts with `wynd: error:`, or is `wynd: npx not found on PATH`. An exception raised by your `cloudflare.config.py` prints a Python traceback. |
-| `128 + N`    | Wrangler was killed by signal `N`.                                   |
+| `128 + N`    | Signal `N` killed Wrangler.                                          |
 
 ## Flags Wynd reads
 
@@ -58,7 +58,7 @@ for the config's version. Set the date and flags in the config instead.
 
 ## `[tool.wynd]`
 
-Settings in `pyproject.toml`:
+Wynd reads these settings from `pyproject.toml`:
 
 ```toml title="pyproject.toml"
 [tool.wynd]
@@ -122,16 +122,20 @@ Wrangler doesn't run.
 
 ## Config discovery
 
-Without `--config`, Wynd looks for `wrangler.json` in the working directory
-and each parent, then for `wrangler.jsonc` the same way, then for
-`wrangler.toml`, as Wrangler does. A `wrangler.json` in a parent directory
-wins over a `wrangler.toml` in the working directory. Wynd also looks for
-`cloudflare.config.py` in the working directory and each parent. If it finds
-both kinds, the one in the deeper directory wins, and both in one directory
-is an error. Without any config, Wynd exits with
-`wynd: error: no config (cloudflare.config.py, wrangler.json, wrangler.jsonc, wrangler.toml) found from <directory>`. `python_modules/` goes
-next to the config file. `pyproject.toml` is the nearest one at or above the
-working directory, and `.wynd/` goes next to it.
+Without `--config`, Wynd searches the working directory and its parents for
+`wrangler.json`, then `wrangler.jsonc`, then `wrangler.toml`, as Wrangler does.
+A `wrangler.json` in a parent directory wins over a `wrangler.toml` in the
+working directory.
+
+Wynd also searches those directories for `cloudflare.config.py`. If it finds
+both a Python config and a Wrangler config, the one in the deeper directory
+wins. Finding both in one directory is an error. If it finds no config, Wynd
+exits with
+`wynd: error: no config (cloudflare.config.py, wrangler.json, wrangler.jsonc, wrangler.toml) found from <directory>`.
+
+Wynd puts `python_modules/` next to the config file. It uses the nearest
+`pyproject.toml` at or above the working directory and puts `.wynd/` next to
+that file.
 
 ## Environments
 

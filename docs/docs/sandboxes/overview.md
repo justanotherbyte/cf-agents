@@ -3,15 +3,14 @@ title: "Cloudflare Sandbox SDK for Python Workers"
 description: "What a sandbox is, how crosswind-sandboxes reads and writes files, mounts S3 buckets and backs up directories in a container from a Python Worker."
 ---
 
-A sandbox is a Linux container that your Worker starts and controls. Code in it
-runs in its own filesystem and process tree, apart from your Worker and from
-other sandboxes. You use one to run code you don't trust: a script an LLM
-wrote, a user's build, or a tool that needs a real shell.
+Use a sandbox to run code you don't trust, such as a script an LLM wrote, a
+user's build or a tool that needs a real shell. A sandbox is a Linux container
+that your Worker starts and controls. Its code runs in its own filesystem and
+process tree, apart from your Worker and other sandboxes.
 
 `crosswind-sandboxes` lets a
 [Python Worker](https://developers.cloudflare.com/workers/languages/python/)
-work with the files in a sandbox. You install it as `crosswind-sandboxes` and
-import it as `sandboxes`.
+work with the files in a sandbox.
 
 ```python
 from sandboxes import Files
@@ -55,10 +54,9 @@ mount or backup operation, sends the result back and exits. Your image has to
 include it. [Getting started](getting-started.md#2-write-the-dockerfile)
 shows the one `COPY` line that adds it.
 
-```text
-  client ──> Worker ──> Durable Object "user-42" ──exec──> sandbox-shim ──> container files
-                        (self.ctx.container)                (in your image)
-```
+A request goes from the client to your Worker, then to the Durable Object that
+owns the sandbox. The Durable Object calls `exec()` on `self.ctx.container` to
+run `sandbox-shim`, and the shim works on the container's files.
 
 S3 mounts and backups need credentials or bucket access. The container never
 gets them. Its storage requests go out to a gateway class in your Worker,
@@ -73,6 +71,18 @@ request and signs it or sends it to R2.
 - It doesn't run commands. Use `self.ctx.container.exec()` from the runtime.
 - It doesn't route HTTP requests to a server in the container. For that, see
   [Containers](../containers/overview.md).
+
+## Install
+
+Add the package to a Python Worker project:
+
+```sh
+uv add crosswind-sandboxes
+```
+
+It needs Python 3.12 or later. The sandbox container also needs Docker locally
+and the Workers Paid plan. [Getting started](getting-started.md) covers the
+project, the Dockerfile and the Wrangler config.
 
 ## Status
 

@@ -97,8 +97,8 @@ class Sandbox(DurableObject):
 }
 ```
 
-The object's key in R2 is `<id>.tar.zst`. With `gitignore=True`, paths that
-`.gitignore` files in the directory ignore are left out. `exclude` takes more
+The object's key in R2 is `<id>.tar.zst`. With `gitignore=True`, `backup()` leaves
+out paths that `.gitignore` files in the directory ignore. `exclude` takes more
 patterns to leave out.
 
 Stop programs that write to the directory before you call `backup()`. A file
@@ -145,8 +145,8 @@ prefix, because the record doesn't store it.
 
 ## Run several backups
 
-One backup or restore runs at a time per container. Others wait their turn, so
-you can start several at once:
+One backup or restore runs at a time per container. Other calls wait until it
+finishes, so you can start several at once:
 
 ```python
 import asyncio
@@ -167,8 +167,8 @@ container.start()
 await backups.intercept()
 ```
 
-The catch-all takes every host registered after it, so the gateway has to be
-registered first. Don't call `intercept()` while a backup or restore runs. It
+The catch-all takes every host registered after it, so register the gateway
+first. Don't call `intercept()` while a backup or restore runs. It
 replaces that operation's access to the bucket and the operation fails.
 
 ## Handle errors

@@ -3,10 +3,9 @@ title: "Route requests to containers and scale instances"
 description: "Pick which container instance serves a request with get_container and get_random, switch ports, and call container methods over RPC."
 ---
 
-Every container instance belongs to one Durable Object, and every Durable
-Object has an ID. To route a request, pick an ID, get a stub for that Durable
-Object, and call the stub. `containers-py` has a helper for each common way of
-picking an ID.
+Choose which container instance handles each request. Every instance belongs
+to a Durable Object with its own ID. `containers-py` has helpers to pick an ID
+and get a stub so your Worker can call that Durable Object.
 
 For how the platform places and scales instances, see
 [Scaling and Routing](https://developers.cloudflare.com/containers/configuration/scaling-and-routing/)
@@ -85,8 +84,8 @@ return await container.fetch(switch_port(request, 9090))
 
 `container_fetch` sends a request straight to the container, starting it first
 if needed. It accepts either a `Request` or a URL. With a URL, keyword
-arguments are the same as `workers.Request` (`method`, `headers`, `body` and so
-on), and relative URLs are fine:
+arguments are the same as for `workers.Request`, such as `method`, `headers`
+and `body`, and the URL can be relative:
 
 ```python
 import json
@@ -226,9 +225,9 @@ def container_for(env: Any, user_id: str) -> DurableObjectStub:
 
 `DurableObjectStub` types `fetch()`, but every other attribute is `Any`, so a
 type checker won't catch a typo such as `stub.get_stat()` or a wrong argument.
-To get your
-container's method signatures checked, annotate the result in the Worker, as
-`result: TranscodeResult` does above, or `cast` the stub to your subclass:
+To have the type checker check your container's method signatures, annotate
+the result in the Worker, as `result: TranscodeResult` does above, or `cast`
+the stub to your subclass:
 
 ```python
 from typing import cast

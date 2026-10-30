@@ -129,27 +129,18 @@ For a new Python Worker that doesn't need an agent or a container, use
 `crosswind-workers` and deploy it with Wynd. `containers-py` depends on the
 official `workers-runtime-sdk`, so its guides use that package instead.
 
-## Why Crosswind
+## How the packages work
 
-<div class="grid cards" markdown>
-
--   **Python APIs, not translated TypeScript**
-
-    You subclass a class and override `async` methods. Bindings and state carry type hints, so a type checker flags a misspelled method before you deploy.
-
--   **Same behaviour as TypeScript**
-
-    Each SDK keeps the defaults and behaviour of the TypeScript SDK it ports, so the TypeScript docs still describe what your code does.
-
--   **Python web frameworks**
-
-    `crosswind-workers` serves ASGI apps such as FastAPI and Starlette, and WSGI apps such as Flask. See [Serve FastAPI or Flask](workers/web-frameworks.md).
-
--   **Works with the TypeScript ecosystem**
-
-    Each SDK speaks the same protocols as its TypeScript counterpart, so existing TypeScript clients and frontend libraries connect without changes where possible.
-
-</div>
+- **Python classes.** You subclass a class and override `async` methods.
+  Bindings and state have type hints, so a type checker catches a misspelled
+  method before you deploy.
+- **TypeScript behaviour.** Each package keeps the defaults, timeouts and wire
+  protocols of the TypeScript SDK it ports. The Cloudflare docs for that
+  product still describe what your code does, and TypeScript clients such as
+  the `useAgent` React hook connect to a Python Worker unchanged.
+- **Web frameworks.** `crosswind-workers` serves ASGI apps such as FastAPI and
+  Starlette, and WSGI apps such as Flask. See
+  [Serve FastAPI or Flask](workers/web-frameworks.md).
 
 ## Demo
 
@@ -174,11 +165,11 @@ written with `cf-agents`.
 
 ## Status
 
-The published packages are alpha and pre-1.0. Expect breaking changes in
-minor releases, and pin exact versions:
+Every package is alpha and pre-1.0. A minor release can break your code, so
+pin exact versions:
 
 ```sh
-uv add "crosswind-workers==0.2.0"
+uv add "crosswind-workers==<version>"
 ```
 
 Each SDK's overview lists the features it doesn't port yet. Crosswind is an

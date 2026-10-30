@@ -122,9 +122,9 @@ The last line of `error["message"]` names the exception that ended `run`.
 
 `step.do(name)` turns a function into a step and returns an `async` callable.
 The step runs when you await that callable, and the runtime saves its return
-value. If
-the Workflow restarts, a finished step returns its saved result without
-running again. A step's result must cross RPC, so return a `dict`, `list`,
+value. If the
+Workflow restarts, a finished step returns its saved result without running
+again. A step's result must cross RPC, so return a `dict`, `list`,
 `str`, number or `None`. A `tuple` fails the step with
 `TypeError: <class 'tuple'> cannot be sent over RPC.`
 

@@ -8,8 +8,8 @@ description: "How the containers-py Python API maps to the @cloudflare/container
 The behaviour is the same, including defaults, timeouts, state transitions and
 outbound rule precedence, so the official
 [Containers docs](https://developers.cloudflare.com/containers/) apply as
-written. The differences are in names, argument shapes and types, and this
-page lists them.
+written. This page lists the differences, which are in names, argument shapes
+and types.
 
 ## Side by side
 
@@ -50,7 +50,6 @@ export default {
   },
 };
 ```
-
 
 ## Naming
 

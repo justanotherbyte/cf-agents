@@ -111,7 +111,7 @@ export function Chat() {
 ```
 
 Clicking Send streams back `You said: hello there`. Reload the page and the
-conversation is still there: `useAgentChat` loads it from
+conversation is still there. `useAgentChat` loads it from
 `/agents/echo-chat/my-chat/get-messages`, which the SDK answers.
 
 ## Stream text or chunks

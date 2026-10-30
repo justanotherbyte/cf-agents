@@ -4,9 +4,12 @@
 
 Documentation for [Crosswind](https://crosswind.viswa.space).
 
-Crosswind is an unofficial set of SDKs and tools for working with Cloudflare's Python Workers, consisting of:
+Crosswind is an unofficial set of SDKs and tools for Cloudflare's Python Workers:
 
 - [Agents SDK](../agents)
 - [Containers SDK](../containers)
-- [Wynd](../wynd)
+- [Sandboxes SDK](../sandboxes)
 - [Crosswind Workers](../workers)
+- [Wynd](../wynd)
+
+To preview the site locally, run `uv run mkdocs serve` in this directory.

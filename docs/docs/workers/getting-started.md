@@ -102,8 +102,8 @@ The `python_workers` flag and the date pick the Python version. A date of
 directory when it deploys, and fails if `main` sits next to `wrangler.jsonc`.
 
 `uvx wynd init` creates the same layout with the config written in Python, in
-`cloudflare.config.py`. This guide uses `wrangler.jsonc` because no Wynd test
-yet deploys a Durable Object declared in a Python config. See
+`cloudflare.config.py`. This guide uses `wrangler.jsonc` because Wynd's tests
+don't yet cover deploying a Durable Object declared in a Python config. See
 [Configure a Worker in Python](../wynd/python-config.md).
 
 ## 3. Write the Worker

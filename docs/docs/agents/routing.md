@@ -3,9 +3,9 @@ title: "Route requests to Python agents and call them over RPC"
 description: "Send HTTP and WebSocket requests to the right agent instance with route_agent_request, add auth and CORS, and call agent methods from Worker code."
 ---
 
-Every agent instance has a name. Requests for the same name reach the same
-instance. This page shows the two ways to reach one: by URL with
-`route_agent_request`, and from your own Worker code with `get_agent_by_name`.
+Route requests to an agent by its name. Requests for the same name reach the
+same instance. Use `route_agent_request` for URLs or `get_agent_by_name` to
+call an agent from Worker code.
 
 ## Route by URL
 
@@ -31,7 +31,7 @@ class Default(WorkerEntrypoint):
 `/agents/my-agent/...`. The function scans `self.env` for bindings, so it needs
 no list of agents.
 
-It returns:
+The function returns one of these results:
 
 - the agent's response, for a matching path,
 - `None` for a path outside the prefix, or one with no `{name}` segment, so
@@ -106,7 +106,7 @@ with `useAgent({ query: { token } })`. `hmac.compare_digest` takes the same
 time however many characters match, so the check doesn't leak the token
 through timing.
 
-A hook can return:
+A hook can return one of these values:
 
 - `None` to forward the request unchanged,
 - a `Response` to answer instead, as above,
@@ -162,12 +162,13 @@ WebSocket upgrade responses never get CORS headers.
 An error counts as transient when the platform sets `retryable` on it and
 doesn't set `overloaded`. By default the SDK makes 3 attempts. Before each
 retry it waits a random time up to `min(0.1 * 2 ** (attempt - 1), 0.8)`
-seconds. To change that, pass
-`RoutingRetryOptions(max_attempts=..., base_delay=..., max_delay=...)`. Its
-`on_retry` field takes an `async` function that receives a
-`RoutingRetryEvent` before each wait, for logging. A `max_attempts` below 1,
-a delay that isn't positive, or a `base_delay` above `max_delay` raises
-`ValueError`.
+seconds.
+
+Pass `RoutingRetryOptions(max_attempts=..., base_delay=..., max_delay=...)`
+to change the retry settings. Its `on_retry` field takes an `async` function
+that receives a `RoutingRetryEvent` before each wait, for logging. A
+`max_attempts` below 1, a delay that isn't positive, or a `base_delay` above
+`max_delay` raises `ValueError`.
 
 ## Call an agent from Worker code
 

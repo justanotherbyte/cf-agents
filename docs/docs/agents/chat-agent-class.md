@@ -84,7 +84,7 @@ never sees a call with no result. The default returns an `output-error` part.
 | `persist_messages(messages, *, exclude=())`   | `None`                | Stores `messages` as the transcript without running a turn. Sends the result to clients except `exclude`. |
 | `save_messages(messages)`                     | `SaveMessagesResult`  | Stores messages, then runs a turn to answer them. Waits for a running turn.                               |
 | `continue_last_turn(*, body=None)`            | `SaveMessagesResult`  | Runs a turn that appends to the last assistant message.                                                   |
-| `delete_messages(message_ids, *, exclude=())` | `None`                | Deletes messages by id. Unknown ids are ignored.                                                          |
+| `delete_messages(message_ids, *, exclude=())` | `None`                | Deletes messages by id and ignores unknown ids.                                                          |
 
 `save_messages` also accepts an `async` function that receives the current
 messages and returns the new list. `persist_messages` doesn't delete stored

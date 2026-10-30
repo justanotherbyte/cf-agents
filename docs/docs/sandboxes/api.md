@@ -3,7 +3,9 @@ title: "crosswind-sandboxes API reference"
 description: "Every class, method, type and error in crosswind-sandboxes: Files, S3Mount, S3Gateway, DirectoryBackup, DirectoryBackupGateway and the SandboxError hierarchy."
 ---
 
-Everything on this page imports from `sandboxes`. All methods are coroutines.
+Use this reference to find the classes, methods and errors for sandbox file
+operations, S3 mounts and directory backups. Import every name here from
+`sandboxes`. All methods are coroutines.
 
 These rules apply to every class:
 
@@ -113,8 +115,8 @@ await files.mkdir("/workspace/out/logs", recursive=True)
 ### `rename`
 
 Renames `source` to `destination` with Linux `rename` rules. Moving across
-filesystems raises `SandboxFileError` with `"EXDEV"`. Nothing is copied
-instead. On failure, the error's `destination` attribute holds the
+filesystems raises `SandboxFileError` with `"EXDEV"`. The package never falls
+back to copying. On failure, the error's `destination` attribute holds the
 destination.
 
 ```python
@@ -177,7 +179,7 @@ must contain `s3fs`.
 | Parameter   | Description                                                                            |
 | ----------- | -------------------------------------------------------------------------------------- |
 | `container` | `self.ctx.container`. It must have `exec()` and `interceptOutboundHttp()`.             |
-| `gateway`   | `self.ctx.exports.S3Gateway`. [`S3Gateway`](#s3gateway) must be imported in the entry module. |
+| `gateway`   | `self.ctx.exports.S3Gateway`. Import [`S3Gateway`](#s3gateway) in the entry module. |
 
 Call `mount()` before registering `interceptAllOutboundHttp()` on the
 container, which takes every host registered after it.
@@ -188,9 +190,9 @@ container, which takes every host registered after it.
 await mounts.mount(mount_path, *, source, access, key_prefix=None, s3fs_options=None, abort=None)
 ```
 
-Mounts `source` at `mount_path`. A mount with the same settings already at the
-path is reused, and leftover state from an earlier mount is repaired. Returns
-`None`.
+Mounts `source` at `mount_path` and returns `None`. If a mount with the same
+settings already holds the path, `mount()` reuses it. It also repairs leftover
+state from an earlier mount.
 
 | Parameter      | Type                                        | Default    | Description                                                                         |
 | -------------- | ------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
@@ -334,11 +336,11 @@ over several calls works. No call retries or times out.
 | Parameter   | Type   | Default  | Description                                                                         |
 | ----------- | ------ | -------- | ----------------------------------------------------------------------------------- |
 | `container` |        | required | `self.ctx.container`.                                                               |
-| `gateway`   |        | required | `self.ctx.exports.DirectoryBackupGateway`. [`DirectoryBackupGateway`](#directorybackupgateway) must be imported in the entry module. |
+| `gateway`   |        | required | `self.ctx.exports.DirectoryBackupGateway`. Import [`DirectoryBackupGateway`](#directorybackupgateway) in the entry module. |
 | `binding`   | `str`  | required | Name of the R2 bucket binding, such as `"BACKUPS"`. Empty raises `ValueError`.      |
 | `prefix`    | `str`  | `""`     | Key prefix for backup objects. Must be empty or end in `/`.                         |
 
-Objects are stored at `<prefix><id>.tar.zst` with content type
+Each backup is stored as the object `<prefix><id>.tar.zst`, with content type
 `application/zstd`.
 
 ### `backup`
@@ -365,7 +367,7 @@ Raises:
   file can't be read, or an `exclude` pattern is invalid (`"EINVAL"`).
 - [`SandboxBackupError`](#errors) with `"BACKUP_TRANSFER"` when an upload
   fails, or `"BACKUP_INTEGRITY"` when R2 stored a different size than the
-  container sent. The object is deleted in that case.
+  container sent. `backup()` deletes the object in that case.
 
 ### `restore`
 
@@ -437,17 +439,8 @@ object being restored. Requests outside that grant get `403`.
 
 ## Errors
 
-Every exception derives from `SandboxError`. Catch it to handle every failure
-from this package.
-
-```text
-SandboxError
-├── SandboxAbortError
-├── SandboxFileError
-├── SandboxProtocolError
-├── SandboxS3MountError
-└── SandboxBackupError
-```
+Every exception subclasses `SandboxError`. Catch `SandboxError` to handle every
+failure from this package, or catch one of the subclasses below.
 
 | Exception              | Raised when                                                       | Attributes                                                         |
 | ---------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |

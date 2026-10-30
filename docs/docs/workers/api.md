@@ -3,8 +3,9 @@ title: "crosswind-workers API reference"
 description: "Every public class, method and function in crosswind-workers: entrypoints, context, Request, Response, fetch, Blob, FormData, binding classes, RPC conversion, Workflows and the ASGI and WSGI adapters."
 ---
 
-The package installs as `crosswind-workers` and imports as `workers`. Names on
-this page import from `workers` unless the entry names another module.
+Use this reference to find the runtime classes, methods and functions in
+`crosswind-workers`. Import names from
+`workers` unless an entry names another module.
 
 Await every method marked `async`. Every wrapper class has a
 `js_object` attribute that returns the JavaScript object it wraps. A wrapper
@@ -27,7 +28,7 @@ including the `Protocol` that [`wynd types`](../wynd/types.md) writes.
 All three take `(ctx, env)` in `__init__` and set `self.ctx` and `self.env`.
 If you override `__init__`, call `super().__init__(ctx, env)` before you read
 `self.ctx` or `self.env`. The `ctx` and `env` your `__init__` receives are
-already wrapped. `self.env` reads bindings as the
+already wrapped. `self.env` returns each binding as one of the
 [binding classes](#bindings) below.
 
 Arguments the runtime passes to `connect`, `queue`, `alarm`, the
@@ -426,8 +427,8 @@ The `step` argument of `run`.
 ### `NonRetryableError`
 
 Raise it inside a step to fail the step without retries. Awaiting the step in
-`run` raises `NonRetryableError` with the same message. Any other exception a
-step raises is retried as `config` allows. Once the retries run out, awaiting
+`run` raises `NonRetryableError` with the same message. The runtime retries
+any other exception a step raises, as `config` allows. Once the retries run out, awaiting
 the step raises that exception's class for `TypeError` and `ValueError`, and
 `pyodide.ffi.JsException` for other classes.
 

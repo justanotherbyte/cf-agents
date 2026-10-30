@@ -6,8 +6,7 @@ description: "What cf-agents does, how an Agent maps to a Durable Object, which 
 `cf-agents` is a Python port of the
 [Cloudflare Agents SDK](https://developers.cloudflare.com/agents/). An agent
 is a Python class that keeps state, talks to browsers over WebSockets, runs
-scheduled and background work, and can stream chat replies from a model. You
-install it as `cf-agents` and import it as `agents`.
+scheduled and background work, and can stream chat replies from a model.
 
 ```python
 from agents import Agent, callable
@@ -33,16 +32,15 @@ instance with its own SQLite database and a unique name. Every request for one
 name reaches the same instance, so it can hold state between requests and
 connections without a separate database.
 
-```text
-  browser (useAgent) ──── WebSocket ────┐
-                                        v
-  curl / fetch ──> Worker ──> route_agent_request ──> Durable Object "room-7"
-                                                      (your Agent subclass)
-                                                      ├── state, synced to clients
-                                                      ├── SQLite: self.sql(...)
-                                                      ├── schedules and a queue
-                                                      └── durable tasks
-```
+A request reaches an agent in three steps:
+
+1. A browser opens a WebSocket with `useAgent`, or `curl` or `fetch` sends an
+   HTTP request, to your Worker.
+2. The Worker calls `route_agent_request`, which forwards the request to the
+   Durable Object with that name, such as `room-7`.
+3. The Durable Object runs your `Agent` subclass. It holds the state it syncs
+   to clients, its SQLite database (`self.sql(...)`), its schedules and queue,
+   and its durable tasks.
 
 `route_agent_request` forwards `/agents/{agent}/{name}` to the instance called
 `{name}`. `{agent}` is the binding name in kebab case, so the binding `Counter`
@@ -91,6 +89,17 @@ like in `on_chat_message` and yield text or typed chunks.
 - Voice, email, workflows, channels and browser automation.
 - The experimental Cap'n Web transport.
 - Tracing. Structured events are ported.
+
+## Install
+
+Add the package to a Python Worker project:
+
+```sh
+uv add cf-agents
+```
+
+It needs Python 3.12 or later. To create a project first, follow
+[Getting started](getting-started.md).
 
 ## Status
 

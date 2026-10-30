@@ -105,7 +105,7 @@ Worker's URL.
 
 ## 7. Update `.gitignore` and scripts
 
-Add Wynd's working directory:
+Add the directories Wynd writes:
 
 ```text title=".gitignore"
 python_modules/

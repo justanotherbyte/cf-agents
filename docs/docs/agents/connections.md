@@ -124,12 +124,12 @@ class Document(Agent):
         return "mode=view" in ctx.request.url
 ```
 
-A `setState` from a readonly client is rejected, and the client's
+The SDK rejects a `setState` from a readonly client, and the client's
 `onStateUpdateError` callback receives `Connection is readonly`. A
 `@callable` method that calls `set_state()` while serving a readonly
-connection raises `ReadonlyConnectionError`, so the client's call rejects with the same
-`Connection is readonly` message. Changes made from server code that isn't serving
-that connection, such as a schedule, still apply.
+connection raises `ReadonlyConnectionError`, so the client's call rejects with
+the same `Connection is readonly` message. Changes from server code that isn't
+serving that connection, such as a schedule, still apply.
 
 ## Plain WebSocket clients
 
@@ -164,7 +164,8 @@ To keep the frames but leave out the identity frame, set
 ## Errors in hooks
 
 When `on_connect` or `on_message` raises, the SDK calls
-`on_error(None, error)`. The default re-raises. Override it and return normally to keep the connection open:
+`on_error(None, error)`. The default re-raises. Override it and return
+normally to keep the connection open:
 
 ```python
 from agents import get_current_agent

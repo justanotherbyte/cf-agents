@@ -18,33 +18,28 @@ connect to a Python Worker unchanged.
 
 ## The packages
 
-| Package                                       | Import as    | What it does                                                                         | Ports                                                                   |
-| --------------------------------------------- | ------------ | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| [`crosswind-workers`](workers/overview.md)    | `workers`    | The runtime SDK every Python Worker imports, with types on bindings, requests and Durable Objects. | [`workers-runtime-sdk`](https://github.com/cloudflare/workers-py)       |
-| [`wynd`](wynd/overview.md)                    | (command)    | Builds, runs and deploys Python Workers, and drops unused package files before upload. | [pywrangler](https://github.com/cloudflare/workers-py)                  |
-| [`cf-agents`](agents/overview.md)             | `agents`     | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat. | [Agents SDK](https://developers.cloudflare.com/agents/)                 |
-| [`containers-py`](containers/overview.md)     | `containers` | Starts, stops and routes requests to Cloudflare Containers, and filters their outbound traffic. | [`@cloudflare/containers`](https://github.com/cloudflare/containers)   |
-| [`crosswind-sandboxes`](sandboxes/overview.md) | `sandboxes` | Reads and writes files, mounts S3 buckets and backs up directories in a sandbox container. | [Sandbox SDK](https://developers.cloudflare.com/sandbox/)               |
+| Package                                       | What it does                                                                         | Ports                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| [`crosswind-workers`](workers/overview.md)    | The runtime SDK every Python Worker imports, with types on bindings, requests and Durable Objects. | [`workers-runtime-sdk`](https://github.com/cloudflare/workers-py)       |
+| [`wynd`](wynd/overview.md)                    | Builds, runs and deploys Python Workers, and drops unused package files before upload. | [pywrangler](https://github.com/cloudflare/workers-py)                  |
+| [`cf-agents`](agents/overview.md)             | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat. | [Agents SDK](https://developers.cloudflare.com/agents/)                 |
+| [`containers-py`](containers/overview.md)     | Starts, stops and routes requests to Cloudflare Containers, and filters their outbound traffic. | [`@cloudflare/containers`](https://github.com/cloudflare/containers)   |
+| [`crosswind-sandboxes`](sandboxes/overview.md) | Reads and writes files, mounts S3 buckets and backs up directories in a sandbox container. | [Sandbox SDK](https://developers.cloudflare.com/sandbox/)               |
 
 ## How they fit together
 
-A Python Worker has two layers. The runtime SDK, imported as `workers`, gives
-your code `WorkerEntrypoint`, `DurableObject`, `Request` and `Response`. A
-build tool installs your dependencies for the Worker's Python version and runs
-Wrangler. The other three packages sit on top of the runtime SDK: an agent, a
-container and a sandbox are each a Durable Object class that you export from
-your Worker.
+A Python Worker built with Crosswind has these layers, from your code down:
 
-```text
-  your code:        Agent subclass   Container subclass   Durable Object + Files
-                          │                  │                     │
-  Crosswind SDK:      cf-agents        containers-py       crosswind-sandboxes
-                          └──────────────────┼─────────────────────┘
-                                             v
-  runtime SDK:         workers  (crosswind-workers or workers-runtime-sdk)
-                                             │
-  build and deploy:          wynd  or  pywrangler  ──>  wrangler  ──>  Cloudflare
-```
+1. Your code subclasses `Agent` or `Container`, or writes a `DurableObject`
+   that uses `sandboxes.Files`.
+2. `cf-agents`, `containers-py` and `crosswind-sandboxes` provide those classes.
+   An agent, a container and a sandbox are each a Durable Object class that you
+   export from your Worker.
+3. The runtime SDK gives your code `WorkerEntrypoint`,
+   `DurableObject`, `Request` and `Response`. Either `crosswind-workers` or
+   `workers-runtime-sdk` provides it.
+4. The build tool, Wynd or pywrangler, installs your dependencies for the
+   Worker's Python version and runs Wrangler to deploy to Cloudflare.
 
 Each Durable Object instance has a name, its own SQLite storage and, for
 containers and sandboxes, its own container. The same name always reaches the
@@ -119,7 +114,7 @@ remove an API, so pin exact versions and test each upgrade before you deploy
 it:
 
 ```sh
-uv add "crosswind-workers==0.3.1"
+uv add "crosswind-workers==<version>"
 ```
 
 Crosswind is an independent community project. It isn't affiliated with or

@@ -7,7 +7,7 @@ An agent can run one of its own methods later. Schedules run at a time, after a
 delay, on a cron expression or at an interval. The queue runs methods as soon
 as possible, one at a time, in the order you added them.
 
-Both are stored in the agent's database and driven by its
+The SDK stores both in the agent's database and runs them from its
 [alarm](https://developers.cloudflare.com/durable-objects/api/alarms/), so
 they survive restarts and run even when no client is connected. Don't
 override `alarm()` on an agent.
@@ -151,7 +151,7 @@ To inspect or cancel items:
 
 ## Retries and failures
 
-A callback that raises is retried. By default the SDK makes 3 attempts.
+The SDK retries a callback that raises. By default the SDK makes 3 attempts.
 Before each retry it waits a random time up to
 `min(base_delay * 2 ** attempt, max_delay)`, where `base_delay` is
 0.1 seconds, `max_delay` is 3 seconds and `attempt` is the attempt that just
@@ -180,7 +180,7 @@ Queue callback 'send_email' failed after 10 attempts
 
 A schedule logs `Schedule callback '<name>' failed after <n> attempts`
 instead. The queue then moves on to the next item. A cron or interval
-schedule still runs at its next time, and a one-off schedule is removed.
+schedule still runs at its next time, and the SDK removes a one-off schedule.
 `on_error` can't keep the item. To see this locally, queue a callback that
 raises, and watch the `pywrangler dev` output.
 
