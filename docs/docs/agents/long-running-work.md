@@ -10,7 +10,7 @@ covers two ways to prevent that and to recover when it happens anyway.
 | You need                                                | Use                                   |
 | ------------------------------------------------------- | ------------------------------------- |
 | The agent to stay in memory while one coroutine runs    | `keep_alive_while`                    |
-| To resume from a checkpoint if the isolate stops anyway | A fiber: `run_fiber` or `start_fiber` |
+| To resume from a checkpoint if the isolate stops anyway | A fiber, with `run_fiber` or `start_fiber` |
 | Steps that each run exactly once, with retries          | A [durable task](tasks.md)         |
 
 ## Keep the agent in memory

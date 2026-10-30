@@ -11,7 +11,7 @@ container and routes requests to it from a Python Worker. By the end, each
 
 - [`uv`](https://docs.astral.sh/uv/) and Node.js, to build and deploy
   [Python Workers](https://developers.cloudflare.com/workers/languages/python/).
-  `containers-py` 0.1.1 needs Python 3.12 or later and installs
+  `containers-py` needs Python 3.12 or later and installs
   `workers-runtime-sdk` 1.9.0 or later with it.
 - Docker, or another Docker-compatible engine, running locally. Check with
   `docker info`. Wrangler builds your image with it in both `dev` and
@@ -182,12 +182,11 @@ class Default(WorkerEntrypoint):
 ```
 
 `default_port` is the port `fetch()` forwards to. `sleep_after` stops the
-container after 2 minutes without requests. `env_vars` is passed to the
+container after 2 minutes without requests. The SDK passes `env_vars` to the
 container on every start.
 
-`MyContainer` has to be defined in, or imported into, `src/entry.py`. The
-runtime looks for the Durable Object class named in your Wrangler config
-there.
+Define `MyContainer` in `src/entry.py` or import it there. The runtime looks
+in that module for the Durable Object class named in your Wrangler config.
 
 ## 4. Configure Wrangler
 

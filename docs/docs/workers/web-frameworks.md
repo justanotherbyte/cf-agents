@@ -3,13 +3,14 @@ title: "Serve a FastAPI or Flask app from a Python Worker"
 description: "Run an ASGI app such as FastAPI or a WSGI app such as Flask as a Python Worker with crosswind-workers' asgi and wsgi adapters, and read bindings from routes."
 ---
 
-crosswind-workers has two adapters that turn a Worker request into a call to
-your app. `workers.asgi` serves ASGI apps such as FastAPI and Starlette, and
-`workers.wsgi` serves WSGI apps such as Flask. For a new app, use FastAPI
-with `workers.asgi`. It runs `async` routes, supports WebSockets and keeps
-background work alive through `ctx`. Use `workers.wsgi` to bring an existing
-Flask app across. A WSGI app runs synchronously, so a slow route blocks the
-Worker, and the adapter has no WebSocket support.
+Serve an existing FastAPI or Flask app from a Python Worker with a
+crosswind-workers adapter. `workers.asgi` serves ASGI apps such as FastAPI and
+Starlette. For a new app, use FastAPI with this adapter. It runs `async`
+routes, supports WebSockets and keeps background work alive through `ctx`.
+
+`workers.wsgi` serves WSGI apps such as Flask. Use it for an existing Flask
+app. WSGI runs synchronously, so a slow route blocks the Worker. The adapter
+has no WebSocket support.
 
 ## FastAPI
 

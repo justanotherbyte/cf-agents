@@ -3,10 +3,11 @@ title: "Prune a Python Worker's upload with Wynd"
 description: "How Wynd decides which vendored files a Python Worker uploads, how to read .wynd/shake.txt, and how to keep modules imported by computed names."
 ---
 
-Your Worker uploads every file in `python_modules/`, though it imports only
-part of each package. Before every upload, Wynd works out which files your
-code can import and uploads only those. This page explains what it keeps, how
-to check its decisions, and how to keep a module it can't see.
+Use Wynd's pruning to leave unused package files out of your Worker's upload.
+Without pruning, the Worker uploads every file in `python_modules/`, even when
+it imports only part of a package. Wynd finds the files your code can import
+and uploads only those. This page shows how to check its decisions and keep a
+module it can't find.
 
 - `wynd deploy`, `wynd versions upload` and `wynd preview` prune. `wynd dev`
   runs the full `python_modules/`, so a new import works without a rebuild.
@@ -76,7 +77,7 @@ grep 'workers/asgi.py' .wynd/shake.txt
 ```
 
 An `unresolved` line names an import with no file in `python_modules/`, such
-as a standard library module. Wynd lists it and carries on.
+as a standard library module. Wynd lists it and continues.
 
 After an upload, `.wynd/build/` holds exactly what Wrangler sent. Wynd
 deletes it and rebuilds it at the start of the next upload.
@@ -91,12 +92,14 @@ Wynd starts from these modules, called roots:
 
 It then follows each `import` and `from ... import` statement, including
 relative ones, and calls to `importlib.import_module` or `__import__` with a
-literal name. For a name built at runtime that starts with literal text, such
-as `import_module(f"anyio._backends._{name}")`, it keeps every module whose
-name starts with that text. `from pkg import *` follows each submodule named
-in `pkg`'s literal `__all__`. A package whose module-level `__getattr__` loads
-names from a literal table, as pydantic's does, keeps only the modules for the
-names you import from it.
+literal name.
+
+For a name built at runtime that starts with literal text, such as
+`import_module(f"anyio._backends._{name}")`, Wynd keeps every module whose
+name starts with that text. For `from pkg import *`, it follows each submodule
+named in `pkg`'s literal `__all__`. If a package's module-level `__getattr__`
+loads names from a literal table, as pydantic's does, Wynd keeps only the
+modules for the names you import from it.
 
 From the modules it reaches, Wynd keeps:
 
@@ -182,13 +185,13 @@ drop the package. See [Commands and configuration](commands.md#toolwynd).
 
 ## Troubleshooting
 
-### Why does the deployed Worker raise `ModuleNotFoundError` when `wynd dev` works?
+### The deployed Worker raises `ModuleNotFoundError` but `wynd dev` works
 
 `wynd dev` runs the full `python_modules/`, and the upload commands prune it.
-Something imports the missing module by a computed name. Find it in `shake.txt`, where
-it shows `dropped` with `not imported`, and add it to `[tool.wynd] keep`.
+Something imports the missing module by a computed name. Find it in
+`shake.txt`, where it shows `dropped` with `not imported`, and add it to `[tool.wynd] keep`.
 
-### Why did pruning save so little?
+### Pruning saves little
 
 Pruning removes whole files, comments and docstrings. It doesn't remove
 unused functions from a kept module, and it keeps compiled extensions whole.

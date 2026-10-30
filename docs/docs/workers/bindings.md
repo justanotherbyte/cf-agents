@@ -76,7 +76,8 @@ you deploy. Create the real resources with `uvx wynd kv namespace create`,
 `uvx wynd d1 create`, `uvx wynd r2 bucket create` and
 `uvx wynd queues create`. Wynd passes these commands to Wrangler unchanged.
 
-Each binding's class comes from the binding's JavaScript type at runtime:
+crosswind-workers picks each binding's class from its JavaScript type at
+runtime:
 
 | Config section               | Class                                                    |
 | ---------------------------- | -------------------------------------------------------- |

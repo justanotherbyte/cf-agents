@@ -3,10 +3,11 @@ title: "Container class API reference for Python"
 description: "Full reference for containers.Container: properties, lifecycle hooks, request methods, start and stop, scheduling, outbound interception and helpers."
 ---
 
-`containers.Container` is a
+Use this reference to configure and control a `containers.Container` subclass.
+`Container` is a
 [Durable Object](https://developers.cloudflare.com/durable-objects/api/base/)
-that manages one container instance. Subclass it, set class attributes, and
-override the hooks you need. The base `DurableObject` attributes still work,
+that manages one container instance. Set its class attributes and override
+the hooks you need. You can also use the base `DurableObject` attributes,
 including `self.ctx`, `self.env` and
 [SQLite storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
 through `self.ctx.storage`.
@@ -88,9 +89,9 @@ async def on_stop(
 ```
 
 Runs after the container process exits, the next time the SDK checks the
-state. `reason` is always `"exit"` in this version. By default it does nothing. Annotating
-`reason` as `str` in your override is also valid, because an override may
-accept a wider type.
+state. `reason` is always `"exit"` in this version. By default it does
+nothing. Annotating `reason` as `str` in your override is also valid, because
+an override may accept a wider type.
 
 ### `on_error`
 
@@ -344,8 +345,8 @@ Runs the method named `callback` later, once.
 - `payload`: optional data passed to the callback. Must be JSON serialisable.
 
 Raises `TypeError` if `callback` isn't a string or `when` has the wrong type,
-and `ValueError` if no such method exists. Errors raised by the callback are
-logged, and the task is still removed.
+and `ValueError` if no such method exists. If the callback raises, the SDK
+logs the error and still removes the task.
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -383,8 +384,8 @@ class MyContainer(Container):
 tasks on every start. Check `list_schedules()` first, as in
 [Recurring work](examples.md#recurring-work-inside-the-durable-object).
 
-The SDK looks up callbacks by name at runtime, so a type checker can't connect the
-`callback` string to the method. Keep the payload type and the callback's
+The SDK looks up callbacks by name at runtime, so a type checker can't connect
+the `callback` string to the method. Keep the payload type and the callback's
 `payload` annotation in sync yourself.
 
 The returned `Schedule` is a dict:
@@ -427,7 +428,7 @@ async def schedule_next_alarm(self, ms: int = 1000) -> None
 ```
 
 Sets the Durable Object alarm to fire in `ms` milliseconds, 1,000 by default.
-The SDK calls this itself, and you shouldn't normally need it.
+The SDK calls this itself, so you rarely need to.
 
 ## Outbound interception
 

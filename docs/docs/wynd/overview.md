@@ -88,6 +88,16 @@ more than one config, if you change compatibility dates, or if you want to see
 what each upload contains. [Switch from pywrangler](getting-started.md) moves
 an existing project.
 
+## Install
+
+Wynd needs no install step. `uvx wynd` downloads the latest release and runs
+it, as in `uvx wynd dev`. To pin a version, run `uvx wynd@<version>`. To put
+`wynd` on your `PATH`, install it as a uv tool:
+
+```sh
+uv tool install wynd
+```
+
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) 0.13.4 or later on `PATH`.

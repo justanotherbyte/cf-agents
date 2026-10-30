@@ -9,7 +9,6 @@ everything else, you call the JavaScript object through
 Use a typed method when the [API reference](api.md) lists one, because it
 converts keywords and values for you and your type checker can check the call.
 Use a JavaScript name or `js_object` only for what the wrappers don't cover.
-This page shows the ways to get from a wrapper to JavaScript and back.
 
 ## Call a method by its JavaScript name
 

@@ -3,15 +3,15 @@ title: "Configure a Python Worker in cloudflare.config.py"
 description: "Write a Worker's config as Python with wynd.config: create one with wynd init, declare bindings, Durable Objects and triggers, pick settings per mode, check the compiled Wrangler config and fix its errors."
 ---
 
-Wynd can read the Worker's config from a Python file, `cloudflare.config.py`,
-in place of `wrangler.toml` or `wrangler.jsonc`. Use it for a new
-[crosswind-workers](../workers/overview.md) project, which `wynd init`
-creates with one. Keep your Wrangler file if it uses a binding or setting
-that `wynd.config` doesn't model, listed under
-[What it doesn't support](#what-it-doesnt-support), or if you also run
-plain `wrangler` on the project. Wynd compiles the Python file into a Wrangler
-config and runs Wrangler on that, so `wynd dev`, `wynd deploy` and
-`wynd types` work the same with either file.
+Write your Worker's config in `cloudflare.config.py` when you want typed
+settings and a Python function for each mode. `wynd init` creates this file
+for new [crosswind-workers](../workers/overview.md) projects. Wynd compiles it
+into a Wrangler config, so `wynd dev`, `wynd deploy` and `wynd types` also work
+with it. You can use `wrangler.toml` or `wrangler.jsonc` instead.
+
+Keep your Wrangler file if you also run plain `wrangler` on the project, or if
+it uses a binding or setting that `wynd.config` doesn't model. The list is
+under [What it doesn't support](#what-it-doesnt-support).
 
 What the Python file adds:
 
@@ -30,7 +30,7 @@ What the Python file adds:
 ## Before you begin
 
 - Wynd 0.3.0 or later. `uvx wynd` runs the latest release, and
-  `uvx wynd@0.3.0` pins it.
+  `uvx wynd@<version>` pins a release.
 - [uv](https://docs.astral.sh/uv/) 0.13.4 or later. Check with `uv --version`.
 - Node.js on `PATH`, for `npx`. Wynd runs Wrangler 4.129.0 through it.
 

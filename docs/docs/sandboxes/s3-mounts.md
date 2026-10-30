@@ -120,8 +120,8 @@ await mounts.mount(
 )
 ```
 
-A file at `/mnt/user/notes.txt` is the object `users/<user_id>/notes.txt`. A
-trailing `/` is added to the prefix if you leave it out.
+A file at `/mnt/user/notes.txt` is the object `users/<user_id>/notes.txt`. If
+the prefix has no trailing `/`, the package adds one.
 
 ## Pass s3fs options
 
@@ -177,8 +177,8 @@ await mounts.unmount("/mnt/data")
 
 The gateway stops accepting the mount's requests first, then the shim
 unmounts. If a process in the container still uses the path, the call raises
-`SandboxS3MountError` with `code` `"S3_MOUNT_BUSY"`. Requests stay refused,
-so stop that process and call `unmount()` again. Unmounting a path with
+`SandboxS3MountError` with `code` `"S3_MOUNT_BUSY"`. The gateway keeps
+refusing requests, so stop that process and call `unmount()` again. Unmounting a path with
 nothing mounted succeeds.
 
 ## Fetch credentials per request

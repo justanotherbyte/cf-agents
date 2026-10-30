@@ -16,8 +16,8 @@ including non-HTTP traffic and ports, see
 ## Enable interception
 
 A Worker entrypoint called `ContainerProxy` applies outbound handlers and host
-lists. It must be importable from your Worker's entry module, even
-if you never reference it:
+lists. It must be importable from your Worker's entry module, even if you
+never reference it:
 
 ```python title="src/entry.py"
 from containers import Container, ContainerProxy, get_container  # noqa: F401
@@ -54,11 +54,11 @@ class Sandbox(Container):
     denied_hosts = ["internal.example.com"]
 ```
 
-The SDK matches patterns against the hostname. `*` matches any run of characters,
-so `*.example.com`, `api.*.com` and `goo*gle` are all valid.
+The SDK matches patterns against the hostname. `*` matches any run of
+characters, so `*.example.com`, `api.*.com` and `goo*gle` are all valid.
 `*.example.com` doesn't match `example.com` itself, so list both if the
-container needs both. A trailing dot on the hostname is ignored. Blocked requests get a `520` response with the body
-`Origin is disallowed`.
+container needs both. The SDK ignores a trailing dot on the hostname. Blocked
+requests get a `520` response with the body `Origin is disallowed`.
 
 > **Note**
 >
@@ -242,13 +242,12 @@ class Agent(Container):
     }
 ```
 
-
 The file only exists at runtime, so install it from your entrypoint, not in
 your `Dockerfile`. HTTPS interception needs a `compatibility_date` of
 `2026-04-02` or later. On an older runtime, the SDK raises a `RuntimeError`
 before applying any interception. See
 [HTTPS traffic](https://developers.cloudflare.com/containers/configuration/outbound-traffic/)
-for more.
+for the platform side.
 
 ## Change rules at runtime
 
@@ -312,24 +311,26 @@ await container.deny_host("evil.example")
 | `remove_allowed_host(hostname)` / `remove_denied_host(hostname)` | Remove one host from the allowlist or blocklist.                                                 |
 
 Changes apply to a running container without a restart. The SDK stores them in
-the Durable Object, so they survive it being evicted. Naming a
+the Durable Object, so they survive the Durable Object leaving memory. Naming a
 handler that isn't in `outbound_handlers` raises `ValueError`. Over RPC, pass
-these arguments positionally (see
-[Calling container methods](routing.md#calling-container-methods-from-a-worker)).
+these arguments positionally. See
+[Calling container methods](routing.md#calling-container-methods-from-a-worker).
 
 ## Precedence
 
-The SDK checks each outbound request against these rules in order. The first rule
-that applies decides what happens:
+The SDK checks each outbound request against these rules in order. The first
+rule that applies decides what happens:
 
-1. **`denied_hosts`.** A matching host is blocked.
-2. **`allowed_hosts`.** If set, a host that doesn't match is blocked.
+1. **`denied_hosts`.** The SDK blocks a matching host.
+2. **`allowed_hosts`.** If the list is set, the SDK blocks a host that doesn't
+   match.
 3. **Runtime host rules** from `set_outbound_by_host`.
 4. **Class host rules** from `outbound_by_host`.
 5. **Runtime catch-all** from `set_outbound_handler`.
 6. **Class catch-all** from `outbound`.
 7. **Egress.** The request goes out to the internet if the host matched
-   `allowed_hosts` or `enable_internet` is `True`. Otherwise it's blocked.
+   `allowed_hosts` or `enable_internet` is `True`. Otherwise the SDK blocks
+   it.
 
 > **Note**
 >

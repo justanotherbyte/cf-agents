@@ -10,7 +10,7 @@ ten minutes.
 ## Prerequisites
 
 - [`uv`](https://docs.astral.sh/uv/) and Node.js 22 or later.
-- Python 3.12 or later. `cf-agents` 0.1.3 doesn't install on older versions.
+- Python 3.12 or later. `cf-agents` doesn't install on older versions.
 - A Cloudflare account. The free plan works.
 
 ## 1. Create a Python Worker
@@ -21,8 +21,7 @@ cd hello-agents  # the directory you chose during init
 uv add cf-agents
 ```
 
-You install the package as `cf-agents` and import it as `agents`. Check that
-`pyproject.toml` now lists `cf-agents` under `dependencies`.
+Check that `pyproject.toml` now lists `cf-agents` under `dependencies`.
 
 ## 2. Write the agent
 
