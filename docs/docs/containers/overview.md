@@ -85,8 +85,8 @@ Add the package to a Python Worker project:
 uv add containers-py
 ```
 
-It needs Python 3.12 or later and installs `workers-runtime-sdk` 1.9.0 or
-later with it. Running a container also needs Docker locally and the Workers
+It needs Python 3.12 or later and works with either `crosswind-workers` or
+`workers-runtime-sdk`, whichever your project declares. Running a container also needs Docker locally and the Workers
 Paid plan. To create a project first, follow
 [Getting started](getting-started.md).
 

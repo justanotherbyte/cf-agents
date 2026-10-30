@@ -125,9 +125,7 @@ makes the JavaScript calls.
 | [Workers](workers/overview.md)        | `crosswind-workers` | Drop-in replacement for the official `workers` package, with type hints on bindings, requests and Durable Objects. | [Write a Worker](workers/getting-started.md) | ![crosswind-workers on PyPI](https://img.shields.io/pypi/v/crosswind-workers) |
 | [Wynd](wynd/overview.md)              | `wynd`              | Replaces pywrangler. It drops vendored files your Worker never imports before each upload.   | [Switch from pywrangler](wynd/getting-started.md) | ![wynd on PyPI](https://img.shields.io/pypi/v/wynd)                   |
 
-For a new Python Worker that doesn't need an agent or a container, use
-`crosswind-workers` and deploy it with Wynd. `containers-py` depends on the
-official `workers-runtime-sdk`, so its guides use that package instead.
+For a new Python Worker, use `crosswind-workers` and deploy it with Wynd.
 
 ## How the packages work
 

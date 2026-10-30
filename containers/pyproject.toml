@@ -9,7 +9,6 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "typing-extensions>=4.12",
-    "workers-runtime-sdk>=1.9.0",
 ]
 license = "MIT OR Apache-2.0"
 
@@ -48,4 +47,5 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.9",
     "ty>=0.0.84",
+    "workers-runtime-sdk>=1.9.0",
 ]
