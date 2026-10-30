@@ -57,20 +57,15 @@ A project ships exactly one package named `workers`. Both
 `crosswind-workers` and Cloudflare's `workers-runtime-sdk` provide it, and
 `crosswind-workers` refuses to import when it finds the stock SDK installed.
 That choice decides your build tool, because pywrangler always installs
-`workers-runtime-sdk`.
-
-| Package               | With `crosswind-workers` and Wynd | With `workers-runtime-sdk` and pywrangler |
-| --------------------- | --------------------------------- | ----------------------------------------- |
-| `cf-agents`           | Yes                               | Yes                                       |
-| `crosswind-sandboxes` | Yes                               | Yes                                       |
-| `containers-py`       | No. It depends on `workers-runtime-sdk` 1.9.0 or later. | Yes                 |
+`workers-runtime-sdk`. `cf-agents`, `containers-py` and `crosswind-sandboxes` work with
+either SDK and install neither, so your project declares the one it uses.
 
 Wynd builds both kinds of project. It installs whichever runtime SDK your
 `pyproject.toml` declares, so you can switch an existing pywrangler project to
 Wynd and keep `workers-runtime-sdk`. `wynd types`, which writes a typed `Env`
 class from your Wrangler config, works only with `crosswind-workers`.
 
-For a new Worker that doesn't use `containers-py`, use `crosswind-workers` and
+For a new Worker, use `crosswind-workers` and
 Wynd. `uvx wynd init` writes that project for you.
 
 ## Which package to start with

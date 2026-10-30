@@ -11,8 +11,9 @@ container and routes requests to it from a Python Worker. By the end, each
 
 - [`uv`](https://docs.astral.sh/uv/) and Node.js, to build and deploy
   [Python Workers](https://developers.cloudflare.com/workers/languages/python/).
-  `containers-py` 0.1.1 needs Python 3.12 or later and installs
-  `workers-runtime-sdk` 1.9.0 or later with it.
+  `containers-py` needs Python 3.12 or later and works with either
+  `crosswind-workers` or `workers-runtime-sdk`. This guide uses pywrangler,
+  which installs `workers-runtime-sdk`.
 - Docker, or another Docker-compatible engine, running locally. Check with
   `docker info`. Wrangler builds your image with it in both `dev` and
   `deploy`.
