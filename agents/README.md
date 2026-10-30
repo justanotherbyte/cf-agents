@@ -16,18 +16,21 @@ Cloudflare Agents for Python Workers
 [![pypi](https://img.shields.io/pypi/pyversions/cf-agents.svg)](https://pypi.org/pypi/cf-agents)
 
 > [!note]
-> This is an unofficial SDK and not affiliated to Cloudflare. I worked on a port of the official [Agents SDK](https://agents.cloudflare.com) during my internship at Cloudflare. This project continues on my work there.
+> This is an unofficial SDK and not affiliated with Cloudflare. I started a port of the official [Agents SDK](https://agents.cloudflare.com) during my internship at Cloudflare, and this project continues that work.
 >
 > This project is part of [Crosswind](https://crosswind.viswa.space).
 
-# Features
-- [x] Typed, `async`-first Python 3.12+
-- [x] FFI Handling under the hood. Just write Python, we handle talking to the runtime.
-- [x] Behavioural and API parity with the TypeScript [Agents SDK](https://github.com/cloudflare/agents).
+Use `cf-agents` to keep state, schedule work and serve WebSocket clients from a Python Worker.
 
-# Installing
+# What it does
 
-It's recommended you use `uv` - you'll need to use [pywrangler](https://developers.cloudflare.com/workers/languages/python/) to deploy to Cloudflare.
+- The SDK provides a typed, `async` API for Python 3.12 or later.
+- The SDK makes the JavaScript runtime calls from your Python code.
+- The API and behaviour match the TypeScript [Agents SDK](https://github.com/cloudflare/agents), so TypeScript clients such as `useAgent` connect unchanged.
+
+# Install
+
+Create a project with [uv](https://docs.astral.sh/uv/) and [pywrangler](https://developers.cloudflare.com/workers/languages/python/), then add the package. [Wynd](https://crosswind.viswa.space/wynd/overview/) also works.
 
 ```shell
 $ uvx --from workers-py pywrangler init
@@ -36,7 +39,7 @@ $ uv add cf-agents
 
 # Quickstart
 
-The `Agent` class gives you the core tools to build stateful, durable agents.
+This example runs a team's daily lunch vote. Its `Agent` keeps state, runs schedules and exposes `@callable` methods to WebSocket clients. Replace `search_menus_by_agent` and `choose_winners` with your own code.
 
 ```python
 from typing import TypedDict
@@ -137,11 +140,11 @@ class Default(WorkerEntrypoint):
         return response or Response("Not Found", status=404)
 ```
 
-It can get tedious implementing similar patterns for chat agents over and over again. See [AIChatAgent](https://crosswind.viswa.space/docs/agents/chat).
+For a chat agent that stores messages and streams model replies, use [`AIChatAgent`](https://crosswind.viswa.space/agents/chat/).
 
 # Goals
 
-`cf-agents` is a solo project right now. The scope is restricted, but feature-ful. Planned:
+`cf-agents` has one maintainer, so the scope is limited. Planned:
 
 - [ ] MCP
 - [ ] Channels
@@ -149,10 +152,10 @@ It can get tedious implementing similar patterns for chat agents over and over a
 - [ ] A harness/opinionated framework, similar to [Think](https://developers.cloudflare.com/agents/harnesses/think/)
 - [ ] Integrations with popular Agent libraries in the Python eco-system (such as [LangChain](https://www.langchain.com/langchain) or [CrewAI](https://crewai.com/))
 
-Some of these require the Cloudflare Python Workers runtime to improve. It's very easy right now to end up on the paid plan using Python Workers.
+Some of these need changes to the Python Workers runtime first. A Python Worker also exceeds the free plan's limits easily today.
 
 
 # Links
 
-- [Documentation](https://crosswind.viswa.space/docs/agents/getting-started)
+- [Documentation](https://crosswind.viswa.space/agents/getting-started/)
 - [Crosswind](https://crosswind.viswa.space)

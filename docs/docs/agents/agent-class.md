@@ -3,11 +3,12 @@ title: "Agent class API reference for Python"
 description: "Reference for agents.Agent: class attributes, AgentOptions, hooks, state, connections, schedules, queue, fibers, routing functions, Connection and exceptions."
 ---
 
-`agents.Agent` is a
+Use this reference to choose the attributes, hooks and methods for an
+`agents.Agent` subclass. `Agent` is a
 [Durable Object](https://developers.cloudflare.com/durable-objects/api/base/).
-Subclass it, override the hooks you need and decorate methods with
-`@callable`. `self.ctx` and `self.env` work as on any Durable Object. Don't
-override `fetch`, `alarm` or the `webSocket*` handlers. The SDK uses them.
+Override the hooks you need and decorate client methods with `@callable`.
+`self.ctx` and `self.env` work as on any Durable Object. Leave `fetch`,
+`alarm` and the `webSocket*` handlers to the SDK.
 
 Durations are a `timedelta` or a number of seconds everywhere in the SDK, so
 a default of `30` means 30 seconds. Every public name below imports from
@@ -82,9 +83,9 @@ When `on_error` returns normally, the error counts as handled. A failed
 request gets a `500`, and a failed connect or message leaves the connection
 open.
 
-Some errors reach `on_error` only as a report: errors from `on_start`,
-`on_state_changed`, and scheduled, queued or task callbacks that ran out of
-retries. Returning normally doesn't recover them. `on_start` still fails, and
+Errors from `on_start`, `on_state_changed`, and scheduled, queued or task
+callbacks that ran out of retries reach `on_error` only as a report.
+Returning normally doesn't recover them. `on_start` still fails, and
 so does the request, message or alarm that woke the agent.
 
 ## Identity
@@ -130,7 +131,8 @@ rows as dicts. It is synchronous.
 
 - `params` fill the `?` placeholders. `SqlValue` is
   `int | float | str | bytes | None`.
-- `row` annotates the rows' type for a type checker. Rows aren't validated.
+- `row` annotates the rows' type for a type checker. The SDK doesn't validate
+  the rows.
 - Raises `SqlError` when SQLite rejects the statement, `TypeError` for an
   unsupported parameter type, and `ValueError` for an integer outside
   ±2<sup>53</sup>.

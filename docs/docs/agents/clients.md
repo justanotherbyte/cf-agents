@@ -4,8 +4,8 @@ description: "Connect to a Python agent from React or Node.js with the agents np
 ---
 
 Clients connect to an agent over a WebSocket with the
-[`agents`](https://www.npmjs.com/package/agents) npm package. The package was
-written for the TypeScript SDK and works with a Python agent unchanged. A
+[`agents`](https://www.npmjs.com/package/agents) npm package. The TypeScript
+SDK uses the same package, and it works with a Python agent unchanged. A
 connected client receives the agent's state and can call the agent's
 `@callable` methods.
 
@@ -111,8 +111,8 @@ try {
 ```
 
 Only the message reaches the client. An exception with an empty message
-sends its class name instead, as `raise KeyError()` sends `KeyError`. A call to a method that
-isn't `@callable` fails with `Method <name> is not callable`, and one that
+sends its class name instead, so `raise KeyError()` sends `KeyError`. A call to
+a method that isn't `@callable` fails with `Method <name> is not callable`, and one that
 doesn't exist fails with `Method <name> does not exist`.
 
 ## Stream results
@@ -150,7 +150,7 @@ async def countdown(self, response: StreamingResponse, n: int) -> None:
 
 `end(value)` resolves the client's call with `value`. If the method returns
 without calling `end()`, the SDK ends the stream for you. If it raises, the
-client's call is rejected with the message, as above.
+SDK rejects the client's call with the message, as above.
 
 `send()` returns `False` once the client has disconnected, so a long stream can
 check it and stop. An async generator stops at its first `yield` after the

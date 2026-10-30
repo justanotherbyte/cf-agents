@@ -109,7 +109,7 @@ shell.
 
 ## `uv pip compile failed:`
 
-The output after this line is uv's own error. The common one:
+The output after this line is uv's own error. The most common one is:
 
 ```text
 wynd: error: uv pip compile failed:

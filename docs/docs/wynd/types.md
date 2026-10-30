@@ -167,7 +167,7 @@ in another module still works if the entry module imports it.
 
 ## Environments and configs
 
-Pass the same flags you use for `dev` and `deploy`. The Env then lists the
+Pass the same flags you use for `dev` and `deploy`. `Env` then lists the
 bindings of that environment:
 
 ```sh

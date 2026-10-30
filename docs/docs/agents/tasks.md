@@ -113,7 +113,7 @@ before recording the result.
 
 ## Retries and timeouts
 
-A step that raises is retried. By default a step gets 5 attempts. The first
+The SDK retries a step that raises. By default a step gets 5 attempts. The first
 retry waits 1 second and each later one doubles, up to 1 day. Each attempt can
 run for 5 minutes. While it waits, the run is `waiting` with
 `reason="retry"`, and the agent can leave memory. Set these per step:
@@ -134,8 +134,8 @@ result = await step.do(
 `limit` counts every attempt, including the first. `delay` is the wait before
 the first retry. `backoff` is `"constant"`, `"linear"` or `"exponential"`, and
 sets the wait before retry `n` to `delay`, `delay * n` or `delay * 2 ** (n - 1)`.
-An attempt that runs past `timeout` raises `StepTimeoutError` and is retried
-like any other error.
+An attempt that runs past `timeout` raises `StepTimeoutError`, and the SDK
+retries it like any other error.
 
 To fail the run without more retries, raise `NonRetryableError`:
 

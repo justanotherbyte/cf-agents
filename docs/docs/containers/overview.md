@@ -6,8 +6,7 @@ description: "What containers-py does, how a Container class maps to a Durable O
 `containers-py` lets a
 [Python Worker](https://developers.cloudflare.com/workers/languages/python/)
 start, stop and send requests to
-[Cloudflare Containers](https://developers.cloudflare.com/containers/). You
-install it as `containers-py` and import it as `containers`.
+[Cloudflare Containers](https://developers.cloudflare.com/containers/).
 
 It is a Python port of the
 [`@cloudflare/containers`](https://github.com/cloudflare/containers)
@@ -41,12 +40,13 @@ attributes such as the port and the idle timeout. The class starts the
 container on the first request, waits for its port, forwards requests to it
 and stops it after `sleep_after` without traffic.
 
-```text
-                    get_container(binding, "user-42")
-                                  │
-  client ──> Worker (Default) ────┴──> Durable Object "user-42" ──> container instance
-                                       (your Container subclass)     (your Docker image)
-```
+A request takes this path:
+
+1. A client sends a request to your Worker's `Default` entrypoint.
+2. The Worker calls `get_container(binding, "user-42")` to get a stub for the
+   Durable Object named `user-42`, an instance of your `Container` subclass.
+3. The Durable Object forwards the request to its container instance, which
+   runs your Docker image.
 
 A Durable Object ID maps to exactly one container instance. The name you pass
 to `get_container` decides which instance serves a request:
@@ -76,6 +76,19 @@ build and no cold start of a few seconds.
 - Blocking, allowing or intercepting the container's outbound HTTP and HTTPS
   traffic with Python handlers.
 - Scheduling a method on the container class to run later.
+
+## Install
+
+Add the package to a Python Worker project:
+
+```sh
+uv add containers-py
+```
+
+It needs Python 3.12 or later and works with either `crosswind-workers` or
+`workers-runtime-sdk`, whichever your project declares. Running a container also needs Docker locally and the Workers
+Paid plan. To create a project first, follow
+[Getting started](getting-started.md).
 
 ## Status
 

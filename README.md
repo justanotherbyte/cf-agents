@@ -7,26 +7,32 @@
 
 [![Crosswind Community](https://discord.com/api/guilds/1564745929733443664/embed.png)](https://discord.gg/tbZTEeK35p)
 
-Crosswind is a set of typed, async-first Python SDKs to help you deploy more capable applications on Cloudflare's Python Workers. It's goal is to bring Cloudflare's official TypeScript SDKs to the Python eco-system.
+Crosswind provides Python packages for Cloudflare's [Python Workers](https://developers.cloudflare.com/workers/languages/python/). Each package ports a Cloudflare SDK that otherwise ships only for TypeScript. The Python APIs are typed and `async`.
 
-| Python SDK                   | Description                                                                                                                                                | Official Pair                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [cf-agents](agents)          | Deploy Agents written in Python on Cloudflare.                                                                                                             | [Agents SDK](https://agents.cloudflare.com)                     |
-| [wynd](wynd)                 | Alternative to `pywrangler`. Supports a typed `cloudflare.config.py` to configure your projects. Has minimal tree-shaking to help you reduce bundle sizes. | [workers-py](https://github.com/cloudflare/workers-py)          |
-| [crosswind-workers](workers) | Typed Workers SDK for Python.                                                                                                                              | [workers-py](https://github.com/cloudflare/workers-py)          |
-| [containers-py](containers)  | Python SDK to help you manage your Cloudflare Containers                                                                                                   | [Containers SDK](https://developers.cloudflare.com/containers/) |
-| [crosswind-sandboxes](sandboxes) | File operations, S3 mounts and directory backups for a running container.                                                                         | [Sandbox SDK](https://developers.cloudflare.com/sandbox/)       |
+Start with the [Crosswind documentation](https://crosswind.viswa.space) to choose a package.
 
-## Licensing
-Each SDK part of Crosswind uses the same licensing that its official counterpart uses. The Crosswind docs are under the MIT license.
+| Package                          | What it does                                                                                     | Ports                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| [cf-agents](agents)              | Stateful agents with WebSocket clients, schedules, durable tasks and streaming chat.             | [Agents SDK](https://agents.cloudflare.com)                     |
+| [wynd](wynd)                     | Replaces `pywrangler`. Reads a typed `cloudflare.config.py` and drops unused files before upload. | [workers-py](https://github.com/cloudflare/workers-py)          |
+| [crosswind-workers](workers)     | The `workers` runtime SDK, with type hints on bindings, requests and Durable Objects.            | [workers-py](https://github.com/cloudflare/workers-py)          |
+| [containers-py](containers)      | Starts, stops and routes requests to Cloudflare Containers.                                      | [Containers SDK](https://developers.cloudflare.com/containers/) |
+| [crosswind-sandboxes](sandboxes) | File operations, S3 mounts and directory backups in a running container.                         | [Sandbox SDK](https://developers.cloudflare.com/sandbox/)       |
+
+## Status
+
+Every package is alpha and pre-1.0. Pin exact versions because a minor release can rename or remove an API.
+
+Python Workers run on [Pyodide](https://pyodide.org/en/stable/), so a library with C extensions imports only if Pyodide ships a build of it.
+
+## Getting help
+
+Each package aims to match the API and behaviour of the SDK it ports, with a few deliberate differences. Check the [Crosswind docs](https://crosswind.viswa.space) and the Cloudflare docs for the product first. Ask other questions in [Discord](https://discord.gg/tbZTEeK35p) or open an issue.
 
 ## Contributing
-I am very much open to contributions. Crosswind is a large project and open-source contributions help alot. I'm happy with AI-written PRs (I myself use AI tools - it's the only way someone can even attempt to feasibly maintain a project of this size), but do note I care about code quality. Please don't submit slop code.
 
-## Getting Help
+Contributions are welcome, including AI-written pull requests. Keep them to the code quality of the surrounding package.
 
-Crosswind aims to have full API and feature parity with the official SDKs (with some meaningful deviations). Often, referring (or your agents) to the Crosswind and official Cloudflare docs should do the trick. Do open issues if you must though!
+## Licensing
 
-## Limitations
-
-The official Cloudflare Python workers runtime is inherently limited. Not all Python libraries work with [Pyodide](https://pyodide.org/en/stable/), which powers Python Workers.
+Each package uses the license of the official SDK it ports. The docs are MIT-licensed.

@@ -97,8 +97,8 @@ class Counter(Agent[CounterState]):
             print(f"client {source.id} set count to {state['count']}")
 ```
 
-An exception raised here is logged and passed to `on_error`. It doesn't undo
-the change.
+The SDK logs an exception raised here and passes it to `on_error`. The
+exception doesn't undo the change.
 
 ## Store rows with SQL
 

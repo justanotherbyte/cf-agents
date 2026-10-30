@@ -142,8 +142,8 @@ short.
 ### `on_stop(*, exit_code, reason)`
 
 Runs after the container process exits, whatever the cause. The SDK calls it
-when it next checks the state: on the next alarm, or on the next `stop()` or
-`start_and_wait_for_ports()` call. `exit_code` is `0` for a clean exit.
+at its next state check, which happens on the next alarm or the next `stop()`
+or `start_and_wait_for_ports()` call. `exit_code` is `0` for a clean exit.
 `destroy()` usually reports `137` (128 + `SIGKILL`). `reason` is always
 `"exit"` in this version, as in the TypeScript SDK. The type also allows
 `"runtime_signal"`, but the SDK never passes it.

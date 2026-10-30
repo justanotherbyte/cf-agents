@@ -71,8 +71,8 @@ class Default(WorkerEntrypoint):
 ```
 
 `getByName("demo")` picks the sandbox. Every request with the same name reaches
-the same Durable Object and the same container, so files written by one
-request are there for the next. Use a user or session ID as the name to give
+the same Durable Object and the same container, so files that one request
+writes are there for the next. Use a user or session ID as the name to give
 each one its own sandbox.
 
 `read_file()` returns a JavaScript `Response`. Await `.text()`, `.bytes()` or
@@ -123,7 +123,7 @@ each one its own sandbox.
 === "cloudflare.config.py"
 
     ```python
-    # cloudflare.config.py needs Wynd: run `uvx wynd dev` in place of `pywrangler dev`.
+    # cloudflare.config.py needs Wynd. Run `uvx wynd dev` in place of `pywrangler dev`.
     from wynd.config import Config, Container, Worker, bindings, exports
 
     sandbox = Container(name="hello-sandbox-sandbox", dockerfile="./Dockerfile", max_instances=5)

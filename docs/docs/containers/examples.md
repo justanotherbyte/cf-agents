@@ -5,8 +5,8 @@ description: "Copy-paste containers-py patterns: env vars and secrets, lifecycle
 
 Each pattern assumes the Wrangler setup from
 [Getting started](getting-started.md), with the binding name changed to
-match.
-The official [Containers examples](https://developers.cloudflare.com/containers/examples/)
+match. The official
+[Containers examples](https://developers.cloudflare.com/containers/examples/)
 cover the same scenarios in TypeScript.
 
 ## Environment variables and secrets
