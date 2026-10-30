@@ -1,5 +1,7 @@
 site_name: Crosswind
 site_url: https://mydomain.org/
+repo_url: https://github.com/justanotherbyte/crosswind
+repo_name: justanotherbyte/crosswind
 theme:
   name: material
   custom_dir: overrides
@@ -46,6 +48,7 @@ markdown_extensions:
       alternate_style: true
 nav:
   - Home: index.md
+  - Introduction: introduction.md
   - Agents:
     - Overview: agents/overview.md
     - Getting started: agents/getting-started.md
